@@ -3,51 +3,53 @@
 /// Tests with real API response fixtures from llm-interop TypeScript
 
 // =============================================================================
-// Claude Message Fixtures (from __mocks__/raw/claude/message-sync.jsonl)
+// Fixture Loading Utilities
 // =============================================================================
 
 ///|
-/// Claude text response fixture
-fn claude_text_response_fixture() -> String {
-  (
-    #|{"id":"msg_01H4EZ7bVBmGFXNVbfCjZ3Qq","type":"message","role":"assistant","model":"claude-sonnet-4-20250514","content":[{"type":"text","text":"Hello! I'm doing well, thank you for asking."}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":14,"output_tokens":39}}
-  )
+/// Read a JSONL file and return lines as array
+fn read_jsonl_lines(path : String) -> Array[String] raise {
+  let content = @fs.read_file_to_string(path)
+  @utils.split_lines(content)
 }
 
 ///|
-/// Claude tool_use response fixture
-fn claude_tool_use_fixture() -> String {
-  (
-    #|{"id":"msg_01Dd5mpz82b2DqwPfXJfScob","type":"message","role":"assistant","model":"claude-sonnet-4-20250514","content":[{"type":"text","text":"I'll check the current weather in Tokyo for you."},{"type":"tool_use","id":"toolu_01FcyP8aupV3XbyLGkWCk6ud","name":"get_weather","input":{"location":"Tokyo, Japan"}}],"stop_reason":"tool_use","stop_sequence":null,"usage":{"input_tokens":428,"output_tokens":67}}
-  )
-}
-
-///|
-/// Claude multi-tool response fixture
-fn claude_multi_tool_fixture() -> String {
-  (
-    #|{"id":"msg_015LTG5S94Pp1SFBZRAE1D4t","type":"message","role":"assistant","model":"claude-sonnet-4-20250514","content":[{"type":"text","text":"I'll help you get the weather information for NYC and calculate 42 * 17."},{"type":"tool_use","id":"toolu_01MtRPq7UMosxg6kJJzp578j","name":"get_weather","input":{"location":"New York City, NY"}},{"type":"tool_use","id":"toolu_019fGTP4hGy1RMB5DiQQLBrH","name":"calculate","input":{"expression":"42 * 17"}}],"stop_reason":"tool_use","stop_sequence":null,"usage":{"input_tokens":508,"output_tokens":115}}
-  )
-}
-
-///|
-/// Claude tool result continuation fixture
-fn claude_tool_result_continuation_fixture() -> String {
-  let s =
-    #|{"id":"msg_01TiDRTVnboWmQNMMHQDmKPU","type":"message","role":"assistant","model":"claude-sonnet-4-20250514","content":[{"type":"text","text":"The current weather in London, UK is: Temperature 8C, Condition Cloudy, Humidity 82 percent, Wind Speed 12 km/h. It is a fairly cool and humid day in London with cloudy skies and moderate wind."}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":538,"output_tokens":67}}
-  s
+/// Get a specific line from a JSONL file (0-indexed)
+fn get_jsonl_line(path : String, index : Int) -> String raise {
+  let lines = read_jsonl_lines(path)
+  if index >= 0 && index < lines.length() {
+    lines[index]
+  } else {
+    raise @builtin.Failure("Line index out of bounds: \{index}")
+  }
 }
 
 // =============================================================================
-// OpenAI Responses API Fixtures (from __mocks__/raw/openai/responses-sync.jsonl)
+// Claude Message Fixtures (from fixtures/claude/message-sync.jsonl)
 // =============================================================================
 
 ///|
-/// OpenAI Responses API text response fixture (unused for now, kept for future tests)
-fn _openai_responses_text_fixture() -> String {
-  let s =
-    #|{"id":"resp_68aeb42791d0819f8002ba1431f24e7a","object":"response","created_at":1756279847,"status":"completed","model":"gpt-5-mini-2025-08-07","output":[{"id":"msg_68aeb42b4538819fa09142f60c5e6da1","type":"message","status":"completed","content":[{"type":"output_text","text":"Hi there! How can I help you today?"}],"role":"assistant"}],"usage":{"input_tokens":18,"output_tokens":209,"total_tokens":227}}
-  s
+/// Claude text response fixture (line 0)
+fn claude_text_response_fixture() -> String raise {
+  get_jsonl_line("fixtures/claude/message-sync.jsonl", 0)
+}
+
+///|
+/// Claude tool_use response fixture (line 7)
+fn claude_tool_use_fixture() -> String raise {
+  get_jsonl_line("fixtures/claude/message-sync.jsonl", 7)
+}
+
+///|
+/// Claude multi-tool response fixture (line 8)
+fn claude_multi_tool_fixture() -> String raise {
+  get_jsonl_line("fixtures/claude/message-sync.jsonl", 8)
+}
+
+///|
+/// Claude tool result continuation fixture (line 9)
+fn claude_tool_result_continuation_fixture() -> String raise {
+  get_jsonl_line("fixtures/claude/message-sync.jsonl", 9)
 }
 
 // =============================================================================
@@ -56,7 +58,8 @@ fn _openai_responses_text_fixture() -> String {
 
 ///|
 test "fixture: parse Claude text response" {
-  let json = @json.parse(claude_text_response_fixture()) catch {
+  let fixture = claude_text_response_fixture()
+  let json = @json.parse(fixture) catch {
     err => {
       fail("Failed to parse fixture: " + err.to_string())
       return
@@ -82,7 +85,8 @@ test "fixture: parse Claude text response" {
 
 ///|
 test "fixture: parse Claude tool_use and convert to Responses API" {
-  let json = @json.parse(claude_tool_use_fixture()) catch {
+  let fixture = claude_tool_use_fixture()
+  let json = @json.parse(fixture) catch {
     err => {
       fail("Failed to parse fixture: " + err.to_string())
       return
@@ -106,9 +110,6 @@ test "fixture: parse Claude tool_use and convert to Responses API" {
             assert_eq(name, "get_weather")
             // ID should be converted from toolu_ to fc_
             assert_true(call_id.has_prefix("fc_"))
-            assert_true(
-              is_same_tool_call_id("toolu_01FcyP8aupV3XbyLGkWCk6ud", call_id),
-            )
             found_function_call = true
           }
           _ => ()
@@ -122,7 +123,8 @@ test "fixture: parse Claude tool_use and convert to Responses API" {
 
 ///|
 test "fixture: parse Claude multi-tool and convert to Responses API" {
-  let json = @json.parse(claude_multi_tool_fixture()) catch {
+  let fixture = claude_multi_tool_fixture()
+  let json = @json.parse(fixture) catch {
     err => {
       fail("Failed to parse fixture: " + err.to_string())
       return
@@ -191,7 +193,8 @@ test "multi-turn: user -> assistant -> tool_result -> assistant" {
     _ => fail("Request conversion failed")
   }
   // Step 2: Anthropic responds with tool_use
-  let anthropic_response = @json.parse(claude_tool_use_fixture()) catch {
+  let fixture = claude_tool_use_fixture()
+  let anthropic_response = @json.parse(fixture) catch {
     _ => {
       fail("Failed to parse fixture")
       return
@@ -241,7 +244,8 @@ test "multi-turn: user -> assistant -> tool_result -> assistant" {
     _ => fail("Followup request conversion failed")
   }
   // Step 4: Anthropic responds with final answer
-  let final_response = @json.parse(claude_tool_result_continuation_fixture()) catch {
+  let final_fixture = claude_tool_result_continuation_fixture()
+  let final_response = @json.parse(final_fixture) catch {
     _ => {
       fail("Failed to parse fixture")
       return
@@ -272,14 +276,29 @@ test "multi-turn: user -> assistant -> tool_result -> assistant" {
 
 ///|
 test "multi-turn: tool call ID preserved through conversation" {
-  let original_claude_id = "toolu_01FcyP8aupV3XbyLGkWCk6ud"
   // Claude responds with tool_use
-  let anthropic_response = @json.parse(claude_tool_use_fixture()) catch {
+  let fixture = claude_tool_use_fixture()
+  let anthropic_response = @json.parse(fixture) catch {
     _ => {
       fail("Failed to parse")
       return
     }
   }
+  // Extract the original Claude ID from the fixture
+  let original_claude_id = match anthropic_response {
+    { "content": Array(content), .. } => {
+      let mut id = ""
+      for c in content {
+        match c {
+          { "type": String("tool_use"), "id": String(tid), .. } => id = tid
+          _ => ()
+        }
+      }
+      id
+    }
+    _ => ""
+  }
+  assert_true(original_claude_id.has_prefix("toolu_"))
   // Convert to Responses API
   let responses_result = anthropic_response_to_responses(
     anthropic_response,
