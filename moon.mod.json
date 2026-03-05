@@ -1,6 +1,10 @@
 {
   "name": "trkbt10/llm_interop",
   "version": "0.1.0",
+  "deps": {
+    "mizchi/x": "0.1.5",
+    "moonbitlang/async": "0.16.7"
+  },
   "readme": "README.mbt.md",
   "repository": "",
   "license": "Apache-2.0",
