@@ -55,7 +55,9 @@ async test "integration_anthropic_stream" {
     @types.ModelMessage::User(content="Count 1 to 3.", name=None),
   ]
   let mut events = 0
-  let response = chat_stream(config, messages, on_event=fn(_) { events = events + 1 })
+  let response = chat_stream(config, messages, on_event=fn(_) {
+    events = events + 1
+  })
   println("[OK] received \{events} events")
   assert_true(events > 0)
   match response {
@@ -84,13 +86,20 @@ async test "integration_anthropic_tool" {
     max_tokens=200,
   )
   let messages : Array[@types.ModelMessage] = [
-    @types.ModelMessage::User(content="Get weather in Tokyo using the tool.", name=None),
+    @types.ModelMessage::User(
+      content="Get weather in Tokyo using the tool.",
+      name=None,
+    ),
   ]
   let tools : Array[@types.ToolDefinition] = [
     @types.ToolDefinition::new(
       name="get_weather",
       description="Get weather for a location",
-      parameters={ "type": "object", "properties": { "location": { "type": "string" } }, "required": ["location"] },
+      parameters={
+        "type": "object",
+        "properties": { "location": { "type": "string" } },
+        "required": ["location"],
+      },
     ),
   ]
   let response = chat(config, messages, tools~)
@@ -158,7 +167,9 @@ async test "integration_openai_stream" {
     @types.ModelMessage::User(content="Count 1 to 3.", name=None),
   ]
   let mut events = 0
-  let response = chat_stream(config, messages, on_event=fn(_) { events = events + 1 })
+  let response = chat_stream(config, messages, on_event=fn(_) {
+    events = events + 1
+  })
   println("[OK] received \{events} events")
   assert_true(events > 0)
   match response {
@@ -187,13 +198,20 @@ async test "integration_openai_tool" {
     max_tokens=200,
   )
   let messages : Array[@types.ModelMessage] = [
-    @types.ModelMessage::User(content="Get weather in Tokyo using the tool.", name=None),
+    @types.ModelMessage::User(
+      content="Get weather in Tokyo using the tool.",
+      name=None,
+    ),
   ]
   let tools : Array[@types.ToolDefinition] = [
     @types.ToolDefinition::new(
       name="get_weather",
       description="Get weather for a location",
-      parameters={ "type": "object", "properties": { "location": { "type": "string" } }, "required": ["location"] },
+      parameters={
+        "type": "object",
+        "properties": { "location": { "type": "string" } },
+        "required": ["location"],
+      },
     ),
   ]
   let response = chat(config, messages, tools~)
@@ -261,7 +279,9 @@ async test "integration_groq_stream" {
     @types.ModelMessage::User(content="Count 1 to 3.", name=None),
   ]
   let mut events = 0
-  let response = chat_stream(config, messages, on_event=fn(_) { events = events + 1 })
+  let response = chat_stream(config, messages, on_event=fn(_) {
+    events = events + 1
+  })
   println("[OK] received \{events} events")
   assert_true(events > 0)
   match response {
