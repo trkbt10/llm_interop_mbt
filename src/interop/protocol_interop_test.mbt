@@ -8,6 +8,7 @@
 // Fixture Data: Actual API response formats
 // =============================================================================
 
+///|
 /// Anthropic Claude Messages API response with tool_use
 fn fixture_anthropic_toolcall_response() -> Json {
   {
@@ -28,6 +29,7 @@ fn fixture_anthropic_toolcall_response() -> Json {
   }
 }
 
+///|
 /// OpenAI Chat Completions API response with tool_calls
 fn fixture_openai_chat_toolcall_response() -> Json {
   {
@@ -56,6 +58,7 @@ fn fixture_openai_chat_toolcall_response() -> Json {
   }
 }
 
+///|
 /// OpenAI Responses API response with function_call
 fn fixture_openai_responses_toolcall_response() -> Json {
   {
@@ -76,6 +79,7 @@ fn fixture_openai_responses_toolcall_response() -> Json {
   }
 }
 
+///|
 /// Google Gemini GenerateContent response with functionCall
 fn fixture_gemini_toolcall_response() -> Json {
   {
@@ -83,7 +87,12 @@ fn fixture_gemini_toolcall_response() -> Json {
       {
         "content": {
           "parts": Json::array([
-            { "functionCall": { "name": "get_weather", "args": { "location": "Tokyo" } } },
+            {
+              "functionCall": {
+                "name": "get_weather",
+                "args": { "location": "Tokyo" },
+              },
+            },
           ]),
           "role": "model",
         },
@@ -105,7 +114,9 @@ fn fixture_gemini_toolcall_response() -> Json {
 
 ///|
 test "parse Anthropic response and extract tool calls" {
-  let response = @protocol.parse_anthropic_response(fixture_anthropic_toolcall_response())
+  let response = @protocol.parse_anthropic_response(
+    fixture_anthropic_toolcall_response(),
+  )
   match response {
     @types.ModelResponse::ToolCalls(calls) => {
       inspect(calls.length(), content="1")
@@ -157,7 +168,9 @@ test "parse OpenAI Responses API response and extract tool calls" {
 
 ///|
 test "parse Gemini response and extract tool calls" {
-  let response = @protocol.parse_gemini_response(fixture_gemini_toolcall_response())
+  let response = @protocol.parse_gemini_response(
+    fixture_gemini_toolcall_response(),
+  )
   match response {
     @types.ModelResponse::ToolCalls(calls) => {
       inspect(calls.length(), content="1")
@@ -219,7 +232,9 @@ test "interop: OpenAI Chat tool call -> Anthropic format" {
 
 ///|
 test "interop: Gemini tool call -> OpenAI Responses format" {
-  let gemini_response = @protocol.parse_gemini_response(fixture_gemini_toolcall_response())
+  let gemini_response = @protocol.parse_gemini_response(
+    fixture_gemini_toolcall_response(),
+  )
   match gemini_response {
     @types.ModelResponse::ToolCalls(calls) => {
       let converted = convert_tool_call_request_ids(
@@ -237,15 +252,15 @@ test "interop: Gemini tool call -> OpenAI Responses format" {
 ///|
 test "interop: all providers can be compared via is_same_tool_call_id" {
   // Parse responses from all providers
-  let anthropic_calls = match @protocol.parse_anthropic_response(
-    fixture_anthropic_toolcall_response(),
-  ) {
+  let anthropic_calls = match
+    @protocol.parse_anthropic_response(fixture_anthropic_toolcall_response()) {
     @types.ModelResponse::ToolCalls(c) => c
     _ => []
   }
-  let openai_chat_calls = match @protocol.parse_openai_chat_response(
-    fixture_openai_chat_toolcall_response(),
-  ) {
+  let openai_chat_calls = match
+    @protocol.parse_openai_chat_response(
+      fixture_openai_chat_toolcall_response(),
+    ) {
     @types.ModelResponse::ToolCalls(c) => c
     _ => []
   }
@@ -265,6 +280,7 @@ test "interop: all providers can be compared via is_same_tool_call_id" {
 // Multi-tool Call Interop Tests
 // =============================================================================
 
+///|
 /// Gemini response with multiple function calls
 fn fixture_gemini_multi_toolcall_response() -> Json {
   {
@@ -272,8 +288,18 @@ fn fixture_gemini_multi_toolcall_response() -> Json {
       {
         "content": {
           "parts": Json::array([
-            { "functionCall": { "name": "get_weather", "args": { "location": "Tokyo" } } },
-            { "functionCall": { "name": "get_time", "args": { "timezone": "Asia/Tokyo" } } },
+            {
+              "functionCall": {
+                "name": "get_weather",
+                "args": { "location": "Tokyo" },
+              },
+            },
+            {
+              "functionCall": {
+                "name": "get_time",
+                "args": { "timezone": "Asia/Tokyo" },
+              },
+            },
           ]),
           "role": "model",
         },
@@ -418,11 +444,8 @@ test "full flow: parse OpenAI -> convert to Anthropic -> build body" {
       match msgs[2] {
         { "content": Array(content_arr), .. } =>
           match content_arr[0] {
-            {
-              "type": String("tool_result"),
-              "tool_use_id": String(id),
-              ..
-            } => assert_true(id.has_prefix("toolu_"))
+            { "type": String("tool_result"), "tool_use_id": String(id), .. } =>
+              assert_true(id.has_prefix("toolu_"))
             _ => fail("Expected tool_result content")
           }
         _ => fail("Expected content array")

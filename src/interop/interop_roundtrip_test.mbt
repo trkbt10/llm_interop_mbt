@@ -11,15 +11,19 @@
 // Test Fixtures: Realistic IDs from actual API responses
 // =============================================================================
 
+///|
 /// Anthropic Claude tool use ID (from actual API response)
 let fixture_anthropic_tool_use_id : String = "toolu_017RLx2kgtjuhyb6yzCYoY4M"
 
+///|
 /// OpenAI Responses API function call ID (from actual API response)
 let fixture_openai_responses_fc_id : String = "fc_0f6e93c5cb6fbed40069a2579e9c688191925c675daa400bda"
 
+///|
 /// OpenAI Responses API call_id (from actual API response)
 let fixture_openai_responses_call_id : String = "call_eArLoUy4ikZiEzhId8UK1v2l"
 
+///|
 /// Google Gemini synthetic ID (generated, since Gemini has no native IDs)
 let fixture_gemini_synthetic_id : String = "gemini_get_weather_0"
 
@@ -155,11 +159,9 @@ test "message roundtrip: OpenAI Chat -> Anthropic -> OpenAI Chat" {
     @types.ModelMessage::Assistant(
       content="",
       tool_calls=Some([
-        @types.ToolCallRequest::new(
-          id="call_abc123",
-          name="get_weather",
-          arguments={ "location": "Tokyo" },
-        ),
+        @types.ToolCallRequest::new(id="call_abc123", name="get_weather", arguments={
+          "location": "Tokyo",
+        }),
       ]),
     ),
     @types.ModelMessage::ToolResult(
@@ -220,9 +222,18 @@ test "message conversion: multiple tool calls maintain order and mapping" {
         @types.ToolCallRequest::new(id="call_third", name="tool_c", arguments={}),
       ]),
     ),
-    @types.ModelMessage::ToolResult(tool_call_id="call_first", content="result_a"),
-    @types.ModelMessage::ToolResult(tool_call_id="call_second", content="result_b"),
-    @types.ModelMessage::ToolResult(tool_call_id="call_third", content="result_c"),
+    @types.ModelMessage::ToolResult(
+      tool_call_id="call_first",
+      content="result_a",
+    ),
+    @types.ModelMessage::ToolResult(
+      tool_call_id="call_second",
+      content="result_b",
+    ),
+    @types.ModelMessage::ToolResult(
+      tool_call_id="call_third",
+      content="result_c",
+    ),
   ]
   // Convert to Anthropic
   let converted = convert_message_tool_call_ids(

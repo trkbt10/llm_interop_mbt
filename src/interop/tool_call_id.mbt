@@ -35,7 +35,7 @@ pub(all) enum ToolCallIdProvider {
   GoogleGemini
   /// Unknown provider
   Unknown
-}
+} derive(Eq, Show)
 
 ///|
 /// Get the format specification for a provider
