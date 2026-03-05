@@ -25,8 +25,14 @@ test "ClientConfig::new with custom values" {
 
 ///|
 test "get_endpoint returns correct URLs" {
-  assert_eq(get_endpoint(Provider::Anthropic), "https://api.anthropic.com/v1/messages")
-  assert_eq(get_endpoint(Provider::OpenAI), "https://api.openai.com/v1/chat/completions")
+  assert_eq(
+    get_endpoint(Provider::Anthropic),
+    "https://api.anthropic.com/v1/messages",
+  )
+  assert_eq(
+    get_endpoint(Provider::OpenAI),
+    "https://api.openai.com/v1/chat/completions",
+  )
   assert_eq(
     get_endpoint(Provider::OpenAICompatible(base_url="http://localhost:8080")),
     "http://localhost:8080/v1/chat/completions",
@@ -35,7 +41,11 @@ test "get_endpoint returns correct URLs" {
 
 ///|
 test "get_headers for Anthropic" {
-  let config = ClientConfig::new(Provider::Anthropic, "test-api-key", "claude-3")
+  let config = ClientConfig::new(
+    Provider::Anthropic,
+    "test-api-key",
+    "claude-3",
+  )
   let headers = get_headers(config)
   assert_eq(headers.get("Content-Type"), Some("application/json"))
   assert_eq(headers.get("x-api-key"), Some("test-api-key"))
@@ -52,8 +62,15 @@ test "get_headers for OpenAI" {
 
 ///|
 test "build_request_body for Anthropic" {
-  let config = ClientConfig::new(Provider::Anthropic, "key", "claude-3", max_tokens=1024)
-  let messages : Array[@types.ModelMessage] = [@types.ModelMessage::User(content="Hello", name=None)]
+  let config = ClientConfig::new(
+    Provider::Anthropic,
+    "key",
+    "claude-3",
+    max_tokens=1024,
+  )
+  let messages : Array[@types.ModelMessage] = [
+    @types.ModelMessage::User(content="Hello", name=None),
+  ]
   let tools : Array[@types.ToolDefinition] = []
   let body = build_request_body(config, messages, tools)
   let json : Json = @json.parse(body) catch {
@@ -63,7 +80,12 @@ test "build_request_body for Anthropic" {
     }
   }
   match json {
-    { "model": String(model), "max_tokens": Number(max_tokens, ..), "messages": Array(_), .. } => {
+    {
+      "model": String(model),
+      "max_tokens": Number(max_tokens, ..),
+      "messages": Array(_),
+      ..
+    } => {
       assert_eq(model, "claude-3")
       assert_eq(max_tokens.to_int(), 1024)
     }
@@ -73,7 +95,12 @@ test "build_request_body for Anthropic" {
 
 ///|
 test "build_request_body for OpenAI" {
-  let config = ClientConfig::new(Provider::OpenAI, "key", "gpt-4", max_tokens=2048)
+  let config = ClientConfig::new(
+    Provider::OpenAI,
+    "key",
+    "gpt-4",
+    max_tokens=2048,
+  )
   let messages : Array[@types.ModelMessage] = [
     @types.ModelMessage::System("You are helpful"),
     @types.ModelMessage::User(content="Hi", name=None),
@@ -134,7 +161,7 @@ test "parse_sse_events handles incomplete chunks" {
 ///|
 test "split_lines handles various line endings" {
   let s = "line1\nline2\r\nline3"
-  let lines = split_lines(s)
+  let lines = @utils.split_lines(s)
   assert_eq(lines.length(), 3)
   assert_eq(lines[0], "line1")
   assert_eq(lines[1], "line2")

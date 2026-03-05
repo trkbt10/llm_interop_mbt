@@ -63,15 +63,7 @@ pub fn ResponsesApiAccumulator::finish(
   self : ResponsesApiAccumulator,
 ) -> @types.ModelResponse {
   if self.function_calls.length() > 0 {
-    let calls : Array[@types.ToolCallRequest] = []
-    for fc in self.function_calls {
-      let args_str = fc.arguments.to_string()
-      let arguments : Json = @json.parse(args_str) catch { _ => {} }
-      calls.push(
-        @types.ToolCallRequest::new(id=fc.id, name=fc.name, arguments~),
-      )
-    }
-    @types.ModelResponse::ToolCalls(calls)
+    @types.ModelResponse::ToolCalls(tool_calls_to_requests(self.function_calls))
   } else {
     @types.ModelResponse::Text(self.text.to_string())
   }

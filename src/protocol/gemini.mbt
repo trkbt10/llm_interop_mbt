@@ -145,18 +145,6 @@ pub fn tools_to_gemini_json(tools : Array[@types.ToolDefinition]) -> Json {
 // =============================================================================
 
 ///|
-/// Helper to set JSON field
-fn set_json_field_gemini(json : Json, key : String, value : Json) -> Json {
-  match json {
-    Object(map) => {
-      map[key] = value
-      Json::object(map)
-    }
-    _ => json
-  }
-}
-
-///|
 /// Build Gemini GenerateContent request body
 pub fn build_gemini_body(
   messages : Array[@types.ModelMessage],
@@ -174,7 +162,7 @@ pub fn build_gemini_body(
   let mut gen_config : Json = {}
   match max_tokens {
     Some(max) => {
-      gen_config = set_json_field_gemini(
+      gen_config = @utils.set_json_field(
         gen_config,
         "maxOutputTokens",
         Json::number(max.to_double()),
@@ -185,7 +173,7 @@ pub fn build_gemini_body(
   }
   match temperature {
     Some(temp) => {
-      gen_config = set_json_field_gemini(
+      gen_config = @utils.set_json_field(
         gen_config,
         "temperature",
         Json::number(temp),
@@ -196,14 +184,14 @@ pub fn build_gemini_body(
   }
   match top_p {
     Some(p) => {
-      gen_config = set_json_field_gemini(gen_config, "topP", Json::number(p))
+      gen_config = @utils.set_json_field(gen_config, "topP", Json::number(p))
       has_gen_config = true
     }
     None => ()
   }
   match top_k {
     Some(k) => {
-      gen_config = set_json_field_gemini(
+      gen_config = @utils.set_json_field(
         gen_config,
         "topK",
         Json::number(k.to_double()),
@@ -213,11 +201,11 @@ pub fn build_gemini_body(
     None => ()
   }
   if has_gen_config {
-    body = set_json_field_gemini(body, "generationConfig", gen_config)
+    body = @utils.set_json_field(body, "generationConfig", gen_config)
   }
   // Tools
   if tools.length() > 0 {
-    body = set_json_field_gemini(
+    body = @utils.set_json_field(
       body,
       "tools",
       Json::array([tools_to_gemini_json(tools)]),
@@ -303,7 +291,10 @@ fn extract_gemini_text(parts : Array[Json]) -> String {
 /// Generate a synthetic call ID for Gemini function calls
 /// Gemini API doesn't provide native IDs, so we generate them for tracking
 /// Format: `gemini_<tool_name>_<call_index>` (matches GoogleGemini provider prefix)
-fn generate_gemini_synthetic_call_id(tool_name : String, call_index : Int) -> String {
+fn generate_gemini_synthetic_call_id(
+  tool_name : String,
+  call_index : Int,
+) -> String {
   // Prefix matches ToolCallIdProvider::GoogleGemini format from tool_call_id.mbt
   let google_gemini_prefix = "gemini_"
   "\{google_gemini_prefix}\{tool_name}_\{call_index}"

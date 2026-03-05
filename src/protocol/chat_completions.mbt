@@ -89,18 +89,6 @@ pub fn tools_to_openai_json(
 // =============================================================================
 
 ///|
-/// Helper to set JSON field
-fn set_json_field(json : Json, key : String, value : Json) -> Json {
-  match json {
-    Object(map) => {
-      map[key] = value
-      Json::object(map)
-    }
-    _ => json
-  }
-}
-
-///|
 /// Build OpenAI Chat Completions request body
 pub fn build_openai_chat_body(
   model : String,
@@ -113,20 +101,25 @@ pub fn build_openai_chat_body(
   let mut body : Json = { "model": model, "messages": Json::array(msgs) }
   match max_tokens {
     Some(max) =>
-      body = set_json_field(body, "max_tokens", Json::number(max.to_double()))
+      body = @utils.set_json_field(
+        body,
+        "max_tokens",
+        Json::number(max.to_double()),
+      )
     None => ()
   }
   match temperature {
-    Some(temp) => body = set_json_field(body, "temperature", Json::number(temp))
+    Some(temp) =>
+      body = @utils.set_json_field(body, "temperature", Json::number(temp))
     None => ()
   }
   if tools.length() > 0 {
-    body = set_json_field(
+    body = @utils.set_json_field(
       body,
       "tools",
       Json::array(tools_to_openai_json(tools)),
     )
-    body = set_json_field(body, "tool_choice", Json::string("auto"))
+    body = @utils.set_json_field(body, "tool_choice", Json::string("auto"))
   }
   body
 }

@@ -70,15 +70,7 @@ pub fn AnthropicMessagesAccumulator::finish(
   self : AnthropicMessagesAccumulator,
 ) -> @types.ModelResponse {
   if self.stop_reason == "tool_use" && self.tool_calls.length() > 0 {
-    let calls : Array[@types.ToolCallRequest] = []
-    for tc in self.tool_calls {
-      let args_str = tc.arguments.to_string()
-      let arguments : Json = @json.parse(args_str) catch { _ => {} }
-      calls.push(
-        @types.ToolCallRequest::new(id=tc.id, name=tc.name, arguments~),
-      )
-    }
-    @types.ModelResponse::ToolCalls(calls)
+    @types.ModelResponse::ToolCalls(tool_calls_to_requests(self.tool_calls))
   } else {
     @types.ModelResponse::Text(self.text.to_string())
   }

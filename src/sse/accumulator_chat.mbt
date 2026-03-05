@@ -59,26 +59,7 @@ fn ChatCompletionsAccumulator::process_tool_call_delta(
   self : ChatCompletionsAccumulator,
   tc : Json,
 ) -> Unit {
-  match tc {
-    { "id": String(id), "function": { "name": String(name), .. }, .. } => {
-      // New tool call
-      let acc : ToolCallAcc = { id, name, arguments: StringBuilder::new() }
-      match tc {
-        { "function": { "arguments": String(args), .. }, .. } =>
-          acc.arguments.write_string(args)
-        _ => ()
-      }
-      self.tool_calls.push(acc)
-    }
-    { "function": { "arguments": String(args), .. }, .. } =>
-      // Append arguments to existing tool call
-      if self.tool_calls.length() > 0 {
-        self.tool_calls[self.tool_calls.length() - 1].arguments.write_string(
-          args,
-        )
-      }
-    _ => ()
-  }
+  process_openai_tool_call_delta(self.tool_calls, tc)
 }
 
 ///|
@@ -87,15 +68,7 @@ pub fn ChatCompletionsAccumulator::finish(
   self : ChatCompletionsAccumulator,
 ) -> @types.ModelResponse {
   if self.finish_reason == "tool_calls" && self.tool_calls.length() > 0 {
-    let calls : Array[@types.ToolCallRequest] = []
-    for tc in self.tool_calls {
-      let args_str = tc.arguments.to_string()
-      let arguments : Json = @json.parse(args_str) catch { _ => {} }
-      calls.push(
-        @types.ToolCallRequest::new(id=tc.id, name=tc.name, arguments~),
-      )
-    }
-    @types.ModelResponse::ToolCalls(calls)
+    @types.ModelResponse::ToolCalls(tool_calls_to_requests(self.tool_calls))
   } else {
     @types.ModelResponse::Text(self.text.to_string())
   }

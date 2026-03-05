@@ -2,34 +2,11 @@
 /// SSE parser functions
 
 ///|
-/// Split string into lines
-fn split_lines(s : String) -> Array[String] {
-  let lines : Array[String] = []
-  let buf = StringBuilder::new()
-  for c in s {
-    if c == '\n' {
-      lines.push(buf.to_string())
-      buf.reset()
-    } else if c == '\r' {
-      // Ignore CR (CRLF support)
-      continue
-    } else {
-      buf.write_char(c)
-    }
-  }
-  let last = buf.to_string()
-  if last.length() > 0 {
-    lines.push(last)
-  }
-  lines
-}
-
-///|
 /// Parse Chat Completions format JSONL
 /// Format: Each line is JSON (no event: header). Ends with [DONE].
 pub fn parse_chat_completions_jsonl(content : String) -> Array[SseEvent] raise {
   let events : Array[SseEvent] = []
-  let lines = split_lines(content)
+  let lines = @utils.split_lines(content)
   for line in lines {
     let trimmed = line.trim().to_string()
     if trimmed.length() == 0 || trimmed == "[DONE]" {
@@ -46,7 +23,7 @@ pub fn parse_chat_completions_jsonl(content : String) -> Array[SseEvent] raise {
 /// Format: Each line is {"event":"...","data":{...}}
 pub fn parse_event_stream_jsonl(content : String) -> Array[SseEvent] raise {
   let events : Array[SseEvent] = []
-  let lines = split_lines(content)
+  let lines = @utils.split_lines(content)
   for line in lines {
     let trimmed = line.trim().to_string()
     if trimmed.length() == 0 {

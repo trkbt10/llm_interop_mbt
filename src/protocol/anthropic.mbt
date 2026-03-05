@@ -138,18 +138,6 @@ pub fn tools_to_anthropic_json(
 // =============================================================================
 
 ///|
-/// Helper to set JSON field
-fn set_json_field_anthropic(json : Json, key : String, value : Json) -> Json {
-  match json {
-    Object(map) => {
-      map[key] = value
-      Json::object(map)
-    }
-    _ => json
-  }
-}
-
-///|
 /// Build Anthropic request body
 pub fn build_anthropic_body(
   model : String,
@@ -173,15 +161,15 @@ pub fn build_anthropic_body(
     "messages": Json::array(msgs),
   }
   if system_msg.length() > 0 {
-    body = set_json_field_anthropic(body, "system", Json::string(system_msg))
+    body = @utils.set_json_field(body, "system", Json::string(system_msg))
   }
   match temperature {
     Some(temp) =>
-      body = set_json_field_anthropic(body, "temperature", Json::number(temp))
+      body = @utils.set_json_field(body, "temperature", Json::number(temp))
     None => ()
   }
   if tools.length() > 0 {
-    body = set_json_field_anthropic(
+    body = @utils.set_json_field(
       body,
       "tools",
       Json::array(tools_to_anthropic_json(tools)),
