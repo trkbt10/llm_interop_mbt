@@ -227,3 +227,72 @@ test "common_patterns: handles common OpenAI ID patterns" {
     assert_eq(back_to_openai, openai_id)
   }
 }
+
+// =============================================================================
+// Edge cases (from TypeScript tests)
+// =============================================================================
+
+///|
+test "edge_cases: handles special characters in IDs" {
+  assert_eq(
+    anthropic_to_openai_chat_call_id("toolu_01-ABC.123"),
+    "call_01-ABC.123",
+  )
+  assert_eq(
+    openai_chat_to_anthropic_tool_use_id("call_xyz@789#"),
+    "toolu_xyz@789#",
+  )
+}
+
+///|
+test "edge_cases: handles very long IDs" {
+  let long_suffix = "a".repeat(100)
+  let claude_id = "toolu_\{long_suffix}"
+  let openai_id = anthropic_to_openai_chat_call_id(claude_id)
+  assert_eq(openai_id, "call_\{long_suffix}")
+  let back = openai_chat_to_anthropic_tool_use_id(openai_id)
+  assert_eq(back, claude_id)
+}
+
+///|
+test "edge_cases: handles unicode characters" {
+  // Note: MoonBit handles unicode natively in strings
+  assert_eq(
+    anthropic_to_openai_chat_call_id("toolu_工具123"),
+    "call_工具123",
+  )
+  assert_eq(
+    openai_chat_to_anthropic_tool_use_id("call_测试789"),
+    "toolu_测试789",
+  )
+}
+
+///|
+test "edge_cases: preserves unicode through roundtrip" {
+  let original = "toolu_日本語テスト"
+  let converted = anthropic_to_openai_chat_call_id(original)
+  let back = openai_chat_to_anthropic_tool_use_id(converted)
+  assert_eq(back, original)
+}
+
+// =============================================================================
+// Cross-provider roundtrip (all 4 providers)
+// =============================================================================
+
+///|
+test "cross_provider: Claude -> Chat -> Responses -> Claude preserves suffix" {
+  let original = "toolu_crosstest123"
+  let to_chat = anthropic_to_openai_chat_call_id(original)
+  let to_responses = openai_chat_to_openai_responses_call_id(to_chat)
+  let back_to_claude = openai_responses_to_anthropic_tool_use_id(to_responses)
+  assert_true(is_same_tool_call_id(original, back_to_claude))
+}
+
+///|
+test "cross_provider: Gemini -> Responses -> Chat -> Gemini preserves suffix" {
+  let original = "gemini_my_tool_5"
+  let to_responses = gemini_to_openai_responses_call_id(original)
+  let to_chat = openai_responses_to_openai_chat_call_id(to_responses)
+  let back_to_gemini = openai_chat_to_gemini_id(to_chat)
+  assert_true(is_same_tool_call_id(original, back_to_gemini))
+}
