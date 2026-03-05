@@ -198,9 +198,9 @@ test "interop: Anthropic tool call -> OpenAI Chat format" {
   match anthropic_response {
     @types.ModelResponse::ToolCalls(calls) => {
       // Convert to OpenAI Chat format IDs
-      let converted = convert_tool_call_request_ids(
+      let converted = @util.convert_tool_call_request_ids(
         calls,
-        ToolCallIdProvider::OpenAIChatCompletions,
+        @util.ToolCallIdProvider::OpenAIChatCompletions,
       )
       inspect(converted.length(), content="1")
       assert_true(converted[0].id.has_prefix("call_"))
@@ -218,9 +218,9 @@ test "interop: OpenAI Chat tool call -> Anthropic format" {
   )
   match openai_response {
     @types.ModelResponse::ToolCalls(calls) => {
-      let converted = convert_tool_call_request_ids(
+      let converted = @util.convert_tool_call_request_ids(
         calls,
-        ToolCallIdProvider::AnthropicClaude,
+        @util.ToolCallIdProvider::AnthropicClaude,
       )
       inspect(converted.length(), content="1")
       assert_true(converted[0].id.has_prefix("toolu_"))
@@ -237,9 +237,9 @@ test "interop: Gemini tool call -> OpenAI Responses format" {
   )
   match gemini_response {
     @types.ModelResponse::ToolCalls(calls) => {
-      let converted = convert_tool_call_request_ids(
+      let converted = @util.convert_tool_call_request_ids(
         calls,
-        ToolCallIdProvider::OpenAIResponsesApi,
+        @util.ToolCallIdProvider::OpenAIResponsesApi,
       )
       inspect(converted.length(), content="1")
       assert_true(converted[0].id.has_prefix("fc_"))
@@ -265,9 +265,9 @@ test "interop: all providers can be compared via is_same_tool_call_id" {
     _ => []
   }
   // Convert Anthropic to have same suffix as OpenAI Chat
-  let anthropic_converted = convert_tool_call_request_ids(
+  let anthropic_converted = @util.convert_tool_call_request_ids(
     anthropic_calls,
-    ToolCallIdProvider::OpenAIChatCompletions,
+    @util.ToolCallIdProvider::OpenAIChatCompletions,
   )
   // Now they have the same prefix format (call_)
   // Note: They won't have the same suffix since the original IDs are different
@@ -321,9 +321,9 @@ test "interop: Gemini multi tool calls -> Anthropic format" {
       assert_true(calls[0].id.has_prefix("gemini_get_weather_"))
       assert_true(calls[1].id.has_prefix("gemini_get_time_"))
       // Convert to Anthropic
-      let converted = convert_tool_call_request_ids(
+      let converted = @util.convert_tool_call_request_ids(
         calls,
-        ToolCallIdProvider::AnthropicClaude,
+        @util.ToolCallIdProvider::AnthropicClaude,
       )
       assert_true(converted[0].id.has_prefix("toolu_"))
       assert_true(converted[1].id.has_prefix("toolu_"))
@@ -359,9 +359,9 @@ test "full flow: parse Anthropic -> build message -> convert to OpenAI Chat" {
     ),
   ]
   // Convert all IDs to OpenAI Chat format
-  let openai_messages = convert_message_tool_call_ids(
+  let openai_messages = @util.convert_message_tool_call_ids(
     messages,
-    ToolCallIdProvider::OpenAIChatCompletions,
+    @util.ToolCallIdProvider::OpenAIChatCompletions,
   )
   // Verify conversions
   match openai_messages[1] {
@@ -415,9 +415,9 @@ test "full flow: parse OpenAI -> convert to Anthropic -> build body" {
     ),
   ]
   // Convert to Anthropic format
-  let anthropic_messages = convert_message_tool_call_ids(
+  let anthropic_messages = @util.convert_message_tool_call_ids(
     messages,
-    ToolCallIdProvider::AnthropicClaude,
+    @util.ToolCallIdProvider::AnthropicClaude,
   )
   // Build Anthropic body
   let body = @protocol.build_anthropic_body(

@@ -65,7 +65,10 @@ test "fixture: parse Claude text response" {
       return
     }
   }
-  let result = anthropic_response_to_responses(json, response_id="resp_test")
+  let result = @anthropic.anthropic_response_to_responses(
+    json,
+    response_id="resp_test",
+  )
   match result {
     { "status": String("completed"), "output": Array(output), .. } => {
       assert_true(output.length() > 0)
@@ -92,7 +95,10 @@ test "fixture: parse Claude tool_use and convert to Responses API" {
       return
     }
   }
-  let result = anthropic_response_to_responses(json, response_id="resp_test")
+  let result = @anthropic.anthropic_response_to_responses(
+    json,
+    response_id="resp_test",
+  )
   match result {
     { "output": Array(output), .. } => {
       // Should have message + function_call
@@ -130,7 +136,10 @@ test "fixture: parse Claude multi-tool and convert to Responses API" {
       return
     }
   }
-  let result = anthropic_response_to_responses(json, response_id="resp_test")
+  let result = @anthropic.anthropic_response_to_responses(
+    json,
+    response_id="resp_test",
+  )
   match result {
     { "output": Array(output), .. } => {
       // Count function calls
@@ -184,7 +193,7 @@ test "multi-turn: user -> assistant -> tool_result -> assistant" {
     ]),
   }
   // Convert to Anthropic format
-  let anthropic_req = responses_request_to_anthropic(user_request)
+  let anthropic_req = @anthropic.responses_request_to_anthropic(user_request)
   match anthropic_req {
     { "messages": Array(msgs), "tools": Array(tools), .. } => {
       assert_eq(msgs.length(), 1)
@@ -200,7 +209,7 @@ test "multi-turn: user -> assistant -> tool_result -> assistant" {
       return
     }
   }
-  let responses_result = anthropic_response_to_responses(
+  let responses_result = @anthropic.anthropic_response_to_responses(
     anthropic_response,
     response_id="resp_1",
   )
@@ -236,7 +245,9 @@ test "multi-turn: user -> assistant -> tool_result -> assistant" {
       },
     ]),
   }
-  let anthropic_req2 = responses_request_to_anthropic(followup_request)
+  let anthropic_req2 = @anthropic.responses_request_to_anthropic(
+    followup_request,
+  )
   match anthropic_req2 {
     { "messages": Array(msgs), .. } =>
       // Should have: user message, assistant with tool_calls, tool result
@@ -251,7 +262,7 @@ test "multi-turn: user -> assistant -> tool_result -> assistant" {
       return
     }
   }
-  let final_result = anthropic_response_to_responses(
+  let final_result = @anthropic.anthropic_response_to_responses(
     final_response,
     response_id="resp_2",
   )
@@ -300,7 +311,7 @@ test "multi-turn: tool call ID preserved through conversation" {
   }
   assert_true(original_claude_id.has_prefix("toolu_"))
   // Convert to Responses API
-  let responses_result = anthropic_response_to_responses(
+  let responses_result = @anthropic.anthropic_response_to_responses(
     anthropic_response,
     response_id="resp_1",
   )
@@ -318,7 +329,7 @@ test "multi-turn: tool call ID preserved through conversation" {
     _ => ()
   }
   // Verify ID suffix is preserved
-  assert_true(is_same_tool_call_id(original_claude_id, responses_call_id))
+  assert_true(@util.is_same_tool_call_id(original_claude_id, responses_call_id))
   // Now simulate sending tool result back
   let tool_result_request : Json = {
     "model": "claude-sonnet-4-20250514",
@@ -338,7 +349,9 @@ test "multi-turn: tool call ID preserved through conversation" {
     ]),
   }
   // Convert to Anthropic
-  let anthropic_req = responses_request_to_anthropic(tool_result_request)
+  let anthropic_req = @anthropic.responses_request_to_anthropic(
+    tool_result_request,
+  )
   // The tool_result should use the original Anthropic format ID
   match anthropic_req {
     { "messages": Array(msgs), .. } =>
@@ -351,8 +364,8 @@ test "multi-turn: tool call ID preserved through conversation" {
                 { "type": String("tool_result"), "tool_use_id": String(id), .. } =>
                   // The ID should be traceable back to original
                   assert_true(
-                    is_same_tool_call_id(original_claude_id, id) ||
-                    is_same_tool_call_id(responses_call_id, id),
+                    @util.is_same_tool_call_id(original_claude_id, id) ||
+                    @util.is_same_tool_call_id(responses_call_id, id),
                   )
                 _ => ()
               }

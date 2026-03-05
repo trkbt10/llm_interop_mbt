@@ -12,7 +12,7 @@ test "responses_to_anthropic: converts basic request" {
     "input": Json::array([{ "role": "user", "content": "Hello" }]),
     "max_output_tokens": 1024,
   }
-  let result = responses_request_to_anthropic(request)
+  let result = @anthropic.responses_request_to_anthropic(request)
   match result {
     {
       "model": String(model),
@@ -45,7 +45,7 @@ test "responses_to_anthropic: converts tools" {
       },
     ]),
   }
-  let result = responses_request_to_anthropic(request)
+  let result = @anthropic.responses_request_to_anthropic(request)
   match result {
     { "tools": Array(tools), .. } => {
       assert_eq(tools.length(), 1)
@@ -80,7 +80,7 @@ test "responses_to_anthropic: converts function_call_output to tool_result" {
       },
     ]),
   }
-  let result = responses_request_to_anthropic(request)
+  let result = @anthropic.responses_request_to_anthropic(request)
   match result {
     { "messages": Array(msgs), .. } =>
       // Should have: user message, assistant with tool_calls, tool result
@@ -103,7 +103,10 @@ test "anthropic_to_responses: converts text response" {
     "model": "claude-sonnet-4-20250514",
     "stop_reason": "end_turn",
   }
-  let result = anthropic_response_to_responses(response, response_id="resp_123")
+  let result = @anthropic.anthropic_response_to_responses(
+    response,
+    response_id="resp_123",
+  )
   match result {
     { "id": String(id), "status": String(status), "output": Array(output), .. } => {
       assert_eq(id, "resp_123")
@@ -141,7 +144,10 @@ test "anthropic_to_responses: converts tool_use to function_call" {
     "model": "claude-sonnet-4-20250514",
     "stop_reason": "tool_use",
   }
-  let result = anthropic_response_to_responses(response, response_id="resp_456")
+  let result = @anthropic.anthropic_response_to_responses(
+    response,
+    response_id="resp_456",
+  )
   match result {
     { "output": Array(output), .. } => {
       assert_true(output.length() > 0)
@@ -174,7 +180,7 @@ test "responses_to_gemini: converts basic request" {
     "input": Json::array([{ "role": "user", "content": "Hello" }]),
     "max_output_tokens": 2048,
   }
-  let result = responses_request_to_gemini(request)
+  let result = @gemini.responses_request_to_gemini(request)
   match result {
     { "contents": Array(contents), .. } => assert_true(contents.length() > 0)
     _ => fail("Missing contents")
@@ -198,7 +204,7 @@ test "gemini_to_responses: converts text response" {
       },
     ]),
   }
-  let result = gemini_response_to_responses(
+  let result = @gemini.gemini_response_to_responses(
     response,
     response_id="resp_789",
     model="gemini-2.0-flash",
@@ -241,7 +247,7 @@ test "gemini_to_responses: converts functionCall to function_call" {
       },
     ]),
   }
-  let result = gemini_response_to_responses(
+  let result = @gemini.gemini_response_to_responses(
     response,
     response_id="resp_func",
     model="gemini-2.0-flash",
@@ -287,7 +293,7 @@ test "full_pipeline: anthropic roundtrip preserves tool call IDs" {
     "stop_reason": "tool_use",
   }
   // 3. Convert back to Responses API
-  let responses_result = anthropic_response_to_responses(
+  let responses_result = @anthropic.anthropic_response_to_responses(
     anthropic_response,
     response_id="resp_test",
   )
@@ -297,7 +303,7 @@ test "full_pipeline: anthropic roundtrip preserves tool call IDs" {
       match output[0] {
         { "call_id": String(call_id), .. } =>
           // The suffix should be preserved through conversion
-          assert_true(is_same_tool_call_id(original_call_id, call_id))
+          assert_true(@util.is_same_tool_call_id(original_call_id, call_id))
         _ => fail("Missing call_id")
       }
     _ => fail("Missing output")

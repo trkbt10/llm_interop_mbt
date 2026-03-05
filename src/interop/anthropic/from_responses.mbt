@@ -15,7 +15,7 @@ pub fn responses_request_to_anthropic(request : Json) -> Json {
     { "input": Array(items), .. } => items
     _ => []
   }
-  let messages = responses_input_to_messages(input)
+  let messages = @harmony.responses_input_to_messages(input)
   let msgs_json = @protocol.messages_to_anthropic_json(messages)
   // Extract system message
   let system = @protocol.extract_system_message(messages)

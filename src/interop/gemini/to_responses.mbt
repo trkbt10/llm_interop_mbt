@@ -62,9 +62,13 @@ fn build_responses_output_from_gemini(parts : Array[Json]) -> Array[Json] {
         text_parts.push({ "type": "output_text", "text": text })
       { "functionCall": { "name": String(name), "args": args, .. }, .. } => {
         // Gemini doesn't have native IDs, generate synthetic one
-        let call_id = generate_gemini_tool_call_id(name, call_index)
+        let call_id = @interop_util.generate_gemini_tool_call_id(
+          name, call_index,
+        )
         // Convert to Responses API format
-        let responses_call_id = gemini_to_openai_responses_call_id(call_id)
+        let responses_call_id = @interop_util.gemini_to_openai_responses_call_id(
+          call_id,
+        )
         output.push({
           "type": "function_call",
           "id": responses_call_id,

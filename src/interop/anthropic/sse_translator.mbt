@@ -62,7 +62,7 @@ pub fn AnthropicToResponsesTranslator::translate(
           ..
         } => {
           // Convert Claude tool use ID to Responses API format
-          let call_id = anthropic_to_openai_responses_call_id(id)
+          let call_id = @interop_util.anthropic_to_openai_responses_call_id(id)
           self.current_tool_call_id = call_id
           self.current_tool_name = name
           self.output_index = self.output_index + 1

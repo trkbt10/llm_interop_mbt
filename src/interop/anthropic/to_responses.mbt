@@ -51,7 +51,7 @@ fn build_responses_output_from_anthropic(
         ..
       } => {
         // Convert Claude tool_use ID to Responses API call_id format
-        let call_id = anthropic_to_openai_responses_call_id(id)
+        let call_id = @interop_util.anthropic_to_openai_responses_call_id(id)
         output.push({
           "type": "function_call",
           "id": call_id,
