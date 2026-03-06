@@ -1,0 +1,15 @@
+{"event":"response.created","data":{"type":"response.created","response":{"id":"resp_multi_tools"},"sequence_number":0}}
+{"event":"response.in_progress","data":{"type":"response.in_progress","response":{"id":"resp_multi_tools","status":"in_progress"},"sequence_number":1}}
+{"event":"response.output_item.added","data":{"type":"response.output_item.added","item":{"id":"fc_search","type":"function_call","status":"in_progress","arguments":"","call_id":"fc_search","name":"search"},"output_index":0,"sequence_number":2}}
+{"event":"response.output_item.added","data":{"type":"response.output_item.added","item":{"id":"fc_calc","type":"function_call","status":"in_progress","arguments":"","call_id":"fc_calc","name":"calculate"},"output_index":1,"sequence_number":3}}
+{"event":"response.function_call_arguments.delta","data":{"type":"response.function_call_arguments.delta","delta":"{\"q\":\"","item_id":"fc_search","output_index":0,"sequence_number":4}}
+{"event":"response.function_call_arguments.delta","data":{"type":"response.function_call_arguments.delta","delta":"{\"expression\":\"","item_id":"fc_calc","output_index":1,"sequence_number":5}}
+{"event":"response.function_call_arguments.delta","data":{"type":"response.function_call_arguments.delta","delta":"Tokyo weather","item_id":"fc_search","output_index":0,"sequence_number":6}}
+{"event":"response.function_call_arguments.delta","data":{"type":"response.function_call_arguments.delta","delta":"2+2","item_id":"fc_calc","output_index":1,"sequence_number":7}}
+{"event":"response.function_call_arguments.delta","data":{"type":"response.function_call_arguments.delta","delta":"\"}","item_id":"fc_search","output_index":0,"sequence_number":8}}
+{"event":"response.function_call_arguments.delta","data":{"type":"response.function_call_arguments.delta","delta":"\"}","item_id":"fc_calc","output_index":1,"sequence_number":9}}
+{"event":"response.function_call_arguments.done","data":{"type":"response.function_call_arguments.done","arguments":"{\"q\":\"Tokyo weather\"}","item_id":"fc_search","output_index":0,"sequence_number":10}}
+{"event":"response.function_call_arguments.done","data":{"type":"response.function_call_arguments.done","arguments":"{\"expression\":\"2+2\"}","item_id":"fc_calc","output_index":1,"sequence_number":11}}
+{"event":"response.output_item.done","data":{"type":"response.output_item.done","item":{"id":"fc_search","type":"function_call","status":"completed","arguments":"{\"q\":\"Tokyo weather\"}","call_id":"fc_search","name":"search"},"output_index":0,"sequence_number":12}}
+{"event":"response.output_item.done","data":{"type":"response.output_item.done","item":{"id":"fc_calc","type":"function_call","status":"completed","arguments":"{\"expression\":\"2+2\"}","call_id":"fc_calc","name":"calculate"},"output_index":1,"sequence_number":13}}
+{"event":"response.completed","data":{"type":"response.completed","response":{"id":"resp_multi_tools","status":"completed"},"sequence_number":14}}

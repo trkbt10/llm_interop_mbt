@@ -6,11 +6,25 @@
 /// Accumulative: holds state while generating translation events
 pub struct HarmonyToResponsesTranslator {
   response_id : String
-  mut output_index : Int
+  mut next_output_index : Int
   mut has_emitted_created : Bool
-  mut current_tool_call_id : String
-  text_buffer : StringBuilder
+  mut has_emitted_in_progress : Bool
+  mut current_message_output_index : Int
+  mut current_message_item_id : String
+  mut current_message_text : String
+  mut has_open_message : Bool
+  tool_calls : Array[HarmonyToolCallState]
   reasoning_buffer : StringBuilder
+}
+
+///|
+struct HarmonyToolCallState {
+  key : String
+  output_index : Int
+  mut call_id : String
+  mut name : String
+  arguments : StringBuilder
+  mut completed : Bool
 }
 
 ///|
@@ -19,10 +33,14 @@ pub fn HarmonyToResponsesTranslator::new(
 ) -> HarmonyToResponsesTranslator {
   {
     response_id,
-    output_index: 0,
+    next_output_index: 0,
     has_emitted_created: false,
-    current_tool_call_id: "",
-    text_buffer: StringBuilder::new(),
+    has_emitted_in_progress: false,
+    current_message_output_index: -1,
+    current_message_item_id: "",
+    current_message_text: "",
+    has_open_message: false,
+    tool_calls: [],
     reasoning_buffer: StringBuilder::new(),
   }
 }
@@ -35,16 +53,7 @@ pub fn HarmonyToResponsesTranslator::translate(
   event : @sse.SseEvent,
 ) -> Array[(String, Json)] {
   let events : Array[(String, Json)] = []
-  // Emit response.created on first event
-  if not(self.has_emitted_created) {
-    events.push(
-      (
-        "response.created",
-        { "type": "response.created", "response": { "id": self.response_id } },
-      ),
-    )
-    self.has_emitted_created = true
-  }
+  self.emit_response_lifecycle(events)
   match event.data {
     { "choices": Array(choices), .. } =>
       if choices.length() > 0 {
@@ -55,14 +64,19 @@ pub fn HarmonyToResponsesTranslator::translate(
             match delta {
               { "content": String(content), .. } =>
                 if content.length() > 0 {
-                  self.text_buffer.write_string(content)
+                  self.close_open_tool_calls(events)
+                  self.ensure_message_started(events)
+                  self.current_message_text = self.current_message_text +
+                    content
                   events.push(
                     (
                       "response.output_text.delta",
                       {
                         "type": "response.output_text.delta",
                         "delta": content,
-                        "output_index": self.output_index,
+                        "content_index": 0,
+                        "item_id": self.current_message_item_id,
+                        "output_index": self.current_message_output_index,
                       },
                     ),
                   )
@@ -78,8 +92,8 @@ pub fn HarmonyToResponsesTranslator::translate(
             // Tool calls
             match delta {
               { "tool_calls": Array(tc_deltas), .. } =>
-                for tc in tc_deltas {
-                  let tc_events = self.translate_tool_call(tc)
+                for tc_delta in tc_deltas {
+                  let tc_events = self.translate_tool_call(tc_delta)
                   for e in tc_events {
                     events.push(e)
                   }
@@ -92,24 +106,19 @@ pub fn HarmonyToResponsesTranslator::translate(
         // Check finish_reason
         match choice {
           { "finish_reason": String("stop"), .. } => {
-            events.push(
-              (
-                "response.output_text.done",
-                {
-                  "type": "response.output_text.done",
-                  "text": self.text_buffer.to_string(),
-                  "output_index": self.output_index,
-                },
-              ),
-            )
+            self.close_open_tool_calls(events)
+            self.close_current_message(events)
             events.push(
               ("response.completed", { "type": "response.completed" }),
             )
           }
-          { "finish_reason": String("tool_calls"), .. } =>
+          { "finish_reason": String("tool_calls"), .. } => {
+            self.close_current_message(events)
+            self.close_open_tool_calls(events)
             events.push(
               ("response.completed", { "type": "response.completed" }),
             )
+          }
           _ => ()
         }
       }
@@ -124,62 +133,315 @@ fn HarmonyToResponsesTranslator::translate_tool_call(
   tc : Json,
 ) -> Array[(String, Json)] {
   let events : Array[(String, Json)] = []
-  match tc {
-    // New tool call with id and name
-    { "id": String(id), "function": { "name": String(name), .. }, .. } => {
-      self.current_tool_call_id = id
-      self.output_index = self.output_index + 1
-      events.push(
-        (
-          "response.output_item.added",
-          {
-            "type": "response.output_item.added",
-            "output_index": self.output_index,
-            "item": {
-              "type": "function_call",
-              "id": id,
-              "call_id": id,
-              "name": name,
-              "arguments": "",
-            },
+  self.close_current_message(events)
+  let key = harmony_tool_call_key(tc)
+  let state_index = self.find_tool_call_state(key, tc)
+  if state_index < 0 {
+    let output_index = self.next_output_index
+    self.next_output_index = self.next_output_index + 1
+    let call_id = harmony_tool_call_id(tc, self.response_id, output_index)
+    let name = harmony_tool_call_name(tc)
+    let state : HarmonyToolCallState = {
+      key,
+      output_index,
+      call_id,
+      name,
+      arguments: StringBuilder::new(),
+      completed: false,
+    }
+    self.tool_calls.push(state)
+    events.push(
+      (
+        "response.output_item.added",
+        {
+          "type": "response.output_item.added",
+          "output_index": output_index,
+          "item": {
+            "type": "function_call",
+            "id": call_id,
+            "call_id": call_id,
+            "name": name,
+            "arguments": "",
+            "status": "in_progress",
           },
-        ),
-      )
-      // If arguments are included in first chunk
-      match tc {
-        { "function": { "arguments": String(args), .. }, .. } =>
-          if args.length() > 0 {
-            events.push(
-              (
-                "response.function_call_arguments.delta",
-                {
-                  "type": "response.function_call_arguments.delta",
-                  "delta": args,
-                  "output_index": self.output_index,
-                },
-              ),
-            )
-          }
-        _ => ()
+        },
+      ),
+    )
+  }
+  let resolved_index = self.find_tool_call_state(key, tc)
+  if resolved_index >= 0 {
+    match tc {
+      { "id": String(id), .. } => self.tool_calls[resolved_index].call_id = id
+      _ => ()
+    }
+    match tc {
+      { "function": { "name": String(name), .. }, .. } =>
+        self.tool_calls[resolved_index].name = name
+      _ => ()
+    }
+    match tc {
+      { "function": { "arguments": String(args), .. }, .. } =>
+        if args.length() > 0 {
+          self.tool_calls[resolved_index].arguments.write_string(args)
+          events.push(
+            (
+              "response.function_call_arguments.delta",
+              {
+                "type": "response.function_call_arguments.delta",
+                "delta": args,
+                "item_id": self.tool_calls[resolved_index].call_id,
+                "output_index": self.tool_calls[resolved_index].output_index,
+              },
+            ),
+          )
+        }
+      _ => ()
+    }
+  }
+  events
+}
+
+///|
+fn HarmonyToResponsesTranslator::emit_response_lifecycle(
+  self : HarmonyToResponsesTranslator,
+  events : Array[(String, Json)],
+) -> Unit {
+  if not(self.has_emitted_created) {
+    events.push(
+      (
+        "response.created",
+        { "type": "response.created", "response": { "id": self.response_id } },
+      ),
+    )
+    self.has_emitted_created = true
+  }
+  if not(self.has_emitted_in_progress) {
+    events.push(
+      (
+        "response.in_progress",
+        {
+          "type": "response.in_progress",
+          "response": { "id": self.response_id, "status": "in_progress" },
+        },
+      ),
+    )
+    self.has_emitted_in_progress = true
+  }
+}
+
+///|
+fn HarmonyToResponsesTranslator::ensure_message_started(
+  self : HarmonyToResponsesTranslator,
+  events : Array[(String, Json)],
+) -> Unit {
+  if not(self.has_open_message) {
+    let output_index = self.next_output_index
+    self.next_output_index = self.next_output_index + 1
+    let item_id = self.make_message_item_id(output_index)
+    self.current_message_output_index = output_index
+    self.current_message_item_id = item_id
+    self.current_message_text = ""
+    self.has_open_message = true
+    events.push(
+      (
+        "response.output_item.added",
+        {
+          "type": "response.output_item.added",
+          "output_index": output_index,
+          "item": {
+            "id": item_id,
+            "type": "message",
+            "status": "in_progress",
+            "content": [],
+            "role": "assistant",
+          },
+        },
+      ),
+    )
+    events.push(
+      (
+        "response.content_part.added",
+        {
+          "type": "response.content_part.added",
+          "content_index": 0,
+          "item_id": item_id,
+          "output_index": output_index,
+          "part": {
+            "type": "output_text",
+            "annotations": [],
+            "logprobs": [],
+            "text": "",
+          },
+        },
+      ),
+    )
+  }
+}
+
+///|
+fn HarmonyToResponsesTranslator::close_current_message(
+  self : HarmonyToResponsesTranslator,
+  events : Array[(String, Json)],
+) -> Unit {
+  if not(self.has_open_message) {
+    return
+  }
+  let text = self.current_message_text
+  events.push(
+    (
+      "response.output_text.done",
+      {
+        "type": "response.output_text.done",
+        "text": text,
+        "content_index": 0,
+        "item_id": self.current_message_item_id,
+        "output_index": self.current_message_output_index,
+      },
+    ),
+  )
+  events.push(
+    (
+      "response.content_part.done",
+      {
+        "type": "response.content_part.done",
+        "content_index": 0,
+        "item_id": self.current_message_item_id,
+        "output_index": self.current_message_output_index,
+        "part": {
+          "type": "output_text",
+          "annotations": [],
+          "logprobs": [],
+          "text": text,
+        },
+      },
+    ),
+  )
+  events.push(
+    (
+      "response.output_item.done",
+      {
+        "type": "response.output_item.done",
+        "output_index": self.current_message_output_index,
+        "item": {
+          "id": self.current_message_item_id,
+          "type": "message",
+          "status": "completed",
+          "role": "assistant",
+          "content": [
+            { "type": "output_text", "text": text, "annotations": [] },
+          ],
+        },
+      },
+    ),
+  )
+  self.current_message_output_index = -1
+  self.current_message_item_id = ""
+  self.current_message_text = ""
+  self.has_open_message = false
+}
+
+///|
+fn HarmonyToResponsesTranslator::close_open_tool_calls(
+  self : HarmonyToResponsesTranslator,
+  events : Array[(String, Json)],
+) -> Unit {
+  for i in 0..<self.tool_calls.length() {
+    if self.tool_calls[i].completed {
+      continue
+    }
+    let arguments = self.tool_calls[i].arguments.to_string()
+    events.push(
+      (
+        "response.function_call_arguments.done",
+        {
+          "type": "response.function_call_arguments.done",
+          "arguments": arguments,
+          "item_id": self.tool_calls[i].call_id,
+          "output_index": self.tool_calls[i].output_index,
+        },
+      ),
+    )
+    events.push(
+      (
+        "response.output_item.done",
+        {
+          "type": "response.output_item.done",
+          "output_index": self.tool_calls[i].output_index,
+          "item": {
+            "id": self.tool_calls[i].call_id,
+            "type": "function_call",
+            "status": "completed",
+            "arguments": arguments,
+            "call_id": self.tool_calls[i].call_id,
+            "name": self.tool_calls[i].name,
+          },
+        },
+      ),
+    )
+    self.tool_calls[i].completed = true
+  }
+}
+
+///|
+fn HarmonyToResponsesTranslator::find_tool_call_state(
+  self : HarmonyToResponsesTranslator,
+  key : String,
+  tc : Json,
+) -> Int {
+  if key.length() > 0 {
+    for i in 0..<self.tool_calls.length() {
+      if self.tool_calls[i].key == key {
+        return i
       }
     }
-    // Arguments delta for existing tool call
-    { "function": { "arguments": String(args), .. }, .. } =>
-      if args.length() > 0 {
-        events.push(
-          (
-            "response.function_call_arguments.delta",
-            {
-              "type": "response.function_call_arguments.delta",
-              "delta": args,
-              "output_index": self.output_index,
-            },
-          ),
-        )
+  }
+  match tc {
+    { "id": String(id), .. } =>
+      for i in 0..<self.tool_calls.length() {
+        if self.tool_calls[i].call_id == id {
+          return i
+        }
       }
     _ => ()
   }
-  events
+  -1
+}
+
+///|
+fn HarmonyToResponsesTranslator::make_message_item_id(
+  self : HarmonyToResponsesTranslator,
+  output_index : Int,
+) -> String {
+  "msg_" + self.response_id + "_" + output_index.to_string()
+}
+
+///|
+fn harmony_tool_call_key(tc : Json) -> String {
+  match tc {
+    { "index": Number(n, ..), .. } => "index:" + n.to_int().to_string()
+    { "id": String(id), .. } => "id:" + id
+    _ => ""
+  }
+}
+
+///|
+fn harmony_tool_call_id(
+  tc : Json,
+  response_id : String,
+  output_index : Int,
+) -> String {
+  match tc {
+    { "id": String(id), .. } => id
+    _ => "fc_" + response_id + "_" + output_index.to_string()
+  }
+}
+
+///|
+fn harmony_tool_call_name(tc : Json) -> String {
+  match tc {
+    { "function": { "name": String(name), .. }, .. } => name
+    _ => ""
+  }
 }
 
 ///|

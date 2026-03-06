@@ -169,7 +169,6 @@ async fn run_server(gateway : @gw.Gateway, host : String, port : Int) -> Unit {
       @http.RequestMethod::Options => "OPTIONS"
       _ => "GET"
     }
-    // Handle CORS preflight
     if meth == "OPTIONS" {
       let headers : Map[String, String] = {}
       headers["Access-Control-Allow-Origin"] = "*"
@@ -199,7 +198,6 @@ async fn main {
     print_help()
     return
   }
-  // Load config
   let base_config = load_config(opts.config_path) catch {
     e => {
       println("Error: \{e}")
@@ -207,7 +205,6 @@ async fn main {
       return
     }
   }
-  // Override with CLI args
   let config : @gw.GatewayConfig = {
     ..base_config,
     server: { host: opts.host, port: opts.port },

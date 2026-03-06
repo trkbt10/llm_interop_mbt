@@ -6,8 +6,23 @@ endif
 
 # Provider for integration tests (anthropic, openai, groq)
 PROVIDER ?=
+MOON_TARGETS ?= native js
 
-.PHONY: test test-native test-js test-client test-integration
+.PHONY: check check-native check-js test test-native test-js test-client info info-native info-js verify test-integration
+
+# Default local verification targets. We intentionally avoid bare `moon check`
+# so MoonBit does not fall back to wasm-gc during routine development.
+# The native gateway CLI now lives in `cmd/gateway-native` as a separate module.
+check:
+	for target in $(MOON_TARGETS); do \
+		moon check --target $$target; \
+	done
+
+check-native:
+	moon check --target native
+
+check-js:
+	moon check --target js
 
 # Unit tests
 test:
@@ -23,6 +38,19 @@ test-js:
 test-client:
 	moon test --target native src/client
 	moon test --target js src/client
+
+info:
+	for target in $(MOON_TARGETS); do \
+		moon info --target $$target; \
+	done
+
+info-native:
+	moon info --target native
+
+info-js:
+	moon info --target js
+
+verify: check test info
 
 # Integration tests
 # Usage:

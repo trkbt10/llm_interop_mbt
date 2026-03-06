@@ -8,22 +8,30 @@ fn process_openai_tool_call_delta(
   tool_calls : Array[ToolCallAcc],
   tc : Json,
 ) -> Unit {
-  match tc {
-    { "id": String(id), "function": { "name": String(name), .. }, .. } => {
-      // New tool call
-      let acc : ToolCallAcc = { id, name, arguments: StringBuilder::new() }
-      match tc {
-        { "function": { "arguments": String(args), .. }, .. } =>
-          acc.arguments.write_string(args)
-        _ => ()
-      }
-      tool_calls.push(acc)
+  let index = match tc {
+    { "index": Number(n, ..), .. } => n.to_int()
+    _ => if tool_calls.length() > 0 { tool_calls.length() - 1 } else { 0 }
+  }
+  if index < 0 {
+    return
+  }
+  if tool_calls.length() <= index {
+    for _ in tool_calls.length()..<=index {
+      tool_calls.push({ id: "", name: "", arguments: StringBuilder::new() })
     }
+  }
+  match tc {
+    { "id": String(id), .. } => tool_calls[index].id = id
+    _ => ()
+  }
+  match tc {
+    { "function": { "name": String(name), .. }, .. } =>
+      tool_calls[index].name = name
+    _ => ()
+  }
+  match tc {
     { "function": { "arguments": String(args), .. }, .. } =>
-      // Append arguments to existing tool call
-      if tool_calls.length() > 0 {
-        tool_calls[tool_calls.length() - 1].arguments.write_string(args)
-      }
+      tool_calls[index].arguments.write_string(args)
     _ => ()
   }
 }

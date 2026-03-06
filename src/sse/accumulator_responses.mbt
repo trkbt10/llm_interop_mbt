@@ -7,12 +7,18 @@
 pub struct ResponsesApiAccumulator {
   text : StringBuilder
   function_calls : Array[ToolCallAcc]
+  output_index_map : Map[String, Int]
   mut completed : Bool
 }
 
 ///|
 pub fn ResponsesApiAccumulator::new() -> ResponsesApiAccumulator {
-  { text: StringBuilder::new(), function_calls: [], completed: false }
+  {
+    text: StringBuilder::new(),
+    function_calls: [],
+    output_index_map: {},
+    completed: false,
+  }
 }
 
 ///|
@@ -38,7 +44,13 @@ pub fn ResponsesApiAccumulator::feed(
             { "id": String(fid), .. } => fid
             _ => ""
           }
+          let call_index = self.function_calls.length()
           self.function_calls.push({ id, name, arguments: StringBuilder::new() })
+          match event.data {
+            { "output_index": Number(output_index, ..), .. } =>
+              self.output_index_map[output_index.to_int().to_string()] = call_index
+            _ => ()
+          }
         }
         _ => ()
       }
@@ -46,10 +58,67 @@ pub fn ResponsesApiAccumulator::feed(
       match event.data {
         { "delta": String(delta), .. } =>
           if self.function_calls.length() > 0 {
-            self.function_calls[self.function_calls.length() - 1].arguments.write_string(
-              delta,
-            )
+            let call_index = match event.data {
+              { "output_index": Number(output_index, ..), .. } =>
+                self.output_index_map.get(output_index.to_int().to_string())
+              _ => None
+            }
+            match call_index {
+              Some(i) => self.function_calls[i].arguments.write_string(delta)
+              None =>
+                self.function_calls[self.function_calls.length() - 1].arguments.write_string(
+                  delta,
+                )
+            }
           }
+        _ => ()
+      }
+    "response.output_item.done" =>
+      match event.data {
+        {
+          "item": {
+            "type": String("function_call"),
+            "name": String(name),
+            "arguments": String(arguments),
+            ..
+          } as item,
+          ..
+        } => {
+          let id = match item {
+            { "call_id": String(cid), .. } => cid
+            { "id": String(fid), .. } => fid
+            _ => ""
+          }
+          match event.data {
+            { "output_index": Number(output_index, ..), .. } => {
+              let key = output_index.to_int().to_string()
+              match self.output_index_map.get(key) {
+                Some(i) => {
+                  self.function_calls[i].id = id
+                  self.function_calls[i].name = name
+                  if self.function_calls[i].arguments.to_string().length() == 0 &&
+                    arguments.length() > 0 {
+                    self.function_calls[i].arguments.write_string(arguments)
+                  }
+                }
+                None => {
+                  let call_index = self.function_calls.length()
+                  let acc : ToolCallAcc = {
+                    id,
+                    name,
+                    arguments: StringBuilder::new(),
+                  }
+                  if arguments.length() > 0 {
+                    acc.arguments.write_string(arguments)
+                  }
+                  self.function_calls.push(acc)
+                  self.output_index_map[key] = call_index
+                }
+              }
+            }
+            _ => ()
+          }
+        }
         _ => ()
       }
     "response.completed" => self.completed = true

@@ -13,7 +13,7 @@ pub(all) struct SseEvent {
 ///|
 /// Tool call accumulation internal structure
 struct ToolCallAcc {
-  id : String
-  name : String
+  mut id : String
+  mut name : String
   arguments : StringBuilder
 }

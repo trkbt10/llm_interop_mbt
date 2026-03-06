@@ -10,6 +10,39 @@ let test_model : String = "gpt-4"
 ///|
 let test_model_harmony : String = "openai/gpt-oss-20b"
 
+///|
+fn read_harmony_fixture(path : String) -> String raise {
+  @fs.read_file_to_string(path)
+}
+
+///|
+fn translate_harmony_fixture(
+  path : String,
+  response_id : String,
+) -> Array[@sse.SseEvent] raise {
+  let content = read_harmony_fixture(path)
+  let events = @sse.parse_chat_completions_jsonl(content)
+  let translator = HarmonyToResponsesTranslator::new(response_id~)
+  let translated : Array[@sse.SseEvent] = []
+  for event in events {
+    for translated_event in translator.translate(event) {
+      translated.push({ event: translated_event.0, data: translated_event.1 })
+    }
+  }
+  translated
+}
+
+///|
+fn accumulate_translated_responses(
+  events : Array[@sse.SseEvent],
+) -> @types.ModelResponse {
+  let acc = @sse.ResponsesApiAccumulator::new()
+  for event in events {
+    acc.feed(event)
+  }
+  acc.finish()
+}
+
 // =============================================================================
 // Responses API Input -> Messages Tests
 // =============================================================================
@@ -206,9 +239,9 @@ test "HarmonyToResponsesTranslator: text streaming" {
     },
   }
   let events1 = translator.translate(event1)
-  // Should emit response.created
-  inspect(events1.length(), content="1")
+  inspect(events1.length(), content="2")
   inspect(events1[0].0, content="response.created")
+  inspect(events1[1].0, content="response.in_progress")
   // Content chunk
   let event2 : @sse.SseEvent = {
     event: "",
@@ -217,8 +250,10 @@ test "HarmonyToResponsesTranslator: text streaming" {
     },
   }
   let events2 = translator.translate(event2)
-  inspect(events2.length(), content="1")
-  inspect(events2[0].0, content="response.output_text.delta")
+  inspect(events2.length(), content="3")
+  inspect(events2[0].0, content="response.output_item.added")
+  inspect(events2[1].0, content="response.content_part.added")
+  inspect(events2[2].0, content="response.output_text.delta")
   // Final chunk with stop
   let event3 : @sse.SseEvent = {
     event: "",
@@ -229,10 +264,11 @@ test "HarmonyToResponsesTranslator: text streaming" {
     },
   }
   let events3 = translator.translate(event3)
-  // Should emit output_text.done and completed
-  inspect(events3.length(), content="2")
+  inspect(events3.length(), content="4")
   inspect(events3[0].0, content="response.output_text.done")
-  inspect(events3[1].0, content="response.completed")
+  inspect(events3[1].0, content="response.content_part.done")
+  inspect(events3[2].0, content="response.output_item.done")
+  inspect(events3[3].0, content="response.completed")
 }
 
 ///|
@@ -271,14 +307,95 @@ test "HarmonyToResponsesTranslator: tool call streaming" {
     },
   }
   let events2 = translator.translate(event2)
-  // Should emit output_item.added and arguments.delta
-  let mut found_added = false
-  for e in events2 {
-    if e.0 == "response.output_item.added" {
-      found_added = true
+  inspect(events2.length(), content="2")
+  inspect(events2[0].0, content="response.output_item.added")
+  inspect(events2[1].0, content="response.function_call_arguments.delta")
+  match events2[1].1 {
+    { "output_index": Number(output_index, ..), .. } =>
+      assert_eq(output_index.to_int(), 0)
+    _ => fail("Missing output_index")
+  }
+  let event3 : @sse.SseEvent = {
+    event: "",
+    data: {
+      "choices": Json::array([
+        { "index": 0, "delta": {}, "finish_reason": "tool_calls" },
+      ]),
+    },
+  }
+  let events3 = translator.translate(event3)
+  inspect(events3.length(), content="3")
+  inspect(events3[0].0, content="response.function_call_arguments.done")
+  inspect(events3[1].0, content="response.output_item.done")
+  inspect(events3[2].0, content="response.completed")
+}
+
+///|
+test "HarmonyToResponsesTranslator: fixture text stream round-trips to Responses API" {
+  let translated = translate_harmony_fixture(
+    "testdata/sse_fixtures/groq/harmony/text_stream.jsonl", test_response_id,
+  ) catch {
+    err => {
+      fail("Failed to translate fixture: " + err.to_string())
+      return
     }
   }
-  inspect(found_added, content="true")
+  let result = accumulate_translated_responses(translated)
+  match result {
+    @types.ModelResponse::Text(text) => assert_eq(text, "4")
+    _ => fail("Expected text result")
+  }
+}
+
+///|
+test "HarmonyToResponsesTranslator: fixture multi tool stream keeps chunk routing" {
+  let translated = translate_harmony_fixture(
+    "testdata/sse_fixtures/groq/harmony/multi_toolcall_stream.jsonl", test_response_id,
+  ) catch {
+    err => {
+      fail("Failed to translate fixture: " + err.to_string())
+      return
+    }
+  }
+  let mut output_item_adds = 0
+  let mut first_delta_count = 0
+  let mut second_delta_count = 0
+  for event in translated {
+    if event.event == "response.output_item.added" {
+      output_item_adds = output_item_adds + 1
+    }
+    if event.event == "response.function_call_arguments.delta" {
+      match event.data {
+        { "output_index": Number(output_index, ..), .. } =>
+          if output_index.to_int() == 0 {
+            first_delta_count = first_delta_count + 1
+          } else if output_index.to_int() == 1 {
+            second_delta_count = second_delta_count + 1
+          }
+        _ => ()
+      }
+    }
+  }
+  assert_eq(output_item_adds, 2)
+  assert_eq(first_delta_count, 3)
+  assert_eq(second_delta_count, 3)
+  let result = accumulate_translated_responses(translated)
+  match result {
+    @types.ModelResponse::ToolCalls(calls) => {
+      assert_eq(calls.length(), 2)
+      assert_eq(calls[0].name, "search")
+      assert_eq(calls[1].name, "calculate")
+      inspect(
+        calls[0].arguments.stringify(),
+        content="{\"q\":\"Tokyo weather\"}",
+      )
+      inspect(
+        calls[1].arguments.stringify(),
+        content="{\"expression\":\"2+2\"}",
+      )
+    }
+    _ => fail("Expected tool calls")
+  }
 }
 
 // =============================================================================

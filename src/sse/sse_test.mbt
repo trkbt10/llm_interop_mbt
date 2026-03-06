@@ -1,6 +1,11 @@
 ///|
 /// SSE package tests
 
+///|
+fn read_sse_fixture(path : String) -> String raise {
+  @fs.read_file_to_string(path)
+}
+
 // =============================================================================
 // Parser Tests
 // =============================================================================
@@ -148,6 +153,42 @@ test "accumulate_harmony handles tool calls" {
   }
 }
 
+///|
+test "accumulate_harmony fixture multi tool stream keeps arguments by index" {
+  let jsonl = read_sse_fixture(
+    "testdata/sse_fixtures/groq/harmony/multi_toolcall_stream.jsonl",
+  ) catch {
+    err => {
+      fail("Failed to read fixture: " + err.to_string())
+      return
+    }
+  }
+  let result = accumulate_harmony(jsonl) catch {
+    err => {
+      fail("Failed to accumulate harmony fixture: " + err.to_string())
+      return
+    }
+  }
+  match result {
+    @types.ModelResponse::ToolCalls(calls) => {
+      assert_eq(calls.length(), 2)
+      assert_eq(calls[0].id, "fc_search")
+      assert_eq(calls[0].name, "search")
+      inspect(
+        calls[0].arguments.stringify(),
+        content="{\"q\":\"Tokyo weather\"}",
+      )
+      assert_eq(calls[1].id, "fc_calc")
+      assert_eq(calls[1].name, "calculate")
+      inspect(
+        calls[1].arguments.stringify(),
+        content="{\"expression\":\"2+2\"}",
+      )
+    }
+    _ => fail("Expected ToolCalls response")
+  }
+}
+
 // =============================================================================
 // Responses API Accumulator Tests
 // =============================================================================
@@ -180,6 +221,42 @@ test "ResponsesApiAccumulator tool call stream" {
       inspect(calls.length(), content="1")
       inspect(calls[0].name, content="get_weather")
       inspect(calls[0].id, content="fc_001")
+    }
+    _ => fail("Expected ToolCalls response")
+  }
+}
+
+///|
+test "ResponsesApiAccumulator fixture multi tool stream routes deltas by output_index" {
+  let jsonl = read_sse_fixture(
+    "testdata/sse_fixtures/openai/responses/multi_toolcall_stream.jsonl",
+  ) catch {
+    err => {
+      fail("Failed to read fixture: " + err.to_string())
+      return
+    }
+  }
+  let result = accumulate_responses_api(jsonl) catch {
+    err => {
+      fail("Failed to accumulate responses fixture: " + err.to_string())
+      return
+    }
+  }
+  match result {
+    @types.ModelResponse::ToolCalls(calls) => {
+      assert_eq(calls.length(), 2)
+      assert_eq(calls[0].id, "fc_search")
+      assert_eq(calls[0].name, "search")
+      inspect(
+        calls[0].arguments.stringify(),
+        content="{\"q\":\"Tokyo weather\"}",
+      )
+      assert_eq(calls[1].id, "fc_calc")
+      assert_eq(calls[1].name, "calculate")
+      inspect(
+        calls[1].arguments.stringify(),
+        content="{\"expression\":\"2+2\"}",
+      )
     }
     _ => fail("Expected ToolCalls response")
   }
