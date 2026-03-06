@@ -28,7 +28,9 @@ fn parse_mode(json : Json) -> ConfigMode {
 }
 
 ///|
-fn parse_providers(json : Json) -> Map[String, ProviderConfig] raise GatewayError {
+fn parse_providers(
+  json : Json,
+) -> Map[String, ProviderConfig] raise GatewayError {
   let result : Map[String, ProviderConfig] = {}
   match json {
     { "providers": Object(obj), .. } =>
@@ -41,7 +43,10 @@ fn parse_providers(json : Json) -> Map[String, ProviderConfig] raise GatewayErro
 }
 
 ///|
-fn parse_provider(id : String, json : Json) -> ProviderConfig raise GatewayError {
+fn parse_provider(
+  id : String,
+  json : Json,
+) -> ProviderConfig raise GatewayError {
   let base_url = match json {
     { "baseUrl": String(s), .. } => s
     { "baseURL": String(s), .. } => s
@@ -52,8 +57,7 @@ fn parse_provider(id : String, json : Json) -> ProviderConfig raise GatewayError
     _ => ""
   }
   let auth = match json {
-    { "auth": String(s), .. } =>
-      AuthMode::from_string(s).unwrap_or(ApiKey)
+    { "auth": String(s), .. } => AuthMode::from_string(s).unwrap_or(ApiKey)
     _ => ApiKey
   }
   let api = match json {
@@ -132,7 +136,18 @@ fn parse_model(json : Json) -> ModelConfig raise GatewayError {
   }
   let headers = parse_headers(json)
   let compat = parse_compat(json)
-  { id, name, api, reasoning, input, cost, context_window, max_tokens, headers, compat }
+  {
+    id,
+    name,
+    api,
+    reasoning,
+    input,
+    cost,
+    context_window,
+    max_tokens,
+    headers,
+    compat,
+  }
 }
 
 ///|
@@ -197,7 +212,8 @@ fn parse_compat(json : Json) -> ModelCompatConfig {
         Some(True) => true
         _ => false
       }
-      let supports_usage_in_streaming = match obj.get("supportsUsageInStreaming") {
+      let supports_usage_in_streaming = match
+        obj.get("supportsUsageInStreaming") {
         Some(True) => true
         _ => false
       }
@@ -217,9 +233,8 @@ fn parse_compat(json : Json) -> ModelCompatConfig {
         Some(True) => true
         _ => false
       }
-      let requires_assistant_after_tool_result = match obj.get(
-          "requiresAssistantAfterToolResult",
-        ) {
+      let requires_assistant_after_tool_result = match
+        obj.get("requiresAssistantAfterToolResult") {
         Some(True) => true
         _ => false
       }
@@ -251,7 +266,9 @@ fn parse_compat(json : Json) -> ModelCompatConfig {
 
 ///|
 /// Parse legacy backends format for backwards compatibility
-fn parse_legacy_backends(json : Json) -> Array[BackendConfig] raise GatewayError {
+fn parse_legacy_backends(
+  json : Json,
+) -> Array[BackendConfig] raise GatewayError {
   match json {
     { "backends": Array(arr), .. } => {
       let result : Array[BackendConfig] = []

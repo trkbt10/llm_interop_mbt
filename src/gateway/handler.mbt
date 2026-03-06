@@ -34,7 +34,10 @@ pub(all) struct Gateway {
 }
 
 ///|
-pub fn Gateway::new(config : GatewayConfig, dialect : GatewaySurface) -> Gateway {
+pub fn Gateway::new(
+  config : GatewayConfig,
+  dialect : GatewaySurface,
+) -> Gateway {
   { config, dialect }
 }
 
@@ -81,7 +84,10 @@ pub fn Gateway::route(
 ) -> HttpResponse {
   // Health check
   if path == "/" || path == "/health" {
-    return HttpResponse::ok({ "status": "ok", "dialect": self.dialect.to_string() })
+    return HttpResponse::ok({
+      "status": "ok",
+      "dialect": self.dialect.to_string(),
+    })
   }
   // Chat completions endpoint
   if path == "/v1/chat/completions" && meth == "POST" {
@@ -96,7 +102,10 @@ pub fn Gateway::route(
 
 ///|
 /// Handle /v1/chat/completions
-fn Gateway::handle_chat_completions(self : Gateway, body : String) -> HttpResponse {
+fn Gateway::handle_chat_completions(
+  self : Gateway,
+  body : String,
+) -> HttpResponse {
   let json = @json.parse(body) catch {
     _ => return HttpResponse::error(400, "Invalid JSON body")
   }
@@ -108,7 +117,11 @@ fn Gateway::handle_chat_completions(self : Gateway, body : String) -> HttpRespon
   // Select backend
   let backend = match self.select_backend(model) {
     Some(b) => b
-    None => return HttpResponse::error(503, "No backend available for model: " + model)
+    None =>
+      return HttpResponse::error(
+        503,
+        "No backend available for model: " + model,
+      )
   }
   // For now, return a placeholder - actual proxy will be implemented
   HttpResponse::ok({

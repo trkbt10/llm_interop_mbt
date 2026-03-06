@@ -5,8 +5,10 @@
 /// Defaults
 let default_port : Int = 18080
 
+///|
 let default_host : String = "0.0.0.0"
 
+///|
 let default_config : String = "gateway-config.json"
 
 ///|
@@ -41,7 +43,9 @@ fn parse_args(args : Array[String]) -> CliOptions {
     } else if arg == "--config" || arg == "-c" {
       i = i + 1
       if i < args.length() {
-        return { ..parse_args_from(args, i + 1, { ..opts, config_path: args[i] }) }
+        return {
+          ..parse_args_from(args, i + 1, { ..opts, config_path: args[i] })
+        }
       }
     } else if arg == "--host" {
       i = i + 1
@@ -52,7 +56,7 @@ fn parse_args(args : Array[String]) -> CliOptions {
       i = i + 1
       if i < args.length() {
         let port = @strconv.parse_int(args[i]) catch { _ => opts.port }
-        return { ..parse_args_from(args, i + 1, { ..opts, port }) }
+        return { ..parse_args_from(args, i + 1, { ..opts, port, }) }
       }
     } else if arg == "--dialect" || arg == "-d" {
       i = i + 1
@@ -60,7 +64,7 @@ fn parse_args(args : Array[String]) -> CliOptions {
         let dialect = @gw.GatewaySurface::from_string(args[i]).unwrap_or(
           @gw.GatewaySurface::OpenAI,
         )
-        return { ..parse_args_from(args, i + 1, { ..opts, dialect }) }
+        return { ..parse_args_from(args, i + 1, { ..opts, dialect, }) }
       }
     }
     i = i + 1
@@ -94,7 +98,7 @@ fn parse_args_from(
       i = i + 1
       if i < args.length() {
         let port = @strconv.parse_int(args[i]) catch { _ => result.port }
-        result = { ..result, port }
+        result = { ..result, port, }
       }
     } else if arg == "--dialect" || arg == "-d" {
       i = i + 1
@@ -102,7 +106,7 @@ fn parse_args_from(
         let dialect = @gw.GatewaySurface::from_string(args[i]).unwrap_or(
           result.dialect,
         )
-        result = { ..result, dialect }
+        result = { ..result, dialect, }
       }
     }
     i = i + 1
@@ -120,8 +124,7 @@ fn print_help() -> Unit {
 ///|
 fn load_config(path : String) -> @gw.GatewayConfig raise @gw.GatewayError {
   let text = @fs.read_file_to_string(path) catch {
-    _ =>
-      raise @gw.GatewayError::ConfigError("Failed to read config: " + path)
+    _ => raise @gw.GatewayError::ConfigError("Failed to read config: " + path)
   }
   let json = @json.parse(text) catch {
     _ => raise @gw.GatewayError::ConfigError("Invalid JSON in config")
@@ -130,11 +133,7 @@ fn load_config(path : String) -> @gw.GatewayConfig raise @gw.GatewayError {
 }
 
 ///|
-async fn run_server(
-  gateway : @gw.Gateway,
-  host : String,
-  port : Int,
-) -> Unit {
+async fn run_server(gateway : @gw.Gateway, host : String, port : Int) -> Unit {
   let addr_str = host + ":" + port.to_string()
   let addr = @socket.Addr::parse(addr_str) catch {
     _ => {
