@@ -4,7 +4,7 @@
 ///|
 /// Create default ToolCallRequest
 pub fn ToolCallRequest::default() -> ToolCallRequest {
-  { id: "", name: "", arguments: Json::null() }
+  { id: "", name: "", arguments: Json::null(), kind: ToolCallKind::Function }
 }
 
 ///|
@@ -14,7 +14,65 @@ pub fn ToolCallRequest::new(
   name~ : String,
   arguments~ : Json,
 ) -> ToolCallRequest {
-  { id, name, arguments }
+  { id, name, arguments, kind: ToolCallKind::Function }
+}
+
+///|
+/// Create web search ToolCallRequest
+pub fn ToolCallRequest::web_search(
+  id~ : String,
+  query? : String? = None,
+  queries? : Array[String]? = None,
+) -> ToolCallRequest {
+  let arguments : Map[String, Json] = {}
+  match query {
+    Some(q) => arguments["query"] = Json::string(q)
+    None => ()
+  }
+  match queries {
+    Some(qs) =>
+      arguments["queries"] = Json::array(qs.map(fn(q) { Json::string(q) }))
+    None => ()
+  }
+  {
+    id,
+    name: "web_search",
+    arguments: Json::object(arguments),
+    kind: ToolCallKind::WebSearch,
+  }
+}
+
+///|
+/// Create URL citation annotation
+pub fn ResponseAnnotation::url_citation(
+  url~ : String,
+  start_index~ : Int,
+  end_index~ : Int,
+  title? : String? = None,
+) -> ResponseAnnotation {
+  UrlCitation(title~, url~, start_index~, end_index~)
+}
+
+///|
+/// Create tool call trace
+pub fn ToolCallTrace::new(
+  id~ : String,
+  name~ : String,
+  kind~ : ToolCallKind,
+  statuses~ : Array[ToolCallStatus],
+  arguments~ : Json,
+) -> ToolCallTrace {
+  { id, name, kind, statuses, arguments }
+}
+
+///|
+/// Create rich text response
+pub fn RichTextResponse::new(
+  content~ : String,
+  annotations? : Array[ResponseAnnotation] = [],
+  tool_traces? : Array[ToolCallTrace] = [],
+) -> RichTextResponse {
+  { content, annotations, tool_traces }
 }
 
 ///|
@@ -24,7 +82,52 @@ pub fn ToolDefinition::new(
   description~ : String,
   parameters~ : Json,
 ) -> ToolDefinition {
-  { name, description, parameters, schema: None, metadata: {} }
+  {
+    kind: ToolDefinitionKind::Function,
+    name,
+    description,
+    parameters,
+    schema: None,
+    metadata: {},
+  }
+}
+
+///|
+/// Create OpenAI web_search_preview tool
+pub fn ToolDefinition::web_search_preview(
+  search_context_size? : String? = None,
+  user_location_country? : String? = None,
+) -> ToolDefinition {
+  {
+    kind: ToolDefinitionKind::WebSearchPreview(
+      search_context_size~,
+      user_location_country~,
+    ),
+    name: "web_search",
+    description: "Search the web",
+    parameters: Json::object({}),
+    schema: None,
+    metadata: {},
+  }
+}
+
+///|
+/// Create OpenAI web_search_preview_2025_03_11 tool
+pub fn ToolDefinition::web_search_preview_2025_03_11(
+  search_context_size? : String? = None,
+  user_location_country? : String? = None,
+) -> ToolDefinition {
+  {
+    kind: ToolDefinitionKind::WebSearchPreview20250311(
+      search_context_size~,
+      user_location_country~,
+    ),
+    name: "web_search",
+    description: "Search the web",
+    parameters: Json::object({}),
+    schema: None,
+    metadata: {},
+  }
 }
 
 ///|

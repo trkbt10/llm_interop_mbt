@@ -262,6 +262,60 @@ test "ResponsesApiAccumulator fixture multi tool stream routes deltas by output_
   }
 }
 
+///|
+test "ResponsesApiAccumulator fixture web search stream returns final text" {
+  let jsonl = read_sse_fixture(
+    "testdata/sse_fixtures/openai/responses/websearch_stream.jsonl",
+  ) catch {
+    err => {
+      fail("Failed to read fixture: " + err.to_string())
+      return
+    }
+  }
+  let result = accumulate_responses_api(jsonl) catch {
+    err => {
+      fail("Failed to accumulate websearch fixture: " + err.to_string())
+      return
+    }
+  }
+  match result {
+    @types.ModelResponse::RichText(rich) => {
+      assert_true(rich.content.contains("weather in Tokyo"))
+      assert_true(rich.content.contains("Mostly sunny"))
+      assert_eq(rich.tool_traces.length(), 1)
+    }
+    _ => fail("Expected Text response")
+  }
+}
+
+///|
+test "ResponsesApiAccumulator preserves annotations and web search statuses" {
+  let jsonl =
+    #| {"event":"response.output_item.added","data":{"type":"response.output_item.added","item":{"id":"ws_001","type":"web_search_call","status":"in_progress","action":{"type":"search"}},"output_index":0,"sequence_number":1}}
+    #| {"event":"response.web_search_call.in_progress","data":{"type":"response.web_search_call.in_progress","item_id":"ws_001","output_index":0,"sequence_number":2}}
+    #| {"event":"response.web_search_call.searching","data":{"type":"response.web_search_call.searching","item_id":"ws_001","output_index":0,"sequence_number":3}}
+    #| {"event":"response.web_search_call.completed","data":{"type":"response.web_search_call.completed","item_id":"ws_001","output_index":0,"sequence_number":4}}
+    #| {"event":"response.output_item.done","data":{"type":"response.output_item.done","item":{"id":"ws_001","type":"web_search_call","status":"completed","action":{"type":"search","query":"current weather in Tokyo"}},"output_index":0,"sequence_number":5}}
+    #| {"event":"response.output_text.delta","data":{"type":"response.output_text.delta","delta":"Weather details","sequence_number":6}}
+    #| {"event":"response.output_text.annotation.added","data":{"type":"response.output_text.annotation.added","annotation":{"type":"url_citation","url":"https://example.com/weather","title":"Weather Source","start_index":0,"end_index":7},"sequence_number":7}}
+    #| {"event":"response.completed","data":{"type":"response.completed","sequence_number":8}}
+  let result = accumulate_responses_api(jsonl)
+  match result {
+    @types.ModelResponse::RichText(rich) => {
+      assert_eq(rich.content, "Weather details")
+      assert_eq(rich.annotations.length(), 1)
+      assert_eq(rich.tool_traces.length(), 1)
+      assert_eq(rich.tool_traces[0].statuses.length(), 3)
+      match rich.tool_traces[0].arguments {
+        { "query": String(query), .. } =>
+          assert_eq(query, "current weather in Tokyo")
+        _ => fail("Expected query")
+      }
+    }
+    _ => fail("Expected RichText response")
+  }
+}
+
 // =============================================================================
 // Anthropic Messages Accumulator Tests
 // =============================================================================

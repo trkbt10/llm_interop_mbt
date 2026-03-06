@@ -4,6 +4,7 @@ import {
   "moonbitlang/x/fs" @fs,
   "trkbt10/llm_interop/src/types",
   "trkbt10/llm_interop/src/protocol",
+  "trkbt10/llm_interop/src/sse" @sse,
   "trkbt10/llm_interop/src/utils" @utils,
   "trkbt10/llm_interop/src/interop/util" @util,
   "trkbt10/llm_interop/src/interop/anthropic" @anthropic,

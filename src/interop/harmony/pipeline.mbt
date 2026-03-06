@@ -24,10 +24,35 @@ pub fn responses_request_to_chat_completions(request : Json) -> Json {
   match request {
     { "tools": Array(tools), .. } =>
       if tools.length() > 0 {
-        body["tools"] = Json::array(tools)
+        body["tools"] = Json::array(convert_responses_tools_to_chat(tools))
         body["tool_choice"] = Json::string("auto")
       }
     _ => ()
   }
   Json::object(body)
+}
+
+///|
+fn convert_responses_tools_to_chat(tools : Array[Json]) -> Array[Json] {
+  let result : Array[Json] = []
+  for tool in tools {
+    match tool {
+      { "type": String("web_search_preview"), .. }
+      | { "type": String("web_search_preview_2025_03_11"), .. } =>
+        result.push({
+          "type": "function",
+          "function": {
+            "name": "web_search",
+            "description": "Search the web",
+            "parameters": {
+              "type": "object",
+              "properties": { "query": { "type": "string" } },
+              "required": Json::array([Json::string("query")]),
+            },
+          },
+        })
+      _ => result.push(tool)
+    }
+  }
+  result
 }

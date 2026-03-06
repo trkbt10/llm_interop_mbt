@@ -1,0 +1,134 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "trkbt10/llm_interop/src/types"
+
+// Values
+pub fn build_json_schema(type_~ : String, properties~ : Map[String, Json], required~ : Array[String]) -> Json
+
+// Errors
+
+// Types and methods
+pub(all) enum ModelMessage {
+  System(String)
+  User(content~ : String, name~ : String?)
+  Assistant(content~ : String, tool_calls~ : Array[ToolCallRequest]?)
+  ToolResult(tool_call_id~ : String, content~ : String)
+}
+
+pub(all) enum ModelResponse {
+  Text(String)
+  RichText(RichTextResponse)
+  ToolCalls(Array[ToolCallRequest])
+  ModelError(String)
+  RateLimited(retry_after~ : Int)
+}
+
+pub(all) enum ParameterType {
+  String
+  Number
+  Boolean
+  Object
+  Array
+}
+
+pub(all) enum ResponseAnnotation {
+  UrlCitation(title~ : String?, url~ : String, start_index~ : Int, end_index~ : Int)
+}
+pub fn ResponseAnnotation::url_citation(url~ : String, start_index~ : Int, end_index~ : Int, title? : String?) -> Self
+pub impl Eq for ResponseAnnotation
+pub impl Show for ResponseAnnotation
+
+pub(all) struct RichTextResponse {
+  content : String
+  annotations : Array[ResponseAnnotation]
+  tool_traces : Array[ToolCallTrace]
+}
+pub fn RichTextResponse::new(content~ : String, annotations? : Array[ResponseAnnotation], tool_traces? : Array[ToolCallTrace]) -> Self
+
+pub(all) enum ToolCallKind {
+  Function
+  WebSearch
+}
+pub impl Eq for ToolCallKind
+pub impl Show for ToolCallKind
+
+pub(all) struct ToolCallRequest {
+  id : String
+  name : String
+  arguments : Json
+  kind : ToolCallKind
+}
+pub fn ToolCallRequest::default() -> Self
+pub fn ToolCallRequest::new(id~ : String, name~ : String, arguments~ : Json) -> Self
+pub fn ToolCallRequest::web_search(id~ : String, query? : String?, queries? : Array[String]?) -> Self
+
+pub(all) enum ToolCallStatus {
+  InProgress
+  Searching
+  Completed
+}
+pub impl Eq for ToolCallStatus
+pub impl Show for ToolCallStatus
+
+pub(all) struct ToolCallTrace {
+  id : String
+  name : String
+  kind : ToolCallKind
+  statuses : Array[ToolCallStatus]
+  arguments : Json
+}
+pub fn ToolCallTrace::new(id~ : String, name~ : String, kind~ : ToolCallKind, statuses~ : Array[ToolCallStatus], arguments~ : Json) -> Self
+
+pub(all) struct ToolDefinition {
+  kind : ToolDefinitionKind
+  name : String
+  description : String
+  parameters : Json
+  schema : Json?
+  metadata : Map[String, String]
+}
+pub fn ToolDefinition::new(name~ : String, description~ : String, parameters~ : Json) -> Self
+pub fn ToolDefinition::web_search_preview(search_context_size? : String?, user_location_country? : String?) -> Self
+pub fn ToolDefinition::web_search_preview_2025_03_11(search_context_size? : String?, user_location_country? : String?) -> Self
+
+pub(all) enum ToolDefinitionKind {
+  Function
+  WebSearchPreview(search_context_size~ : String?, user_location_country~ : String?)
+  WebSearchPreview20250311(search_context_size~ : String?, user_location_country~ : String?)
+}
+pub impl Eq for ToolDefinitionKind
+pub impl Show for ToolDefinitionKind
+
+pub(all) struct ToolParam {
+  name : String
+  description : String
+  param_type : ToolParamType
+  required : Bool
+  default_value : Json?
+}
+
+pub(all) enum ToolParamType {
+  String_
+  Number
+  Integer
+  Boolean
+  Array_(ToolParamType)
+  Object(Map[String, ToolParamType])
+}
+
+pub(all) struct ToolParameter {
+  name : String
+  param_type : ParameterType
+  description : String
+  required : Bool
+}
+
+pub(all) enum ToolResult {
+  Success(content~ : String)
+  Error(message~ : String)
+  RequiresAction(next_tool~ : String, arguments~ : Json)
+}
+
+// Type aliases
+
+// Traits
+

@@ -79,6 +79,9 @@ fn convert_responses_tools_to_anthropic(tools : Array[Json]) -> Array[Json] {
           "input_schema": parameters,
         })
       }
+      { "type": String("web_search_preview"), .. }
+      | { "type": String("web_search_preview_2025_03_11"), .. } =>
+        result.push(web_search_tool_for_anthropic())
       _ => ()
     }
   }
@@ -95,6 +98,19 @@ fn convert_tool_choice_to_anthropic(tool_choice : Json) -> Json? {
     { "type": String("function"), "name": String(name), .. } =>
       Some({ "type": "tool", "name": name })
     _ => None
+  }
+}
+
+///|
+fn web_search_tool_for_anthropic() -> Json {
+  {
+    "name": "web_search",
+    "description": "Search the web",
+    "input_schema": {
+      "type": "object",
+      "properties": { "query": { "type": "string" } },
+      "required": Json::array([Json::string("query")]),
+    },
   }
 }
 

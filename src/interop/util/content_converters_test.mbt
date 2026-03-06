@@ -181,6 +181,30 @@ test "function_call: converts to tool_use format" {
 }
 
 ///|
+test "web_search_call: converts to web_search tool_use format" {
+  let block : Json = {
+    "type": "web_search_call",
+    "id": "ws_01GHI789",
+    "action": { "type": "search", "query": "current weather in Tokyo" },
+  }
+  let result = convert_responses_function_call_to_claude(block)
+  match result {
+    {
+      "type": String("tool_use"),
+      "id": String(id),
+      "name": String(name),
+      "input": { "query": String(query), .. },
+      ..
+    } => {
+      assert_true(id.has_prefix("toolu_"))
+      assert_eq(name, "web_search")
+      assert_eq(query, "current weather in Tokyo")
+    }
+    _ => fail("Expected tool_use format")
+  }
+}
+
+///|
 test "function_call_output: converts to tool_result format" {
   let block : Json = {
     "type": "function_call_output",

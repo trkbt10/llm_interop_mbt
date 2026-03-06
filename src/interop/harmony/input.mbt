@@ -60,6 +60,21 @@ pub fn responses_input_to_messages(
           @types.ToolCallRequest::new(id~, name~, arguments~),
         )
       }
+      // Built-in web search call (Responses API format)
+      { "type": String("web_search_call"), "id": String(id), .. } => {
+        let query = match item {
+          { "action": { "query": String(q), .. }, .. } => Some(q)
+          _ => None
+        }
+        let queries = match item {
+          { "action": { "queries": Array(values), .. }, .. } =>
+            Some(json_array_to_strings(values))
+          _ => None
+        }
+        pending_tool_calls.push(
+          @types.ToolCallRequest::web_search(id~, query~, queries~),
+        )
+      }
       // Function call output (Responses API format)
       {
         "type": String("function_call_output"),
@@ -94,4 +109,16 @@ pub fn responses_input_to_messages(
     )
   }
   messages
+}
+
+///|
+fn json_array_to_strings(items : Array[Json]) -> Array[String] {
+  let result : Array[String] = []
+  for item in items {
+    match item {
+      String(value) => result.push(value)
+      _ => ()
+    }
+  }
+  result
 }

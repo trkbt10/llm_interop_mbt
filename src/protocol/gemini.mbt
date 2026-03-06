@@ -126,10 +126,29 @@ pub fn gemini_content_to_json(content : GeminiContent) -> Json {
 ///|
 /// Convert ToolDefinition to Gemini function declaration JSON
 pub fn tool_to_gemini_json(tool : @types.ToolDefinition) -> Json {
+  match tool.kind {
+    @types.ToolDefinitionKind::Function =>
+      {
+        "name": tool.name,
+        "description": tool.description,
+        "parameters": tool.parameters,
+      }
+    @types.ToolDefinitionKind::WebSearchPreview(..)
+    | @types.ToolDefinitionKind::WebSearchPreview20250311(..) =>
+      web_search_tool_to_gemini_json()
+  }
+}
+
+///|
+fn web_search_tool_to_gemini_json() -> Json {
   {
-    "name": tool.name,
-    "description": tool.description,
-    "parameters": tool.parameters,
+    "name": "web_search",
+    "description": "Search the web",
+    "parameters": {
+      "type": "object",
+      "properties": { "query": { "type": "string" } },
+      "required": Json::array([Json::string("query")]),
+    },
   }
 }
 

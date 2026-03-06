@@ -1,0 +1,40 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "trkbt10/llm_interop/src/interop/harmony"
+
+import {
+  "trkbt10/llm_interop/src/sse",
+  "trkbt10/llm_interop/src/types",
+}
+
+// Values
+pub fn model_response_to_responses_json(@types.ModelResponse, response_id~ : String, model~ : String) -> Json
+
+pub fn responses_input_to_messages(Array[Json]) -> Array[@types.ModelMessage]
+
+pub fn responses_request_to_chat_completions(Json) -> Json
+
+// Errors
+
+// Types and methods
+pub struct HarmonyToResponsesTranslator {
+  response_id : String
+  mut next_output_index : Int
+  mut has_emitted_created : Bool
+  mut has_emitted_in_progress : Bool
+  mut current_message_output_index : Int
+  mut current_message_item_id : String
+  mut current_message_text : String
+  mut has_open_message : Bool
+  tool_calls : Array[HarmonyToolCallState]
+  reasoning_buffer : StringBuilder
+}
+pub fn HarmonyToResponsesTranslator::get_reasoning(Self) -> String
+pub fn HarmonyToResponsesTranslator::new(response_id~ : String) -> Self
+pub fn HarmonyToResponsesTranslator::translate(Self, @sse.SseEvent) -> Array[(String, Json)]
+
+type HarmonyToolCallState
+
+// Type aliases
+
+// Traits
+

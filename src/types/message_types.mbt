@@ -1,4 +1,48 @@
 ///|
+/// Tool call kind
+pub(all) enum ToolCallKind {
+  Function
+  WebSearch
+} derive(Show, Eq)
+
+///|
+/// Output text annotation
+pub(all) enum ResponseAnnotation {
+  UrlCitation(
+    title~ : String?,
+    url~ : String,
+    start_index~ : Int,
+    end_index~ : Int
+  )
+} derive(Show, Eq)
+
+///|
+/// Tool call status
+pub(all) enum ToolCallStatus {
+  InProgress
+  Searching
+  Completed
+} derive(Show, Eq)
+
+///|
+/// Tool call trace metadata
+pub(all) struct ToolCallTrace {
+  id : String
+  name : String
+  kind : ToolCallKind
+  statuses : Array[ToolCallStatus]
+  arguments : Json
+}
+
+///|
+/// Rich text response metadata
+pub(all) struct RichTextResponse {
+  content : String
+  annotations : Array[ResponseAnnotation]
+  tool_traces : Array[ToolCallTrace]
+}
+
+///|
 /// Message-related types
 
 ///|
@@ -10,6 +54,8 @@ pub(all) struct ToolCallRequest {
   name : String
   /// Arguments (JSON format)
   arguments : Json
+  /// Tool call kind
+  kind : ToolCallKind
 }
 
 ///|
@@ -41,6 +87,8 @@ pub(all) enum ToolResult {
 pub(all) enum ModelResponse {
   /// Text response
   Text(String)
+  /// Text response with annotations or tool traces
+  RichText(RichTextResponse)
   /// Tool call request
   ToolCalls(Array[ToolCallRequest])
   /// Error

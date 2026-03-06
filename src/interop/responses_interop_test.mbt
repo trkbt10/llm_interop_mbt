@@ -62,6 +62,30 @@ test "responses_to_anthropic: converts tools" {
 }
 
 ///|
+test "responses_to_anthropic: converts web search builtin tool" {
+  let request : Json = {
+    "model": "claude-sonnet-4-20250514",
+    "input": Json::array([{ "role": "user", "content": "Search the web" }]),
+    "tools": Json::array([
+      { "type": "web_search_preview", "search_context_size": "medium" },
+    ]),
+  }
+  let result = @anthropic.responses_request_to_anthropic(request)
+  match result {
+    { "tools": Array(tools), .. } =>
+      match tools[0] {
+        {
+          "name": String(name),
+          "input_schema": { "properties": Object(_), .. },
+          ..
+        } => assert_eq(name, "web_search")
+        _ => fail("Expected web_search tool")
+      }
+    _ => fail("Missing tools in result")
+  }
+}
+
+///|
 test "responses_to_anthropic: converts function_call_output to tool_result" {
   let request : Json = {
     "model": "claude-sonnet-4-20250514",
@@ -169,6 +193,41 @@ test "anthropic_to_responses: converts tool_use to function_call" {
   }
 }
 
+///|
+test "anthropic_to_responses: converts web_search tool_use to web_search_call" {
+  let response : Json = {
+    "id": "msg_web_1",
+    "type": "message",
+    "role": "assistant",
+    "content": Json::array([
+      {
+        "type": "tool_use",
+        "id": "toolu_01WEB123",
+        "name": "web_search",
+        "input": { "query": "current weather in Tokyo" },
+      },
+    ]),
+    "model": "claude-sonnet-4-20250514",
+    "stop_reason": "tool_use",
+  }
+  let result = @anthropic.anthropic_response_to_responses(
+    response,
+    response_id="resp_web_1",
+  )
+  match result {
+    { "output": Array(output), .. } =>
+      match output[0] {
+        {
+          "type": String("web_search_call"),
+          "action": { "query": String(query), .. },
+          ..
+        } => assert_eq(query, "current weather in Tokyo")
+        _ => fail("Expected web_search_call")
+      }
+    _ => fail("Response format mismatch")
+  }
+}
+
 // =============================================================================
 // Responses API -> Gemini Conversion
 // =============================================================================
@@ -184,6 +243,28 @@ test "responses_to_gemini: converts basic request" {
   match result {
     { "contents": Array(contents), .. } => assert_true(contents.length() > 0)
     _ => fail("Missing contents")
+  }
+}
+
+///|
+test "responses_to_gemini: converts web search builtin tool" {
+  let request : Json = {
+    "model": "gemini-2.0-flash",
+    "input": Json::array([{ "role": "user", "content": "Search the web" }]),
+    "tools": Json::array([{ "type": "web_search_preview_2025_03_11" }]),
+  }
+  let result = @gemini.responses_request_to_gemini(request)
+  match result {
+    { "tools": Array(tools), .. } =>
+      match tools[0] {
+        { "functionDeclarations": Array(decls), .. } =>
+          match decls[0] {
+            { "name": String(name), .. } => assert_eq(name, "web_search")
+            _ => fail("Expected function declaration")
+          }
+        _ => fail("Expected Gemini tools")
+      }
+    _ => fail("Missing Gemini tools")
   }
 }
 
@@ -266,6 +347,45 @@ test "gemini_to_responses: converts functionCall to function_call" {
           assert_true(call_id.has_prefix("fc_"))
         }
         _ => fail("Function call mismatch")
+      }
+    _ => fail("Response mismatch")
+  }
+}
+
+///|
+test "gemini_to_responses: converts web_search functionCall to web_search_call" {
+  let response : Json = {
+    "candidates": Json::array([
+      {
+        "content": {
+          "role": "model",
+          "parts": Json::array([
+            {
+              "functionCall": {
+                "name": "web_search",
+                "args": { "query": "latest TypeScript features" },
+              },
+            },
+          ]),
+        },
+        "finishReason": "STOP",
+      },
+    ]),
+  }
+  let result = @gemini.gemini_response_to_responses(
+    response,
+    response_id="resp_web_gemini",
+    model="gemini-2.0-flash",
+  )
+  match result {
+    { "output": Array(output), .. } =>
+      match output[0] {
+        {
+          "type": String("web_search_call"),
+          "action": { "query": String(query), .. },
+          ..
+        } => assert_eq(query, "latest TypeScript features")
+        _ => fail("Expected web_search_call")
       }
     _ => fail("Response mismatch")
   }

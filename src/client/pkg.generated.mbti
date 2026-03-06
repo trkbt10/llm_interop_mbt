@@ -1,0 +1,45 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "trkbt10/llm_interop/src/client"
+
+import {
+  "trkbt10/llm_interop/src/types",
+}
+
+// Values
+pub async fn chat(ClientConfig, Array[@types.ModelMessage], tools? : Array[@types.ToolDefinition]) -> @types.ModelResponse raise ClientError
+
+pub async fn chat_stream(ClientConfig, Array[@types.ModelMessage], tools? : Array[@types.ToolDefinition], on_event? : (StreamEvent) -> Unit) -> @types.ModelResponse raise ClientError
+
+// Errors
+pub suberror ClientError {
+  HttpError(String)
+  ParseError(String)
+  ApiError(code~ : Int, message~ : String)
+}
+pub impl Show for ClientError
+
+// Types and methods
+pub(all) struct ClientConfig {
+  provider : Provider
+  api_key : String
+  model : String
+  max_tokens : Int
+  temperature : Double?
+}
+pub fn ClientConfig::new(Provider, String, String, max_tokens? : Int, temperature? : Double?) -> Self
+
+pub(all) enum Provider {
+  Anthropic
+  OpenAI
+  OpenAICompatible(base_url~ : String)
+}
+
+pub(all) struct StreamEvent {
+  event : String
+  data : Json
+}
+
+// Type aliases
+
+// Traits
+

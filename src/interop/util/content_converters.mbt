@@ -169,6 +169,18 @@ pub fn convert_responses_function_call_to_claude(block : Json) -> Json {
       let input : Json = @json.parse(args) catch { _ => {} }
       { "type": "tool_use", "id": id, "name": name, "input": input }
     }
+    { "type": String("web_search_call"), "id": String(id), .. } => {
+      let input = match block {
+        { "action": { "query": String(query), .. }, .. } => { "query": query }
+        _ => {}
+      }
+      {
+        "type": "tool_use",
+        "id": openai_responses_to_anthropic_tool_use_id(id),
+        "name": "web_search",
+        "input": input,
+      }
+    }
     _ => { "type": "tool_use", "id": "", "name": "", "input": {} }
   }
 }

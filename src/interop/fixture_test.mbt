@@ -53,6 +53,30 @@ fn claude_tool_result_continuation_fixture() -> String raise {
 }
 
 // =============================================================================
+// OpenAI Responses Web Search Fixtures
+// =============================================================================
+
+///|
+/// OpenAI Responses web search non-stream fixture
+fn openai_web_search_nonstream_fixture() -> Json raise {
+  @json.parse(
+    @fs.read_file_to_string(
+      "testdata/sse_fixtures/openai/responses/websearch_nonstream.json",
+    ),
+  )
+}
+
+///|
+/// OpenAI Responses web search stream fixture accumulated to final response
+fn openai_web_search_stream_fixture() -> @types.ModelResponse raise {
+  @sse.accumulate_responses_api(
+    @fs.read_file_to_string(
+      "testdata/sse_fixtures/openai/responses/websearch_stream.jsonl",
+    ),
+  )
+}
+
+// =============================================================================
 // Test: Parse Claude Fixtures and Convert to Responses API
 // =============================================================================
 
@@ -165,6 +189,150 @@ test "fixture: parse Claude multi-tool and convert to Responses API" {
       assert_true(found_calculate)
     }
     _ => fail("Response format mismatch")
+  }
+}
+
+///|
+test "fixture: parse OpenAI Responses web search non-stream response" {
+  let fixture = openai_web_search_nonstream_fixture() catch {
+    err => {
+      fail("Failed to load OpenAI web search fixture: " + err.to_string())
+      return
+    }
+  }
+  let result = @protocol.parse_responses_api_response(fixture)
+  match result {
+    @types.ModelResponse::RichText(rich) => {
+      assert_true(rich.content.contains("weather in Tokyo"))
+      assert_eq(rich.annotations.length(), 0)
+      assert_eq(rich.tool_traces.length(), 1)
+      assert_eq(rich.tool_traces[0].kind, @types.ToolCallKind::WebSearch)
+      match rich.tool_traces[0].arguments {
+        { "query": String(query), .. } =>
+          assert_eq(query, "current weather in Tokyo")
+        _ => fail("Expected web search query")
+      }
+    }
+    _ => fail("Expected RichText response")
+  }
+}
+
+///|
+test "fixture: convert OpenAI Responses web search request to Anthropic" {
+  let fixture = openai_web_search_nonstream_fixture() catch {
+    err => {
+      fail("Failed to load OpenAI web search fixture: " + err.to_string())
+      return
+    }
+  }
+  let request : Json = match fixture {
+    { "tools": Array(tools), .. } =>
+      {
+        "model": "claude-sonnet-4-20250514",
+        "input": Json::array([
+          { "role": "user", "content": "What's the weather in Tokyo?" },
+        ]),
+        "tools": Json::array(tools),
+      }
+    _ => {
+      fail("Fixture did not contain tools")
+      return
+    }
+  }
+  let result = @anthropic.responses_request_to_anthropic(request)
+  match result {
+    { "tools": Array(tools), .. } =>
+      match tools[0] {
+        {
+          "name": String(name),
+          "input_schema": {
+            "properties": { "query": { "type": String("string"), .. }, .. },
+            ..
+          },
+          ..
+        } => assert_eq(name, "web_search")
+        _ => fail("Expected Anthropic synthetic web_search tool")
+      }
+    _ => fail("Expected Anthropic tools")
+  }
+}
+
+///|
+test "fixture: convert OpenAI Responses web search request to Gemini" {
+  let fixture = openai_web_search_nonstream_fixture() catch {
+    err => {
+      fail("Failed to load OpenAI web search fixture: " + err.to_string())
+      return
+    }
+  }
+  let request : Json = match fixture {
+    { "tools": Array(tools), .. } =>
+      {
+        "model": "gemini-2.0-flash",
+        "input": Json::array([
+          { "role": "user", "content": "What's the weather in Tokyo?" },
+        ]),
+        "tools": Json::array(tools),
+      }
+    _ => {
+      fail("Fixture did not contain tools")
+      return
+    }
+  }
+  let result = @gemini.responses_request_to_gemini(request)
+  match result {
+    { "tools": Array(tools), .. } =>
+      match tools[0] {
+        { "functionDeclarations": Array(decls), .. } =>
+          match decls[0] {
+            {
+              "name": String(name),
+              "parameters": {
+                "properties": { "query": { "type": String("string"), .. }, .. },
+                ..
+              },
+              ..
+            } => assert_eq(name, "web_search")
+            _ => fail("Expected Gemini web_search declaration")
+          }
+        _ => fail("Expected Gemini tools")
+      }
+    _ => fail("Expected Gemini tools")
+  }
+}
+
+///|
+test "fixture: OpenAI Responses web search stream preserves statuses" {
+  let result = openai_web_search_stream_fixture() catch {
+    err => {
+      fail("Failed to accumulate OpenAI web search stream: " + err.to_string())
+      return
+    }
+  }
+  match result {
+    @types.ModelResponse::RichText(rich) => {
+      assert_true(rich.content.contains("weather in Tokyo"))
+      assert_eq(rich.tool_traces.length(), 1)
+      assert_eq(rich.tool_traces[0].statuses.length(), 3)
+      assert_eq(
+        rich.tool_traces[0].statuses[0],
+        @types.ToolCallStatus::InProgress,
+      )
+      assert_eq(
+        rich.tool_traces[0].statuses[1],
+        @types.ToolCallStatus::Searching,
+      )
+      assert_eq(
+        rich.tool_traces[0].statuses[2],
+        @types.ToolCallStatus::Completed,
+      )
+      match rich.tool_traces[0].arguments {
+        { "query": String(query), .. } =>
+          assert_eq(query, "current weather in Tokyo")
+        _ => fail("Expected web search query")
+      }
+    }
+    _ => fail("Expected RichText response")
   }
 }
 

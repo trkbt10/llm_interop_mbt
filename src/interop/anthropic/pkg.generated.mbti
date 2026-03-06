@@ -1,0 +1,38 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "trkbt10/llm_interop/src/interop/anthropic"
+
+import {
+  "trkbt10/llm_interop/src/sse",
+  "trkbt10/llm_interop/src/types",
+}
+
+// Values
+pub fn anthropic_response_to_responses(Json, response_id~ : String) -> Json
+
+pub fn anthropic_to_responses_full(Json, response_id~ : String) -> Json
+
+pub fn parse_anthropic_as_model_response(Json) -> @types.ModelResponse
+
+pub fn responses_request_to_anthropic(Json) -> Json
+
+pub fn responses_request_to_anthropic_stream(Json) -> Json
+
+// Errors
+
+// Types and methods
+pub struct AnthropicToResponsesTranslator {
+  response_id : String
+  mut output_index : Int
+  mut has_emitted_created : Bool
+  mut current_tool_call_id : String
+  mut current_tool_name : String
+  text_buffer : StringBuilder
+}
+pub fn AnthropicToResponsesTranslator::get_text(Self) -> String
+pub fn AnthropicToResponsesTranslator::new(response_id~ : String) -> Self
+pub fn AnthropicToResponsesTranslator::translate(Self, @sse.SseEvent) -> Array[(String, Json)]
+
+// Type aliases
+
+// Traits
+

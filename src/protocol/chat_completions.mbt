@@ -62,12 +62,34 @@ pub fn messages_to_openai_json(
 ///|
 /// Convert ToolDefinition to JSON (OpenAI Chat Completions format)
 pub fn tool_to_openai_json(tool : @types.ToolDefinition) -> Json {
+  match tool.kind {
+    @types.ToolDefinitionKind::Function =>
+      {
+        "type": "function",
+        "function": {
+          "name": tool.name,
+          "description": tool.description,
+          "parameters": tool.parameters,
+        },
+      }
+    @types.ToolDefinitionKind::WebSearchPreview(..)
+    | @types.ToolDefinitionKind::WebSearchPreview20250311(..) =>
+      web_search_tool_to_openai_json()
+  }
+}
+
+///|
+fn web_search_tool_to_openai_json() -> Json {
   {
     "type": "function",
     "function": {
-      "name": tool.name,
-      "description": tool.description,
-      "parameters": tool.parameters,
+      "name": "web_search",
+      "description": "Search the web",
+      "parameters": {
+        "type": "object",
+        "properties": { "query": { "type": "string" } },
+        "required": Json::array([Json::string("query")]),
+      },
     },
   }
 }

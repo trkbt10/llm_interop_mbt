@@ -8,6 +8,7 @@ test "ToolCallRequest::new creates instance" {
   })
   inspect(call.id, content="call_123")
   inspect(call.name, content="get_weather")
+  assert_eq(call.kind, ToolCallKind::Function)
 }
 
 ///|
@@ -24,6 +25,26 @@ test "ToolDefinition::new creates instance" {
   })
   inspect(tool.name, content="search")
   inspect(tool.description, content="Search the web")
+  assert_eq(tool.kind, ToolDefinitionKind::Function)
+}
+
+///|
+test "ToolDefinition::web_search_preview creates builtin instance" {
+  let tool = ToolDefinition::web_search_preview(
+    search_context_size=Some("medium"),
+    user_location_country=Some("US"),
+  )
+  inspect(tool.name, content="web_search")
+  match tool.kind {
+    ToolDefinitionKind::WebSearchPreview(
+      search_context_size~,
+      user_location_country~
+    ) => {
+      assert_eq(search_context_size, Some("medium"))
+      assert_eq(user_location_country, Some("US"))
+    }
+    _ => fail("Expected WebSearchPreview kind")
+  }
 }
 
 ///|

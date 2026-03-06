@@ -1,0 +1,165 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "trkbt10/llm_interop/src/gateway"
+
+// Values
+pub fn add_cors_headers(HttpResponse) -> HttpResponse
+
+pub fn config_to_json(GatewayConfig) -> Json
+
+pub fn parse_config(Json) -> GatewayConfig raise GatewayError
+
+// Errors
+pub(all) suberror GatewayError {
+  ConfigError(String)
+  BackendNotFound(String)
+  InvalidRequest(String)
+  UpstreamError(code~ : Int, message~ : String)
+  NetworkError(String)
+}
+pub impl Show for GatewayError
+
+// Types and methods
+pub(all) enum AuthMode {
+  ApiKey
+  AwsSdk
+  OAuth
+  Token
+}
+pub fn AuthMode::from_string(String) -> Self?
+pub impl Eq for AuthMode
+pub impl Show for AuthMode
+
+pub(all) struct BackendConfig {
+  id : String
+  provider : ProviderConfig
+  weight : Int
+}
+pub impl Show for BackendConfig
+
+pub(all) enum ConfigMode {
+  Merge
+  Replace
+}
+pub impl Eq for ConfigMode
+pub impl Show for ConfigMode
+
+pub(all) struct Gateway {
+  config : GatewayConfig
+  dialect : GatewaySurface
+}
+pub fn Gateway::new(GatewayConfig, GatewaySurface) -> Self
+pub fn Gateway::route(Self, String, String, String) -> HttpResponse
+pub fn Gateway::select_backend(Self, String) -> BackendConfig?
+
+pub(all) struct GatewayConfig {
+  mode : ConfigMode
+  providers : Map[String, ProviderConfig]
+  backends : Array[BackendConfig]
+  server : ServerConfig
+}
+pub fn GatewayConfig::default() -> Self
+pub impl Show for GatewayConfig
+
+pub(all) enum GatewaySurface {
+  OpenAI
+  Anthropic
+}
+pub fn GatewaySurface::from_string(String) -> Self?
+pub fn GatewaySurface::to_string(Self) -> String
+pub impl Eq for GatewaySurface
+pub impl Show for GatewaySurface
+
+pub(all) struct HttpResponse {
+  status : Int
+  headers : Map[String, String]
+  body : String
+}
+pub fn HttpResponse::error(Int, String) -> Self
+pub fn HttpResponse::json(Int, Json) -> Self
+pub fn HttpResponse::ok(Json) -> Self
+pub impl Show for HttpResponse
+
+pub(all) enum InputModality {
+  Text
+  Image
+}
+pub impl Eq for InputModality
+pub impl Show for InputModality
+
+pub(all) enum ModelApi {
+  OpenAICompletions
+  OpenAIResponses
+  AnthropicMessages
+  GoogleGenerativeAI
+  GithubCopilot
+  BedrockConverseStream
+  Ollama
+}
+pub fn ModelApi::from_string(String) -> Self?
+pub fn ModelApi::to_string(Self) -> String
+pub impl Eq for ModelApi
+pub impl Show for ModelApi
+
+pub(all) struct ModelCompatConfig {
+  supports_store : Bool
+  supports_developer_role : Bool
+  supports_reasoning_effort : Bool
+  supports_usage_in_streaming : Bool
+  supports_strict_mode : Bool
+  max_tokens_field : String
+  thinking_format : String
+  requires_tool_result_name : Bool
+  requires_assistant_after_tool_result : Bool
+  requires_thinking_as_text : Bool
+  requires_mistral_tool_ids : Bool
+}
+pub fn ModelCompatConfig::default() -> Self
+pub impl Show for ModelCompatConfig
+
+pub(all) struct ModelConfig {
+  id : String
+  name : String
+  api : ModelApi?
+  reasoning : Bool
+  input : Array[InputModality]
+  cost : TokenCost
+  context_window : Int
+  max_tokens : Int
+  headers : Map[String, String]
+  compat : ModelCompatConfig
+}
+pub fn ModelConfig::new(String) -> Self
+pub impl Show for ModelConfig
+
+pub(all) struct ProviderConfig {
+  id : String
+  base_url : String
+  api_key : String
+  auth : AuthMode
+  api : ModelApi
+  headers : Map[String, String]
+  auth_header : Bool
+  models : Array[ModelConfig]
+}
+pub fn ProviderConfig::new(String, ModelApi) -> Self
+pub impl Show for ProviderConfig
+
+pub(all) struct ServerConfig {
+  port : Int
+  host : String
+}
+pub impl Show for ServerConfig
+
+pub(all) struct TokenCost {
+  input : Double
+  output : Double
+  cache_read : Double
+  cache_write : Double
+}
+pub fn TokenCost::default() -> Self
+pub impl Show for TokenCost
+
+// Type aliases
+
+// Traits
+

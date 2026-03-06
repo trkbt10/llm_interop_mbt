@@ -63,8 +63,24 @@ fn convert_responses_tools_to_gemini(tools : Array[Json]) -> Array[Json] {
           "parameters": parameters,
         })
       }
+      { "type": String("web_search_preview"), .. }
+      | { "type": String("web_search_preview_2025_03_11"), .. } =>
+        result.push(web_search_tool_for_gemini())
       _ => ()
     }
   }
   result
+}
+
+///|
+fn web_search_tool_for_gemini() -> Json {
+  {
+    "name": "web_search",
+    "description": "Search the web",
+    "parameters": {
+      "type": "object",
+      "properties": { "query": { "type": "string" } },
+      "required": Json::array([Json::string("query")]),
+    },
+  }
 }

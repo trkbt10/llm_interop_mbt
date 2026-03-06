@@ -49,18 +49,26 @@ fn build_responses_output_from_anthropic(
         "name": String(name),
         "input": input,
         ..
-      } => {
-        // Convert Claude tool_use ID to Responses API call_id format
-        let call_id = @interop_util.anthropic_to_openai_responses_call_id(id)
-        output.push({
-          "type": "function_call",
-          "id": call_id,
-          "call_id": call_id,
-          "name": name,
-          "arguments": input.stringify(),
-          "status": "completed",
-        })
-      }
+      } =>
+        if name == "web_search" {
+          output.push({
+            "type": "web_search_call",
+            "id": @interop_util.anthropic_to_openai_responses_call_id(id),
+            "status": "completed",
+            "action": build_web_search_action(input),
+          })
+        } else {
+          // Convert Claude tool_use ID to Responses API call_id format
+          let call_id = @interop_util.anthropic_to_openai_responses_call_id(id)
+          output.push({
+            "type": "function_call",
+            "id": call_id,
+            "call_id": call_id,
+            "name": name,
+            "arguments": input.stringify(),
+            "status": "completed",
+          })
+        }
       _ => ()
     }
   }
@@ -80,6 +88,16 @@ fn build_responses_output_from_anthropic(
     return message_output
   }
   output
+}
+
+///|
+fn build_web_search_action(input : Json) -> Json {
+  let action : Map[String, Json] = { "type": Json::string("search") }
+  match input {
+    { "query": String(query), .. } => action["query"] = Json::string(query)
+    _ => ()
+  }
+  Json::object(action)
 }
 
 ///|

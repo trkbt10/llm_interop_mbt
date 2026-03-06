@@ -111,6 +111,38 @@ test "responses_input_to_messages: function_call and output" {
 }
 
 ///|
+test "responses_input_to_messages: web_search_call becomes builtin tool call" {
+  let input : Array[Json] = [
+    { "role": "user", "content": "Find current weather" },
+    {
+      "type": "web_search_call",
+      "id": "ws_123",
+      "status": "completed",
+      "action": {
+        "type": "search",
+        "query": "current weather in Tokyo",
+        "queries": Json::array([Json::string("current weather in Tokyo")]),
+      },
+    },
+  ]
+  let messages = responses_input_to_messages(input)
+  inspect(messages.length(), content="2")
+  match messages[1] {
+    @types.ModelMessage::Assistant(tool_calls=Some(calls), ..) => {
+      assert_eq(calls.length(), 1)
+      assert_eq(calls[0].kind, @types.ToolCallKind::WebSearch)
+      assert_eq(calls[0].name, "web_search")
+      match calls[0].arguments {
+        { "query": String(query), .. } =>
+          assert_eq(query, "current weather in Tokyo")
+        _ => fail("Expected query argument")
+      }
+    }
+    _ => fail("Expected Assistant with web search tool call")
+  }
+}
+
+///|
 test "responses_input_to_messages: multiple parallel tool calls" {
   let input : Array[Json] = [
     { "role": "user", "content": "Get time and weather" },
@@ -214,6 +246,91 @@ test "model_response_to_responses_json: tool calls" {
           inspect(call_id, content="fc_001")
         }
         _ => fail("Expected function_call output")
+      }
+    }
+    _ => fail("Expected valid response JSON")
+  }
+}
+
+///|
+test "model_response_to_responses_json: web search tool call" {
+  let calls : Array[@types.ToolCallRequest] = [
+    @types.ToolCallRequest::web_search(
+      id="ws_001",
+      query=Some("current weather in Tokyo"),
+    ),
+  ]
+  let response = @types.ModelResponse::ToolCalls(calls)
+  let json = model_response_to_responses_json(
+    response,
+    response_id=test_response_id,
+    model=test_model,
+  )
+  match json {
+    { "output": Array(output), .. } =>
+      match output[0] {
+        {
+          "type": String("web_search_call"),
+          "id": String(id),
+          "action": { "type": String("search"), "query": String(query), .. },
+          ..
+        } => {
+          assert_eq(id, "ws_001")
+          assert_eq(query, "current weather in Tokyo")
+        }
+        _ => fail("Expected web_search_call output")
+      }
+    _ => fail("Expected valid response JSON")
+  }
+}
+
+///|
+test "model_response_to_responses_json: rich text preserves annotations and web search traces" {
+  let response = @types.ModelResponse::RichText(
+    @types.RichTextResponse::new(
+      content="Weather details",
+      annotations=[
+        @types.ResponseAnnotation::url_citation(
+          url="https://example.com/weather",
+          start_index=0,
+          end_index=7,
+          title=Some("Weather Source"),
+        ),
+      ],
+      tool_traces=[
+        @types.ToolCallTrace::new(
+          id="ws_001",
+          name="web_search",
+          kind=@types.ToolCallKind::WebSearch,
+          statuses=[@types.ToolCallStatus::Completed],
+          arguments={ "query": "current weather in Tokyo" },
+        ),
+      ],
+    ),
+  )
+  let json = model_response_to_responses_json(
+    response,
+    response_id=test_response_id,
+    model=test_model,
+  )
+  match json {
+    { "output": Array(output), .. } => {
+      assert_eq(output.length(), 2)
+      match output[0] {
+        { "type": String("web_search_call"), .. } => ()
+        _ => fail("Expected web_search_call output")
+      }
+      match output[1] {
+        { "type": String("message"), "content": Array(content_arr), .. } =>
+          match content_arr[0] {
+            {
+              "type": String("output_text"),
+              "annotations": Array(annotations),
+              ..
+            } => assert_eq(annotations.length(), 1)
+            _ => fail("Expected annotated output_text")
+          }
+        _ => fail("Expected message output")
       }
     }
     _ => fail("Expected valid response JSON")
@@ -444,6 +561,30 @@ test "responses_request_to_chat_completions: with tools" {
       inspect(tools.length(), content="1")
       inspect(choice, content="auto")
     }
+    _ => fail("Expected tools in request")
+  }
+}
+
+///|
+test "responses_request_to_chat_completions: maps web search tool to function tool" {
+  let request : Json = {
+    "model": Json::string(test_model_harmony),
+    "input": Json::array([{ "role": "user", "content": "Search the web" }]),
+    "tools": Json::array([
+      { "type": "web_search_preview", "search_context_size": "medium" },
+    ]),
+  }
+  let chat_request = responses_request_to_chat_completions(request)
+  match chat_request {
+    { "tools": Array(tools), .. } =>
+      match tools[0] {
+        {
+          "type": String("function"),
+          "function": { "name": String(name), .. },
+          ..
+        } => assert_eq(name, "web_search")
+        _ => fail("Expected mapped function tool")
+      }
     _ => fail("Expected tools in request")
   }
 }

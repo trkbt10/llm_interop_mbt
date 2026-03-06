@@ -69,14 +69,23 @@ fn build_responses_output_from_gemini(parts : Array[Json]) -> Array[Json] {
         let responses_call_id = @interop_util.gemini_to_openai_responses_call_id(
           call_id,
         )
-        output.push({
-          "type": "function_call",
-          "id": responses_call_id,
-          "call_id": responses_call_id,
-          "name": name,
-          "arguments": args.stringify(),
-          "status": "completed",
-        })
+        if name == "web_search" {
+          output.push({
+            "type": "web_search_call",
+            "id": responses_call_id,
+            "status": "completed",
+            "action": build_web_search_action(args),
+          })
+        } else {
+          output.push({
+            "type": "function_call",
+            "id": responses_call_id,
+            "call_id": responses_call_id,
+            "name": name,
+            "arguments": args.stringify(),
+            "status": "completed",
+          })
+        }
         call_index = call_index + 1
       }
       _ => ()
@@ -97,6 +106,16 @@ fn build_responses_output_from_gemini(parts : Array[Json]) -> Array[Json] {
     return message_output
   }
   output
+}
+
+///|
+fn build_web_search_action(input : Json) -> Json {
+  let action : Map[String, Json] = { "type": Json::string("search") }
+  match input {
+    { "query": String(query), .. } => action["query"] = Json::string(query)
+    _ => ()
+  }
+  Json::object(action)
 }
 
 ///|

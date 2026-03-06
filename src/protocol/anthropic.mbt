@@ -114,10 +114,29 @@ pub fn extract_system_message(messages : Array[@types.ModelMessage]) -> String {
 ///|
 /// Convert ToolDefinition to JSON (Anthropic format)
 pub fn tool_to_anthropic_json(tool : @types.ToolDefinition) -> Json {
+  match tool.kind {
+    @types.ToolDefinitionKind::Function =>
+      {
+        "name": tool.name,
+        "description": tool.description,
+        "input_schema": tool.parameters,
+      }
+    @types.ToolDefinitionKind::WebSearchPreview(..)
+    | @types.ToolDefinitionKind::WebSearchPreview20250311(..) =>
+      web_search_tool_to_anthropic_json()
+  }
+}
+
+///|
+fn web_search_tool_to_anthropic_json() -> Json {
   {
-    "name": tool.name,
-    "description": tool.description,
-    "input_schema": tool.parameters,
+    "name": "web_search",
+    "description": "Search the web",
+    "input_schema": {
+      "type": "object",
+      "properties": { "query": { "type": "string" } },
+      "required": Json::array([Json::string("query")]),
+    },
   }
 }
 

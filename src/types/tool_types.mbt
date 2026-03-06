@@ -1,4 +1,18 @@
 ///|
+/// Tool kind
+pub(all) enum ToolDefinitionKind {
+  Function
+  WebSearchPreview(
+    search_context_size~ : String?,
+    user_location_country~ : String?
+  )
+  WebSearchPreview20250311(
+    search_context_size~ : String?,
+    user_location_country~ : String?
+  )
+} derive(Show, Eq)
+
+///|
 /// Tool-related types
 
 ///|
@@ -30,6 +44,8 @@ pub(all) struct ToolParam {
 ///|
 /// Tool definition (format sent to models)
 pub(all) struct ToolDefinition {
+  /// Tool kind
+  kind : ToolDefinitionKind
   /// Tool name
   name : String
   /// Description

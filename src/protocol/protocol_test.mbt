@@ -149,6 +149,75 @@ test "tool_to_responses_api_json creates correct format" {
 }
 
 ///|
+test "tool_to_responses_api_json creates web search builtin format" {
+  let tool = @types.ToolDefinition::web_search_preview(
+    search_context_size=Some("medium"),
+    user_location_country=Some("US"),
+  )
+  let json = tool_to_responses_api_json(tool)
+  match json {
+    {
+      "type": "web_search_preview",
+      "search_context_size": "medium",
+      "user_location": { "type": "approximate", "country": "US", .. },
+      ..
+    } => ()
+    _ => fail("Unexpected web search tool format")
+  }
+}
+
+///|
+test "parse_responses_api_response preserves annotations and web search traces" {
+  let json : Json = {
+    "output": Json::array([
+      {
+        "id": "ws_001",
+        "type": "web_search_call",
+        "status": "completed",
+        "action": {
+          "type": "search",
+          "query": "current weather in Tokyo",
+          "queries": Json::array([Json::string("current weather in Tokyo")]),
+        },
+      },
+      {
+        "type": "message",
+        "content": Json::array([
+          {
+            "type": "output_text",
+            "text": "Weather details",
+            "annotations": Json::array([
+              {
+                "type": "url_citation",
+                "url": "https://example.com/weather",
+                "title": "Weather Source",
+                "start_index": 0,
+                "end_index": 7,
+              },
+            ]),
+          },
+        ]),
+      },
+    ]),
+  }
+  let response = parse_responses_api_response(json)
+  match response {
+    @types.ModelResponse::RichText(rich) => {
+      assert_eq(rich.content, "Weather details")
+      assert_eq(rich.annotations.length(), 1)
+      assert_eq(rich.tool_traces.length(), 1)
+      match rich.annotations[0] {
+        @types.ResponseAnnotation::UrlCitation(url~, ..) =>
+          assert_eq(url, "https://example.com/weather")
+      }
+      assert_eq(rich.tool_traces[0].id, "ws_001")
+      assert_eq(rich.tool_traces[0].kind, @types.ToolCallKind::WebSearch)
+    }
+    _ => fail("Expected RichText response")
+  }
+}
+
+///|
 test "tool_to_anthropic_json creates correct format" {
   let tool = @types.ToolDefinition::new(
     name="calculator",
@@ -214,6 +283,30 @@ test "build_responses_api_body creates valid body" {
     { "model": String(model), "input": Array(_), "tools": Array(t), .. } => {
       assert_eq(model, test_model_openai_responses)
       inspect(t.length(), content="1")
+    }
+    _ => fail("Unexpected body format")
+  }
+}
+
+///|
+test "build_responses_api_body includes web search builtin tool" {
+  let messages = [@types.ModelMessage::User(content="What's new?", name=None)]
+  let tools = [
+    @types.ToolDefinition::web_search_preview_2025_03_11(
+      search_context_size=Some("medium"),
+      user_location_country=Some("US"),
+    ),
+  ]
+  let body = build_responses_api_body(
+    test_model_openai_responses, messages, tools,
+  )
+  match body {
+    { "tools": Array(tool_defs), "tool_choice": String(choice), .. } => {
+      assert_eq(choice, "auto")
+      match tool_defs[0] {
+        { "type": String("web_search_preview_2025_03_11"), .. } => ()
+        _ => fail("Expected versioned web search tool")
+      }
     }
     _ => fail("Unexpected body format")
   }
