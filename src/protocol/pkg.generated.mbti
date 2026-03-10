@@ -2,17 +2,28 @@
 package "trkbt10/llm_interop/src/protocol"
 
 import {
+  "moonbitlang/core/json",
   "trkbt10/llm_interop/src/types",
 }
 
 // Values
 pub fn build_anthropic_body(String, Array[@types.ModelMessage], Array[@types.ToolDefinition], max_tokens? : Int?, system? : String, temperature? : Double?) -> Json
 
+pub fn build_approval_response(Int, CodexApprovalDecision) -> Json
+
 pub fn build_gemini_body(Array[@types.ModelMessage], Array[@types.ToolDefinition], max_tokens? : Int?, temperature? : Double?, top_p? : Double?, top_k? : Int?) -> Json
+
+pub fn build_initialize_request(Int, String, String) -> CodexRpcRequest
+
+pub fn build_initialized_notification() -> CodexRpcRequest
 
 pub fn build_openai_chat_body(String, Array[@types.ModelMessage], Array[@types.ToolDefinition], max_tokens? : Int?, temperature? : Double?) -> Json
 
 pub fn build_responses_api_body(String, Array[@types.ModelMessage], Array[@types.ToolDefinition]) -> Json
+
+pub fn build_thread_start_request(Int, String, String, Array[CodexDynamicTool]) -> CodexRpcRequest
+
+pub fn build_turn_start_request(Int, String, String, String, String) -> CodexRpcRequest
 
 pub fn extract_system_message(Array[@types.ModelMessage]) -> String
 
@@ -67,6 +78,246 @@ pub fn tools_to_responses_api_json(Array[@types.ToolDefinition]) -> Array[Json]
 // Errors
 
 // Types and methods
+pub(all) enum CodexApprovalDecision {
+  AcceptForSession
+  AcceptOnce
+  Reject
+}
+pub fn CodexApprovalDecision::to_json(Self) -> Json
+pub fn CodexApprovalDecision::to_string(Self) -> String
+pub impl Eq for CodexApprovalDecision
+pub impl Show for CodexApprovalDecision
+
+pub(all) struct CodexCapabilities {
+  experimental_api : Bool
+}
+pub fn CodexCapabilities::to_json(Self) -> Json
+pub impl Eq for CodexCapabilities
+pub impl Show for CodexCapabilities
+
+pub(all) struct CodexClientInfo {
+  name : String
+  version : String
+}
+pub fn CodexClientInfo::to_json(Self) -> Json
+pub impl Eq for CodexClientInfo
+pub impl Show for CodexClientInfo
+
+pub(all) struct CodexConfig {
+  command : String
+  approval_policy : String?
+  thread_sandbox : String?
+  turn_sandbox_policy : String?
+  turn_timeout_ms : Int
+  read_timeout_ms : Int
+  stall_timeout_ms : Int
+}
+pub fn CodexConfig::default() -> Self
+pub impl Eq for CodexConfig
+pub impl Show for CodexConfig
+pub impl ToJson for CodexConfig
+pub impl @json.FromJson for CodexConfig
+
+pub(all) struct CodexDynamicTool {
+  name : String
+  description : String
+  schema : Json
+}
+pub fn CodexDynamicTool::from_tool_definition(@types.ToolDefinition) -> Self
+pub fn CodexDynamicTool::to_json(Self) -> Json
+pub impl Eq for CodexDynamicTool
+pub impl Show for CodexDynamicTool
+
+pub(all) struct CodexEvent {
+  event_type : CodexEventType
+  timestamp : UInt64
+  thread_id : String?
+  turn_id : String?
+  session_id : String?
+  message : String?
+  token_usage : CodexTokenUsage?
+  rate_limits : Json?
+}
+pub impl Eq for CodexEvent
+pub impl Show for CodexEvent
+
+pub(all) enum CodexEventType {
+  SessionConfigured
+  TaskStarted
+  TaskComplete
+  TokenCount
+  AgentMessage
+  AgentMessageDelta
+  AgentMessageCompleted
+  AgentMessageContentDelta
+  TokenUsageUpdated
+  RateLimitsUpdated
+  TurnInputRequired
+  ItemStarted
+  ItemCompleted
+  UserMessage
+  Unknown(String)
+}
+pub fn CodexEventType::from_string(String) -> Self
+pub impl Eq for CodexEventType
+pub impl Show for CodexEventType
+
+pub(all) struct CodexInitializeParams {
+  client_info : CodexClientInfo
+  capabilities : CodexCapabilities
+}
+pub fn CodexInitializeParams::to_json(Self) -> Json
+pub impl Eq for CodexInitializeParams
+pub impl Show for CodexInitializeParams
+
+pub(all) struct CodexInputItem {
+  kind : String
+  text : String
+  text_elements : Array[Json]
+}
+pub fn CodexInputItem::text(String) -> Self
+pub fn CodexInputItem::to_json(Self) -> Json
+pub impl Eq for CodexInputItem
+pub impl Show for CodexInputItem
+
+pub(all) struct CodexReadOnlyAccess {
+  access_type : String
+}
+pub fn CodexReadOnlyAccess::to_json(Self) -> Json
+pub impl Eq for CodexReadOnlyAccess
+pub impl Show for CodexReadOnlyAccess
+
+pub(all) struct CodexRpcError {
+  code : Int
+  message : String
+}
+pub impl Eq for CodexRpcError
+pub impl Show for CodexRpcError
+pub impl ToJson for CodexRpcError
+pub impl @json.FromJson for CodexRpcError
+
+pub(all) struct CodexRpcRequest {
+  id : Int?
+  rpc_method : String
+  params : Json?
+}
+pub fn CodexRpcRequest::to_json(Self) -> Json
+pub impl Eq for CodexRpcRequest
+pub impl Show for CodexRpcRequest
+
+pub(all) struct CodexRpcResponse {
+  id : Int?
+  result : Json?
+  error : CodexRpcError?
+}
+pub fn CodexRpcResponse::from_json(Json) -> Self?
+pub impl Eq for CodexRpcResponse
+pub impl Show for CodexRpcResponse
+
+pub(all) struct CodexSandboxConfig {
+  kind : String
+  image : String?
+}
+pub fn CodexSandboxConfig::none() -> Self
+pub fn CodexSandboxConfig::to_json(Self) -> Json
+pub impl Eq for CodexSandboxConfig
+pub impl Show for CodexSandboxConfig
+
+pub(all) struct CodexSandboxPolicy {
+  sandbox_type : String
+  writable_roots : Array[String]
+  read_only_access : CodexReadOnlyAccess?
+  network_access : Bool
+}
+pub fn CodexSandboxPolicy::full_access() -> Self
+pub fn CodexSandboxPolicy::none() -> Self
+pub fn CodexSandboxPolicy::to_json(Self) -> Json
+pub fn CodexSandboxPolicy::workspace_write(Array[String]) -> Self
+pub impl Eq for CodexSandboxPolicy
+pub impl Show for CodexSandboxPolicy
+
+pub(all) struct CodexThread {
+  id : String
+}
+pub fn CodexThread::from_json(Json) -> Self?
+pub impl Eq for CodexThread
+pub impl Show for CodexThread
+
+pub(all) struct CodexThreadStartParams {
+  cwd : String
+  approval_policy : String
+  sandbox : CodexSandboxConfig?
+  service_name : String
+  personality : String
+  experimental_raw_events : Bool
+  persist_extended_history : Bool
+  dynamic_tools : Array[CodexDynamicTool]
+}
+pub fn CodexThreadStartParams::to_json(Self) -> Json
+pub impl Eq for CodexThreadStartParams
+pub impl Show for CodexThreadStartParams
+
+pub(all) struct CodexThreadStartResponse {
+  thread : CodexThread?
+}
+pub fn CodexThreadStartResponse::from_json(Json) -> Self?
+pub impl Eq for CodexThreadStartResponse
+pub impl Show for CodexThreadStartResponse
+
+pub(all) struct CodexTokenUsage {
+  input_tokens : Int
+  output_tokens : Int
+  total_tokens : Int
+  cached_input_tokens : Int
+  reasoning_output_tokens : Int
+}
+pub fn CodexTokenUsage::from_json(Json) -> Self?
+pub impl Eq for CodexTokenUsage
+pub impl Show for CodexTokenUsage
+
+pub(all) struct CodexTurn {
+  id : String
+}
+pub fn CodexTurn::from_json(Json) -> Self?
+pub impl Eq for CodexTurn
+pub impl Show for CodexTurn
+
+pub(all) struct CodexTurnResult {
+  id : String
+  status : CodexTurnStatus
+  error : String?
+}
+pub impl Eq for CodexTurnResult
+pub impl Show for CodexTurnResult
+
+pub(all) struct CodexTurnStartParams {
+  thread_id : String
+  input : Array[CodexInputItem]
+  cwd : String
+  approval_policy : String
+  sandbox_policy : CodexSandboxPolicy?
+}
+pub fn CodexTurnStartParams::to_json(Self) -> Json
+pub impl Eq for CodexTurnStartParams
+pub impl Show for CodexTurnStartParams
+
+pub(all) struct CodexTurnStartResponse {
+  turn : CodexTurn?
+}
+pub fn CodexTurnStartResponse::from_json(Json) -> Self?
+pub impl Eq for CodexTurnStartResponse
+pub impl Show for CodexTurnStartResponse
+
+pub(all) enum CodexTurnStatus {
+  InProgress
+  Completed
+  Interrupted
+  Failed
+}
+pub fn CodexTurnStatus::from_string(String) -> Self
+pub impl Eq for CodexTurnStatus
+pub impl Show for CodexTurnStatus
+
 pub(all) struct GeminiContent {
   role : String
   parts : Array[GeminiPart]

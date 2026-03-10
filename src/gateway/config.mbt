@@ -333,6 +333,7 @@ fn default_base_url(api : ModelApi) -> String {
     GithubCopilot => "https://api.github.com/copilot"
     BedrockConverseStream => ""
     Ollama => "http://localhost:11434"
+    CodexAppServer => "" // Codex uses stdin/stdout, no HTTP URL
   }
 }
 
