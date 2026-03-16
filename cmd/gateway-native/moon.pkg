@@ -1,5 +1,7 @@
 import {
   "trkbt10/llm_interop/src/gateway" @gw,
+  "trkbt10/llm_interop/src/interop/chat" @chat,
+  "trkbt10/llm_interop/src/utils" @utils,
   "moonbitlang/core/json",
   "moonbitlang/core/strconv",
   "moonbitlang/x/fs",
@@ -12,5 +14,8 @@ import {
 
 options(
   "is-main": true,
-  targets: { "main.mbt": [ "native" ] },
+  targets: {
+    "main.mbt": [ "native" ],
+    "main_wbtest.mbt": [ "native" ],
+  },
 )

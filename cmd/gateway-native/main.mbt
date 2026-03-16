@@ -1,8 +1,10 @@
 ///|
 /// LLM Gateway CLI - Native HTTP Server
+///
+/// Thin entry point: CLI parsing, env expansion, HTTP transport, server lifecycle.
+/// All gateway logic (routing, transformation, preparation) lives in src/gateway/.
 
 ///|
-/// Defaults
 let default_port : Int = 18080
 
 ///|
@@ -12,7 +14,6 @@ let default_host : String = "0.0.0.0"
 let default_config : String = "gateway-config.json"
 
 ///|
-/// CLI options
 struct CliOptions {
   config_path : String
   host : String
@@ -133,6 +134,188 @@ fn load_config(path : String) -> @gw.GatewayConfig raise @gw.GatewayError {
 }
 
 ///|
+/// Expand environment variables in a string (e.g., "${OPENAI_API_KEY}")
+fn expand_env(s : String) -> String {
+  if s.has_prefix("${") && s.has_suffix("}") && s.length() > 3 {
+    let buf = StringBuilder::new()
+    for i = 2; i < s.length() - 1; i = i + 1 {
+      buf.write_char(Char::from_int(s[i].to_int()))
+    }
+    let var_name = buf.to_string()
+    @sys.get_env_var(var_name).unwrap_or("")
+  } else {
+    s
+  }
+}
+
+// =============================================================================
+// Request handling - dispatch via Gateway::resolve
+// =============================================================================
+
+///|
+async fn handle_request(
+  gateway : @gw.Gateway,
+  meth : String,
+  path : String,
+  body : String,
+) -> @gw.HttpResponse {
+  match gateway.resolve(meth, path, body) {
+    @gw.RouteResult::Health =>
+      @gw.HttpResponse::ok({
+        "status": "ok",
+        "dialect": gateway.dialect.to_string(),
+      })
+    @gw.RouteResult::ListModels => proxy_list_models(gateway)
+    @gw.RouteResult::Completion(dialect~, body~) => {
+      let model = match @utils.extract_json_field(body, "model") {
+        Some(m) => m
+        None => return @gw.HttpResponse::error(400, "model field is required")
+      }
+      proxy_to_backend(gateway, body, dialect, model)
+    }
+    @gw.RouteResult::CompletionWithModel(dialect~, model~, body~) =>
+      proxy_to_backend(gateway, @utils.inject_json_field(body, "model", model), dialect, model)
+    @gw.RouteResult::NotFound(path~, dialect~) =>
+      @gw.HttpResponse::error(
+        404,
+        "Not found: " + path + " (dialect: " + dialect + ")",
+      )
+  }
+}
+
+// =============================================================================
+// HTTP transport - the only async/native-dependent code
+// =============================================================================
+
+///|
+/// Select backend and proxy request
+async fn proxy_to_backend(
+  gateway : @gw.Gateway,
+  body : String,
+  target_dialect : @chat.Dialect,
+  model : String,
+) -> @gw.HttpResponse {
+  let backend = match gateway.select_backend(model) {
+    Some(b) => b
+    None =>
+      return @gw.HttpResponse::error(
+        503,
+        "No backend available for model: " + model,
+      )
+  }
+  let base_url = expand_env(backend.provider.base_url)
+  let api_key = expand_env(backend.provider.api_key)
+  let upstream = @gw.prepare_upstream(
+    backend.provider, body, target_dialect, model, base_url, api_key,
+  )
+  let (status, response_text) = http_post(upstream)
+  let final_body = @chat.transform_response(
+    response_text,
+    backend.provider.api.to_dialect(),
+    target_dialect,
+  )
+  let headers : Map[String, String] = {}
+  headers["Content-Type"] = "application/json"
+  { status, headers, body: final_body }
+}
+
+///|
+/// Execute HTTP POST and return (status_code, response_body)
+async fn http_post(req : @gw.UpstreamRequest) -> (Int, String) {
+  let client = @http.Client::new(req.origin) catch {
+    e => return (502, "{\"error\":{\"message\":\"Failed to connect: \{e}\"}}")
+  }
+  let response = client.post(req.path, req.body, extra_headers=req.headers) catch {
+    e => {
+      client.close()
+      return (502, "{\"error\":{\"message\":\"Request failed: \{e}\"}}")
+    }
+  }
+  let response_body = @io.Reader::read_all(client) catch {
+    e => {
+      client.close()
+      return (502, "{\"error\":{\"message\":\"Failed to read response: \{e}\"}}")
+    }
+  }
+  let text = response_body.text() catch { _ => "" }
+  client.close()
+  (response.code, text)
+}
+
+///|
+/// Fetch and aggregate models from all providers
+async fn proxy_list_models(gateway : @gw.Gateway) -> @gw.HttpResponse {
+  let all_models : Array[Json] = []
+  let errors : Array[String] = []
+  for _, provider in gateway.config.providers {
+    let base_url = expand_env(provider.base_url)
+    let api_key = expand_env(provider.api_key)
+    let upstream = @gw.prepare_models_request(provider, base_url, api_key)
+    let (status, response_text) = http_get(upstream)
+    if status != 200 {
+      errors.push(
+        "Provider \{provider.id} returned HTTP \{status}: \{response_text}",
+      )
+      continue
+    }
+    let models = @gw.parse_models_response(response_text, provider.id)
+    if models.length() == 0 {
+      errors.push(
+        "No models returned from \{provider.id}, response: \{response_text}",
+      )
+      continue
+    }
+    for m in models {
+      all_models.push(m)
+    }
+  }
+  if errors.length() > 0 {
+    let error_msg = errors.iter().fold(
+      init="",
+      fn(acc, e) {
+        if acc == "" {
+          e
+        } else {
+          acc + "; " + e
+        }
+      },
+    )
+    return @gw.HttpResponse::error(502, error_msg)
+  }
+  let headers : Map[String, String] = {}
+  headers["Content-Type"] = "application/json"
+  let body : Json = { "object": "list", "data": Json::array(all_models) }
+  { status: 200, headers, body: body.stringify() }
+}
+
+///|
+/// Execute HTTP GET and return (status_code, response_body)
+async fn http_get(req : @gw.UpstreamRequest) -> (Int, String) {
+  let client = @http.Client::new(req.origin) catch {
+    e => return (502, "{\"error\":{\"message\":\"Failed to connect: \{e}\"}}")
+  }
+  let response = client.get(req.path, extra_headers=req.headers) catch {
+    e => {
+      client.close()
+      return (502, "{\"error\":{\"message\":\"Request failed: \{e}\"}}")
+    }
+  }
+  let response_body = @io.Reader::read_all(client) catch {
+    e => {
+      client.close()
+      return (502, "{\"error\":{\"message\":\"Failed to read response: \{e}\"}}")
+    }
+  }
+  let text = response_body.text() catch { _ => "" }
+  client.close()
+  (response.code, text)
+}
+
+// =============================================================================
+// Server lifecycle
+// =============================================================================
+
+///|
 async fn run_server(gateway : @gw.Gateway, host : String, port : Int) -> Unit {
   let addr_str = host + ":" + port.to_string()
   let addr = @socket.Addr::parse(addr_str) catch {
@@ -149,7 +332,7 @@ async fn run_server(gateway : @gw.Gateway, host : String, port : Int) -> Unit {
   }
   println("Gateway listening on http://\{host}:\{port}")
   println("Dialect: \{gateway.dialect.to_string()}")
-  println("Backends: \{gateway.config.backends.length()}")
+  println("Providers: \{gateway.config.providers.length()}")
   println("\nPress Ctrl+C to stop.\n")
   server.run_forever((req, body_reader, conn) => {
     let body_data = @io.Reader::read_all(body_reader) catch {
@@ -178,7 +361,7 @@ async fn run_server(gateway : @gw.Gateway, host : String, port : Int) -> Unit {
       conn.end_response()
       return
     }
-    let response = gateway.route(meth, req.path, body_text)
+    let response = handle_request(gateway, meth, req.path, body_text)
     let response_with_cors = @gw.add_cors_headers(response)
     conn.send_response(
       response_with_cors.status,
@@ -188,6 +371,18 @@ async fn run_server(gateway : @gw.Gateway, host : String, port : Int) -> Unit {
     conn.write(response_with_cors.body)
     conn.end_response()
   })
+}
+
+///|
+fn validate_config(config : @gw.GatewayConfig) -> Unit raise @gw.GatewayError {
+  for provider_id, provider in config.providers {
+    let api_key = expand_env(provider.api_key)
+    if api_key == "" {
+      raise @gw.GatewayError::ConfigError(
+        "API key not set for provider '\{provider_id}'. Check environment variable in config.",
+      )
+    }
+  }
 }
 
 ///|
@@ -208,6 +403,13 @@ async fn main {
   let config : @gw.GatewayConfig = {
     ..base_config,
     server: { host: opts.host, port: opts.port },
+  }
+  validate_config(config) catch {
+    e => {
+      println("Error: \{e}")
+      @sys.exit(1)
+      return
+    }
   }
   let gateway = @gw.Gateway::new(config, opts.dialect)
   run_server(gateway, opts.host, opts.port)

@@ -8,7 +8,7 @@ endif
 PROVIDER ?=
 MOON_TARGETS ?= native js
 
-.PHONY: check check-native check-js test test-native test-js test-client info info-native info-js verify test-integration
+.PHONY: check check-native check-js test test-native test-js test-client info info-native info-js verify test-integration demo-js test-js-demo ui-dev ui-build gateway
 
 # Default local verification targets. We intentionally avoid bare `moon check`
 # so MoonBit does not fall back to wasm-gc during routine development.
@@ -34,6 +34,12 @@ test-native:
 
 test-js:
 	moon test --target js
+
+demo-js:
+	moon run --target js cmd/js-test-demo
+
+test-js-demo:
+	moon test --target js cmd/js-test-demo
 
 test-client:
 	moon test --target native src/client
@@ -78,3 +84,14 @@ ifeq ($(PROVIDER),groq)
 endif
 	moon test --target native src/client --filter 'integration_$(PROVIDER)*'
 	moon test --target js src/client --filter 'integration_$(PROVIDER)*'
+
+# Gateway
+gateway:
+	cd cmd/gateway-native && moon run . --target native -- --config ../../gateway-config.json
+
+# UI development
+ui-dev:
+	cd ui && npm run dev
+
+ui-build:
+	cd ui && npm run build

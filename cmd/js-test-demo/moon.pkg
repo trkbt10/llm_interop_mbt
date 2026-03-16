@@ -1,0 +1,8 @@
+import {
+  "trkbt10/llm_interop/src/protocol" @protocol,
+  "trkbt10/llm_interop/src/types" @types,
+}
+
+options(
+  "is-main": true,
+)

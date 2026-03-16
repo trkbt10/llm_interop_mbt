@@ -1,6 +1,9 @@
 import {
   "moonbitlang/core/json",
-  "moonbitlang/x/fs" @fs,
   "trkbt10/llm_interop/src/types",
   "trkbt10/llm_interop/src/utils" @utils,
 }
+
+import {
+  "moonbitlang/x/fs" @fs,
+} for "test"

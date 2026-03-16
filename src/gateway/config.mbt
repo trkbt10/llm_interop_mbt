@@ -74,7 +74,8 @@ fn parse_provider(
     _ => true
   }
   let models = parse_models(json)
-  { id, base_url, api_key, auth, api, headers, auth_header, models }
+  let model_patterns = parse_model_patterns(json)
+  { id, base_url, api_key, auth, api, headers, auth_header, models, model_patterns }
 }
 
 ///|
@@ -104,6 +105,23 @@ fn parse_models(json : Json) -> Array[ModelConfig] raise GatewayError {
     _ => ()
   }
   result
+}
+
+///|
+fn parse_model_patterns(json : Json) -> Array[String] {
+  match json {
+    { "modelPatterns": Array(arr), .. } => {
+      let result : Array[String] = []
+      for v in arr {
+        match v {
+          String(s) => result.push(s)
+          _ => ()
+        }
+      }
+      result
+    }
+    _ => []
+  }
 }
 
 ///|
@@ -320,6 +338,7 @@ fn parse_legacy_backend(json : Json) -> BackendConfig raise GatewayError {
     headers: {},
     auth_header: true,
     models: [ModelConfig::new(model_id)],
+    model_patterns: [],
   }
   { id, provider, weight }
 }

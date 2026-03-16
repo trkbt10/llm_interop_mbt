@@ -170,6 +170,7 @@ pub(all) struct ProviderConfig {
   headers : Map[String, String]
   auth_header : Bool // Include auth in header
   models : Array[ModelConfig]
+  model_patterns : Array[String] // Prefix patterns for fallback routing (e.g. ["claude-"])
 } derive(Show)
 
 ///|
@@ -183,6 +184,7 @@ pub fn ProviderConfig::new(id : String, api : ModelApi) -> ProviderConfig {
     headers: {},
     auth_header: true,
     models: [],
+    model_patterns: [],
   }
 }
 
@@ -232,6 +234,7 @@ pub fn GatewayConfig::default() -> GatewayConfig {
 pub(all) enum GatewaySurface {
   OpenAI
   Anthropic
+  Gemini
 } derive(Show, Eq)
 
 ///|
@@ -239,6 +242,7 @@ pub fn GatewaySurface::from_string(s : String) -> GatewaySurface? {
   match s.to_lower() {
     "openai" => Some(OpenAI)
     "anthropic" | "claude" => Some(Anthropic)
+    "gemini" | "google" => Some(Gemini)
     _ => None
   }
 }
@@ -248,5 +252,6 @@ pub fn GatewaySurface::to_string(self : GatewaySurface) -> String {
   match self {
     OpenAI => "openai"
     Anthropic => "anthropic"
+    Gemini => "gemini"
   }
 }
