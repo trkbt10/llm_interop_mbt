@@ -1,0 +1,42 @@
+{"jsonrpc":"2.0","id":0,"result":{"protocolVersion":"2025-01-01","capabilities":{"experimental":{},"modelList":{"supported":true}},"serverInfo":{"name":"llm_interop-app-server","version":"0.1.0"},"userAgent":"llm_interop-app-server/0.1.0"}}
+{"jsonrpc":"2.0","id":1,"result":{"thread":{"id":"thr_1"},"model":"llama-3.3-70b-versatile","approvalPolicy":"never"}}
+{"jsonrpc":"2.0","method":"thread/started","params":{"thread":{"id":"thr_1"}}}
+{"jsonrpc":"2.0","id":2,"result":{"turn":{"id":"turn_1","status":"inProgress"}}}
+{"method":"turn/started","params":{"turn":{"id":"turn_1","status":"inProgress","items":[]}}}
+{"method":"item/started","params":{"item":{"type":"agentMessage","id":"item_1","text":""}}}
+{"method":"item/agentMessage/delta","params":{"itemId":"item_1","delta":"I"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"item_1","delta":"'ve"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"item_1","delta":" got"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"item_1","delta":" it"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"item_1","delta":":"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"item_1","delta":" the"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"item_1","delta":" secret"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"item_1","delta":" word"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"item_1","delta":" is"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"item_1","delta":" \""}}
+{"method":"item/agentMessage/delta","params":{"itemId":"item_1","delta":"banana"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"item_1","delta":"\"."}}
+{"method":"item/agentMessage/delta","params":{"itemId":"item_1","delta":" I"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"item_1","delta":"'ll"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"item_1","delta":" keep"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"item_1","delta":" that"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"item_1","delta":" in"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"item_1","delta":" mind"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"item_1","delta":" for"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"item_1","delta":" our"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"item_1","delta":" conversation"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"item_1","delta":"."}}
+{"method":"item/agentMessage/delta","params":{"itemId":"item_1","delta":" What"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"item_1","delta":"'s"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"item_1","delta":" next"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"item_1","delta":"?"}}
+{"method":"item/completed","params":{"item":{"type":"agentMessage","id":"item_1","text":"I've got it: the secret word is \"banana\". I'll keep that in mind for our conversation. What's next?"}}}
+{"method":"thread/tokenUsage/updated","params":{"tokenUsage":{"total":{"inputTokens":44,"outputTokens":27,"totalTokens":71}}}}
+{"method":"turn/completed","params":{"turn":{"id":"turn_1","status":"completed","items":[{"type":"agentMessage","id":"item_1","text":"I've got it: the secret word is \"banana\". I'll keep that in mind for our conversation. What's next?"}]}}}
+{"jsonrpc":"2.0","id":3,"result":{"turn":{"id":"turn_2","status":"inProgress"}}}
+{"method":"turn/started","params":{"turn":{"id":"turn_2","status":"inProgress","items":[]}}}
+{"method":"item/started","params":{"item":{"type":"agentMessage","id":"item_2","text":""}}}
+{"method":"item/agentMessage/delta","params":{"itemId":"item_2","delta":"banana"}}
+{"method":"item/completed","params":{"item":{"type":"agentMessage","id":"item_2","text":"banana"}}}
+{"method":"thread/tokenUsage/updated","params":{"tokenUsage":{"total":{"inputTokens":92,"outputTokens":2,"totalTokens":94}}}}
+{"method":"turn/completed","params":{"turn":{"id":"turn_2","status":"completed","items":[{"type":"agentMessage","id":"item_2","text":"banana"}]}}}

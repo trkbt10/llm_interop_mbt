@@ -1,0 +1,10 @@
+{"jsonrpc":"2.0","id":0,"result":{"protocolVersion":"2025-01-01","capabilities":{"experimental":{},"modelList":{"supported":true}},"serverInfo":{"name":"llm_interop-app-server","version":"0.1.0"},"userAgent":"llm_interop-app-server/0.1.0"}}
+{"jsonrpc":"2.0","id":1,"result":{"thread":{"id":"thr_1"},"model":"llama-3.3-70b-versatile","approvalPolicy":"never"}}
+{"jsonrpc":"2.0","method":"thread/started","params":{"thread":{"id":"thr_1"}}}
+{"jsonrpc":"2.0","id":2,"result":{"turn":{"id":"turn_1","status":"inProgress"}}}
+{"method":"turn/started","params":{"turn":{"id":"turn_1","status":"inProgress","items":[]}}}
+{"method":"item/started","params":{"item":{"type":"agentMessage","id":"item_1","text":""}}}
+{"method":"item/agentMessage/delta","params":{"itemId":"item_1","delta":"4"}}
+{"method":"item/completed","params":{"item":{"type":"agentMessage","id":"item_1","text":"4"}}}
+{"method":"thread/tokenUsage/updated","params":{"tokenUsage":{"total":{"inputTokens":48,"outputTokens":2,"totalTokens":50}}}}
+{"method":"turn/completed","params":{"turn":{"id":"turn_1","status":"completed","items":[{"type":"agentMessage","id":"item_1","text":"4"}]}}}

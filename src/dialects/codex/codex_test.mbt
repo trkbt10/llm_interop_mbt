@@ -1,5 +1,257 @@
 ///|
 /// Tests for Codex app-server protocol types
+
+// =============================================================================
+// from_json parser tests
+// =============================================================================
+
+///|
+test "CodexRpcRequest::from_json" {
+  let json : Json = {
+    "id": 1,
+    "method": "initialize",
+    "params": { "clientInfo": { "name": "test", "version": "0.1" } },
+  }
+  let req = CodexRpcRequest::from_json(json)
+  match req {
+    Some(r) => {
+      assert_eq(r.id, Some(1))
+      assert_eq(r.rpc_method, "initialize")
+      assert_true(not(r.params is None))
+    }
+    None => fail("Failed to parse request")
+  }
+}
+
+///|
+test "CodexRpcRequest::from_json notification (no id)" {
+  let json : Json = { "method": "initialized", "params": {} }
+  let req = CodexRpcRequest::from_json(json)
+  match req {
+    Some(r) => {
+      assert_eq(r.id, None)
+      assert_eq(r.rpc_method, "initialized")
+    }
+    None => fail("Failed to parse notification")
+  }
+}
+
+///|
+test "CodexRpcRequest::from_json invalid" {
+  let json : Json = { "foo": "bar" }
+  assert_eq(CodexRpcRequest::from_json(json), None)
+}
+
+///|
+test "CodexInitializeParams::from_json" {
+  let json : Json = {
+    "clientInfo": { "name": "vscode-codex", "version": "1.2.3" },
+    "capabilities": { "experimentalApi": true },
+  }
+  let params = CodexInitializeParams::from_json(json)
+  match params {
+    Some(p) => {
+      assert_eq(p.client_info.name, "vscode-codex")
+      assert_eq(p.client_info.version, "1.2.3")
+      assert_eq(p.capabilities.experimental_api, true)
+    }
+    None => fail("Failed to parse params")
+  }
+}
+
+///|
+test "CodexInitializeParams::from_json defaults" {
+  let json : Json = {}
+  let params = CodexInitializeParams::from_json(json)
+  match params {
+    Some(p) => {
+      assert_eq(p.client_info.name, "unknown")
+      assert_eq(p.client_info.version, "0.0.0")
+      assert_eq(p.capabilities.experimental_api, false)
+    }
+    None => fail("Failed to parse params")
+  }
+}
+
+///|
+test "CodexThreadStartParams::from_json" {
+  let json : Json = {
+    "model": "gpt-4o",
+    "cwd": "/workspace",
+    "approvalPolicy": "never",
+    "personality": "concise",
+    "sandbox": { "kind": "none" },
+  }
+  let params = CodexThreadStartParams::from_json(json)
+  match params {
+    Some(p) => {
+      assert_eq(p.model, "gpt-4o")
+      assert_eq(p.cwd, "/workspace")
+      assert_eq(p.approval_policy, "never")
+      assert_eq(p.personality, "concise")
+      match p.sandbox {
+        Some(s) => assert_eq(s.kind, "none")
+        None => fail("Expected sandbox")
+      }
+    }
+    None => fail("Failed to parse params")
+  }
+}
+
+///|
+test "CodexThreadStartParams::from_json missing model fails" {
+  let json : Json = { "cwd": "/tmp" }
+  assert_eq(CodexThreadStartParams::from_json(json), None)
+}
+
+///|
+test "CodexTurnStartParams::from_json" {
+  let json : Json = {
+    "threadId": "thr_abc",
+    "input": [{ "type": "text", "text": "Hello" }],
+    "model": "o3-mini",
+    "effort": "high",
+    "cwd": "/workspace",
+    "approvalPolicy": "never",
+  }
+  let params = CodexTurnStartParams::from_json(json)
+  match params {
+    Some(p) => {
+      assert_eq(p.thread_id, "thr_abc")
+      assert_eq(p.input.length(), 1)
+      assert_eq(p.input[0].text, "Hello")
+      assert_eq(p.model, "o3-mini")
+      assert_eq(p.effort, Some("high"))
+    }
+    None => fail("Failed to parse params")
+  }
+}
+
+///|
+test "CodexTurnStartParams::from_json missing threadId fails" {
+  let json : Json = { "input": [{ "type": "text", "text": "hi" }] }
+  assert_eq(CodexTurnStartParams::from_json(json), None)
+}
+
+///|
+test "CodexInputItem::from_json" {
+  let json : Json = { "type": "text", "text": "Hello, world!" }
+  let item = CodexInputItem::from_json(json)
+  match item {
+    Some(i) => {
+      assert_eq(i.kind, "text")
+      assert_eq(i.text, "Hello, world!")
+      assert_eq(i.text_elements.length(), 0)
+    }
+    None => fail("Failed to parse input item")
+  }
+}
+
+///|
+test "CodexInputItem::from_json invalid" {
+  let json : Json = { "foo": "bar" }
+  assert_eq(CodexInputItem::from_json(json), None)
+}
+
+// =============================================================================
+// Phase 1+2 from_json tests: thread resume/fork/list, turn/steer
+// =============================================================================
+
+///|
+test "CodexThreadResumeParams::from_json" {
+  let json : Json = { "threadId": "thr_42" }
+  let params = CodexThreadResumeParams::from_json(json)
+  match params {
+    Some(p) => assert_eq(p.thread_id, "thr_42")
+    None => fail("Failed to parse")
+  }
+}
+
+///|
+test "CodexThreadResumeParams::from_json missing threadId" {
+  assert_eq(CodexThreadResumeParams::from_json({}), None)
+}
+
+///|
+test "CodexThreadForkParams::from_json" {
+  let json : Json = { "threadId": "thr_7" }
+  let params = CodexThreadForkParams::from_json(json)
+  match params {
+    Some(p) => assert_eq(p.thread_id, "thr_7")
+    None => fail("Failed to parse")
+  }
+}
+
+///|
+test "CodexThreadListParams::from_json with all fields" {
+  let json : Json = {
+    "cursor": "abc",
+    "limit": 10,
+    "sortKey": "updated_at",
+    "archived": true,
+    "cwd": "/workspace",
+  }
+  let params = CodexThreadListParams::from_json(json)
+  match params {
+    Some(p) => {
+      assert_eq(p.cursor, Some("abc"))
+      assert_eq(p.limit, 10)
+      assert_eq(p.sort_key, "updated_at")
+      assert_eq(p.archived, true)
+      assert_eq(p.cwd, Some("/workspace"))
+    }
+    None => fail("Failed to parse")
+  }
+}
+
+///|
+test "CodexThreadListParams::from_json defaults" {
+  let params = CodexThreadListParams::from_json({})
+  match params {
+    Some(p) => {
+      assert_eq(p.cursor, None)
+      assert_eq(p.limit, 25)
+      assert_eq(p.sort_key, "created_at")
+      assert_eq(p.archived, false)
+      assert_eq(p.cwd, None)
+    }
+    None => fail("Failed to parse")
+  }
+}
+
+///|
+test "CodexTurnSteerParams::from_json" {
+  let json : Json = {
+    "threadId": "thr_1",
+    "expectedTurnId": "turn_5",
+    "input": [{ "type": "text", "text": "Focus on tests" }],
+  }
+  let params = CodexTurnSteerParams::from_json(json)
+  match params {
+    Some(p) => {
+      assert_eq(p.thread_id, "thr_1")
+      assert_eq(p.expected_turn_id, "turn_5")
+      assert_eq(p.input.length(), 1)
+      assert_eq(p.input[0].text, "Focus on tests")
+    }
+    None => fail("Failed to parse")
+  }
+}
+
+///|
+test "CodexTurnSteerParams::from_json missing required fields" {
+  assert_eq(CodexTurnSteerParams::from_json({ "threadId": "t1" }), None)
+  assert_eq(
+    CodexTurnSteerParams::from_json({ "expectedTurnId": "turn_1" }),
+    None,
+  )
+}
+
+// =============================================================================
+// to_json tests
+// =============================================================================
+
+///|
 test "CodexRpcRequest::to_json" {
   let req = build_initialize_request(1, "test-client", "1.0.0")
   let json = req.to_json()

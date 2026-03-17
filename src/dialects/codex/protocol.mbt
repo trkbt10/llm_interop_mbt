@@ -15,6 +15,24 @@ pub(all) struct CodexRpcRequest {
 } derive(Show, Eq)
 
 ///|
+pub fn CodexRpcRequest::from_json(json : Json) -> CodexRpcRequest? {
+  match json {
+    { "method": String(m), .. } => {
+      let id = match json {
+        { "id": Number(n, ..), .. } => Some(n.to_int())
+        _ => None
+      }
+      let params = match json {
+        { "params": p, .. } => Some(p)
+        _ => None
+      }
+      Some({ id, rpc_method: m, params })
+    }
+    _ => None
+  }
+}
+
+///|
 pub fn CodexRpcRequest::to_json(self : CodexRpcRequest) -> Json {
   let obj : Map[String, Json] = {}
   match self.id {
@@ -77,6 +95,23 @@ pub(all) struct CodexInitializeParams {
 } derive(Show, Eq)
 
 ///|
+pub fn CodexInitializeParams::from_json(json : Json) -> CodexInitializeParams? {
+  let name = match json {
+    { "clientInfo": { "name": String(n), .. }, .. } => n
+    _ => "unknown"
+  }
+  let version = match json {
+    { "clientInfo": { "version": String(v), .. }, .. } => v
+    _ => "0.0.0"
+  }
+  let experimental_api = match json {
+    { "capabilities": { "experimentalApi": True, .. }, .. } => true
+    _ => false
+  }
+  Some({ client_info: { name, version }, capabilities: { experimental_api, } })
+}
+
+///|
 pub fn CodexInitializeParams::to_json(self : CodexInitializeParams) -> Json {
   {
     "clientInfo": self.client_info.to_json(),
@@ -124,6 +159,77 @@ pub(all) struct CodexThreadStartParams {
   persist_extended_history : Bool
   dynamic_tools : Array[CodexDynamicTool]
 } derive(Show, Eq)
+
+///|
+pub fn CodexThreadStartParams::from_json(
+  json : Json,
+) -> CodexThreadStartParams? {
+  let model = match json {
+    { "model": String(m), .. } => m
+    _ => return None
+  }
+  let cwd = match json {
+    { "cwd": String(c), .. } => c
+    _ => "."
+  }
+  let approval_policy = match json {
+    { "approvalPolicy": String(p), .. } => p
+    _ => "never"
+  }
+  let sandbox = match json {
+    { "sandbox": { "kind": String(kind), .. } as s, .. } => {
+      let image = match s {
+        { "image": String(img), .. } => Some(img)
+        _ => None
+      }
+      Some({ kind, image })
+    }
+    _ => None
+  }
+  let service_name = match json {
+    { "serviceName": String(s), .. } => s
+    _ => ""
+  }
+  let personality = match json {
+    { "personality": String(p), .. } => p
+    _ => "pragmatic"
+  }
+  let experimental_raw_events = match json {
+    { "experimentalRawEvents": True, .. } => true
+    _ => false
+  }
+  let persist_extended_history = match json {
+    { "persistExtendedHistory": True, .. } => true
+    _ => false
+  }
+  let dynamic_tools : Array[CodexDynamicTool] = []
+  match json {
+    { "dynamicTools": Array(arr), .. } =>
+      for item in arr {
+        match item {
+          {
+            "name": String(name),
+            "description": String(desc),
+            "inputSchema": schema,
+            ..
+          } => dynamic_tools.push({ name, description: desc, schema })
+          _ => ()
+        }
+      }
+    _ => ()
+  }
+  Some({
+    model,
+    cwd,
+    approval_policy,
+    sandbox,
+    service_name,
+    personality,
+    experimental_raw_events,
+    persist_extended_history,
+    dynamic_tools,
+  })
+}
 
 ///|
 pub fn CodexThreadStartParams::to_json(self : CodexThreadStartParams) -> Json {
@@ -219,6 +325,81 @@ pub(all) struct CodexTurnStartParams {
 } derive(Show, Eq)
 
 ///|
+pub fn CodexTurnStartParams::from_json(json : Json) -> CodexTurnStartParams? {
+  let thread_id = match json {
+    { "threadId": String(tid), .. } => tid
+    _ => return None
+  }
+  let input : Array[CodexInputItem] = []
+  match json {
+    { "input": Array(arr), .. } =>
+      for item in arr {
+        match CodexInputItem::from_json(item) {
+          Some(i) => input.push(i)
+          None => ()
+        }
+      }
+    _ => return None
+  }
+  let model = match json {
+    { "model": String(m), .. } => m
+    _ => "codex"
+  }
+  let effort = match json {
+    { "effort": String(e), .. } => Some(e)
+    _ => None
+  }
+  let personality = match json {
+    { "personality": String(p), .. } => Some(p)
+    _ => None
+  }
+  let cwd = match json {
+    { "cwd": String(c), .. } => c
+    _ => "."
+  }
+  let approval_policy = match json {
+    { "approvalPolicy": String(p), .. } => p
+    _ => "never"
+  }
+  let sandbox_policy = match json {
+    { "sandboxPolicy": { "type": String(t), .. } as sp, .. } => {
+      let writable_roots : Array[String] = []
+      match sp {
+        { "writableRoots": Array(arr), .. } =>
+          for v in arr {
+            match v {
+              String(s) => writable_roots.push(s)
+              _ => ()
+            }
+          }
+        _ => ()
+      }
+      let read_only_access = match sp {
+        { "readOnlyAccess": { "type": String(roa), .. }, .. } =>
+          Some({ access_type: roa })
+        _ => None
+      }
+      let network_access = match sp {
+        { "networkAccess": True, .. } => true
+        _ => false
+      }
+      Some({ sandbox_type: t, writable_roots, read_only_access, network_access })
+    }
+    _ => None
+  }
+  Some({
+    thread_id,
+    input,
+    model,
+    effort,
+    personality,
+    cwd,
+    approval_policy,
+    sandbox_policy,
+  })
+}
+
+///|
 pub fn CodexTurnStartParams::to_json(self : CodexTurnStartParams) -> Json {
   let obj : Map[String, Json] = {}
   obj["threadId"] = Json::string(self.thread_id)
@@ -278,6 +459,24 @@ pub(all) struct CodexInputItem {
   text : String
   text_elements : Array[Json]
 } derive(Show, Eq)
+
+///|
+pub fn CodexInputItem::from_json(json : Json) -> CodexInputItem? {
+  match json {
+    { "type": String(kind), "text": String(text), .. } => {
+      let text_elements : Array[Json] = []
+      match json {
+        { "text_elements": Array(arr), .. } =>
+          for e in arr {
+            text_elements.push(e)
+          }
+        _ => ()
+      }
+      Some({ kind, text, text_elements })
+    }
+    _ => None
+  }
+}
 
 ///|
 pub fn CodexInputItem::to_json(self : CodexInputItem) -> Json {
@@ -829,6 +1028,111 @@ pub fn CodexModelInfo::from_json(json : Json) -> CodexModelInfo? {
     }
     _ => None
   }
+}
+
+// =============================================================================
+// Thread Resume/Fork/List Params (for app-server frontend)
+// =============================================================================
+
+///|
+/// Thread resume request parameters
+pub(all) struct CodexThreadResumeParams {
+  thread_id : String
+} derive(Show, Eq)
+
+///|
+pub fn CodexThreadResumeParams::from_json(
+  json : Json,
+) -> CodexThreadResumeParams? {
+  match json {
+    { "threadId": String(tid), .. } => Some({ thread_id: tid })
+    _ => None
+  }
+}
+
+///|
+/// Thread fork request parameters
+pub(all) struct CodexThreadForkParams {
+  thread_id : String
+} derive(Show, Eq)
+
+///|
+pub fn CodexThreadForkParams::from_json(json : Json) -> CodexThreadForkParams? {
+  match json {
+    { "threadId": String(tid), .. } => Some({ thread_id: tid })
+    _ => None
+  }
+}
+
+///|
+/// Thread list request parameters
+pub(all) struct CodexThreadListParams {
+  cursor : String?
+  limit : Int
+  sort_key : String
+  archived : Bool
+  cwd : String?
+} derive(Show, Eq)
+
+///|
+pub fn CodexThreadListParams::from_json(json : Json) -> CodexThreadListParams? {
+  let cursor = match json {
+    { "cursor": String(c), .. } => Some(c)
+    _ => None
+  }
+  let limit = match json {
+    { "limit": Number(n, ..), .. } => n.to_int()
+    _ => 25
+  }
+  let sort_key = match json {
+    { "sortKey": String(s), .. } => s
+    _ => "created_at"
+  }
+  let archived = match json {
+    { "archived": True, .. } => true
+    _ => false
+  }
+  let cwd = match json {
+    { "cwd": String(c), .. } => Some(c)
+    _ => None
+  }
+  Some({ cursor, limit, sort_key, archived, cwd })
+}
+
+// =============================================================================
+// Turn Steer Params (for app-server frontend)
+// =============================================================================
+
+///|
+/// Turn steer request parameters
+pub(all) struct CodexTurnSteerParams {
+  thread_id : String
+  expected_turn_id : String
+  input : Array[CodexInputItem]
+} derive(Show, Eq)
+
+///|
+pub fn CodexTurnSteerParams::from_json(json : Json) -> CodexTurnSteerParams? {
+  let thread_id = match json {
+    { "threadId": String(tid), .. } => tid
+    _ => return None
+  }
+  let expected_turn_id = match json {
+    { "expectedTurnId": String(etid), .. } => etid
+    _ => return None
+  }
+  let input : Array[CodexInputItem] = []
+  match json {
+    { "input": Array(arr), .. } =>
+      for item in arr {
+        match CodexInputItem::from_json(item) {
+          Some(i) => input.push(i)
+          None => ()
+        }
+      }
+    _ => return None
+  }
+  Some({ thread_id, expected_turn_id, input })
 }
 
 ///|

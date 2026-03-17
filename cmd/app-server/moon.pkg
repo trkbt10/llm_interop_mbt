@@ -1,0 +1,22 @@
+import {
+  "trkbt10/llm_interop/src/gateway" @gw,
+  "trkbt10/llm_interop/src/dialects/codex" @codex,
+  "trkbt10/llm_interop/src/sse" @sse,
+  "moonbitlang/core/json",
+  "moonbitlang/core/strconv",
+  "moonbitlang/x/fs",
+  "moonbitlang/x/sys",
+  "moonbitlang/async",
+  "moonbitlang/async/http",
+  "moonbitlang/async/io",
+  "moonbitlang/async/stdio",
+  "moonbitlang/async/socket",
+  "moonbitlang/async/websocket",
+}
+
+options(
+  "is-main": true,
+  targets: {
+    "main.mbt": [ "native" ],
+  },
+)
