@@ -76,6 +76,7 @@ fn parse_provider(
   let models = parse_models(json)
   let model_patterns = parse_model_patterns(json)
   let codex = parse_codex_config(json)
+  let claude_mcp = parse_claude_mcp_config(json)
   {
     id,
     base_url,
@@ -87,6 +88,7 @@ fn parse_provider(
     models,
     model_patterns,
     codex,
+    claude_mcp,
   }
 }
 
@@ -133,6 +135,52 @@ fn parse_codex_config(json : Json) -> @codex.CodexConfig? {
         read_timeout_ms,
         stall_timeout_ms,
       })
+    }
+    _ => None
+  }
+}
+
+///|
+/// Parse optional `claude mcp serve` configuration from provider JSON.
+fn parse_claude_mcp_config(json : Json) -> @claude_mcp.ClaudeMcpConfig? {
+  match json {
+    { "claudeMcp": Object(obj), .. } => {
+      let defaults = @claude_mcp.ClaudeMcpConfig::default()
+      let command = match obj.get("command") {
+        Some(String(s)) => s
+        _ => defaults.command
+      }
+      let args : Array[String] = match obj.get("args") {
+        Some(Array(arr)) => {
+          let result : Array[String] = []
+          for v in arr {
+            match v {
+              String(s) => result.push(s)
+              _ => ()
+            }
+          }
+          result
+        }
+        _ => defaults.args
+      }
+      let env : Map[String, String] = match obj.get("env") {
+        Some(Object(e)) => {
+          let result : Map[String, String] = {}
+          for k, v in e {
+            match v {
+              String(s) => result[k] = s
+              _ => ()
+            }
+          }
+          result
+        }
+        _ => defaults.env
+      }
+      let timeout_ms = match obj.get("timeoutMs") {
+        Some(Number(n, ..)) => n.to_int()
+        _ => defaults.timeout_ms
+      }
+      Some({ command, args, env, timeout_ms })
     }
     _ => None
   }
@@ -400,6 +448,7 @@ fn parse_legacy_backend(json : Json) -> BackendConfig raise GatewayError {
     models: [ModelConfig::new(model_id)],
     model_patterns: [],
     codex: None,
+    claude_mcp: None,
   }
   { id, provider, weight }
 }

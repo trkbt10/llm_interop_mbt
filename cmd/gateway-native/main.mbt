@@ -230,6 +230,9 @@ async fn proxy_to_backend(
   if backend.provider.api.to_dialect() == @gw.GatewaySurface::Codex {
     return proxy_to_codex_backend(gateway, body, target_dialect, model, backend)
   }
+  if backend.provider.api == @gw.ModelApi::ClaudeMcpServe {
+    return proxy_to_claude_mcp_backend(gateway, body, target_dialect, model, backend)
+  }
   // Standard HTTP path
   let (backend, status, response_text) = try {
     send_to_backend(gateway, model, body, target_dialect)
@@ -316,6 +319,14 @@ async fn proxy_list_models(gateway : @gw.Gateway) -> @gw.HttpResponse {
     if provider.api == @gw.ModelApi::CodexAppServer {
       let codex_models = fetch_codex_model_list(provider)
       for m in codex_models {
+        all_models.push(m)
+      }
+      continue
+    }
+    // `claude mcp serve`: list configured models (tools exposed as single virtual model)
+    if provider.api == @gw.ModelApi::ClaudeMcpServe {
+      let claude_mcp_models = fetch_claude_mcp_model_list(provider)
+      for m in claude_mcp_models {
         all_models.push(m)
       }
       continue
@@ -682,6 +693,228 @@ async fn codex_stdio_execute(
 }
 
 // =============================================================================
+// `claude mcp serve` stdio transport
+// =============================================================================
+
+///|
+/// Per-provider `claude mcp serve` state: session + live subprocess channel
+struct ClaudeMcpBackendState {
+  mut session : @claude_mcp.ClaudeMcpSession
+  mut channel : @ipc.IpcChannel?
+}
+
+///|
+/// Mutable state for `claude mcp serve` providers, keyed by provider ID
+let claude_mcp_backends : Map[String, ClaudeMcpBackendState] = {}
+
+///|
+/// Spawn or reuse a `claude mcp serve` subprocess for a provider.
+async fn get_claude_mcp_channel(
+  group : @async.TaskGroup[Unit],
+  backend_id : String,
+  command : String,
+  args : Array[String],
+  env : Map[String, String],
+) -> @ipc.IpcChannel raise @gw.GatewayError {
+  match claude_mcp_backends.get(backend_id) {
+    Some(state) =>
+      match state.channel {
+        Some(ch) => return ch
+        None => ()
+      }
+    None => ()
+  }
+  // Build full command: command + args
+  let full_command = if args.length() > 0 {
+    let buf = StringBuilder::new()
+    buf.write_string(command)
+    for arg in args {
+      buf.write_string(" ")
+      buf.write_string(arg)
+    }
+    buf.to_string()
+  } else {
+    command
+  }
+  let child = @subprocess.spawn_shell(
+    group,
+    full_command,
+    cwd=".",
+    env=env,
+    pipe_stdin=true,
+    pipe_stdout=true,
+    pipe_stderr=true,
+  ) catch {
+    e =>
+      raise @gw.GatewayError::NetworkError(
+        "Failed to spawn `claude mcp serve`: " + e.to_string(),
+      )
+  }
+  let channel = @ipc.IpcChannel::from_child(child)
+  match claude_mcp_backends.get(backend_id) {
+    Some(state) => state.channel = Some(channel)
+    None => {
+      let session = @claude_mcp.ClaudeMcpSession::new()
+      claude_mcp_backends[backend_id] = { session, channel: Some(channel) }
+    }
+  }
+  channel
+}
+
+///|
+/// List models from a `claude mcp serve` provider.
+/// Tools are exposed as a single virtual model (or from configured models).
+fn fetch_claude_mcp_model_list(provider : @gw.ProviderConfig) -> Array[Json] {
+  if provider.models.length() > 0 {
+    let models : Array[Json] = []
+    for m in provider.models {
+      let obj : Map[String, Json] = {}
+      obj["id"] = Json::string(m.id)
+      obj["object"] = Json::string("model")
+      obj["owned_by"] = Json::string(provider.id)
+      models.push(Json::object(obj))
+    }
+    return models
+  }
+  let obj : Map[String, Json] = {}
+  obj["id"] = Json::string("claude-code-tools")
+  obj["object"] = Json::string("model")
+  obj["owned_by"] = Json::string(provider.id)
+  [Json::object(obj)]
+}
+
+///|
+/// Proxy a completion request to a `claude mcp serve` backend via stdio.
+async fn proxy_to_claude_mcp_backend(
+  _gateway : @gw.Gateway,
+  body : String,
+  target_dialect : @gw.GatewaySurface,
+  model : String,
+  backend : @gw.BackendConfig,
+) -> @gw.HttpResponse {
+  let cfg = match backend.provider.claude_mcp {
+    Some(c) => c
+    None => @claude_mcp.ClaudeMcpConfig::default()
+  }
+  let mut result : @gw.HttpResponse = @gw.HttpResponse::error(
+    502, "`claude mcp serve` transport failed",
+  )
+  @async.with_task_group(async fn(group) {
+    let channel = get_claude_mcp_channel(
+      group, backend.id, cfg.command, cfg.args, cfg.env,
+    ) catch {
+      e => {
+        result = @gw.HttpResponse::error(502, e.to_string())
+        group.return_immediately(())
+        return
+      }
+    }
+    let state = claude_mcp_backends[backend.id]
+    // Transform request to OpenAI pivot first (if coming from another surface),
+    // then extract prompt via claude_mcp dialect transform
+    let openai_body = if target_dialect != @gw.GatewaySurface::OpenAI {
+      @gw.transform_for_provider(
+        backend.provider, body, target_dialect, @gw.GatewaySurface::OpenAI, model,
+      )
+    } else {
+      body
+    }
+    let ctx = @types.TransformContext::default()
+    let intermediate = @claude_mcp.chat_request_to_prompt(openai_body, ctx)
+    // Extract prompt from intermediate format
+    let prompt_json = @json.parse(intermediate) catch { _ => Json::null() }
+    let prompt = match prompt_json {
+      { "prompt": String(p), .. } => p
+      _ => intermediate
+    }
+    // Use Bash tool as default — send the prompt as a command
+    let tool_name = "Bash"
+    let arguments : Json = { "command": prompt }
+    // Prepare tools/call steps (includes MCP init if needed)
+    let req = @claude_mcp.prepare_tools_call(
+      state.session, tool_name, arguments,
+    )
+    let (response_text, new_session) = claude_mcp_stdio_execute(
+      channel, req.steps, req.next_session,
+    )
+    state.session = new_session
+    // Transform result to OpenAI, then to target surface if needed
+    let openai_response = @claude_mcp.tools_result_to_chat(response_text)
+    let final_body = if target_dialect != @gw.GatewaySurface::OpenAI {
+      @gw.transform_response(
+        openai_response, @gw.GatewaySurface::OpenAI, target_dialect,
+      )
+    } else {
+      openai_response
+    }
+    let headers : Map[String, String] = {}
+    headers["Content-Type"] = "application/json"
+    result = { status: 200, headers, body: final_body }
+    group.return_immediately(())
+  })
+  result
+}
+
+///|
+/// Execute MCP JSON-RPC steps over an IPC channel for `claude mcp serve`.
+async fn claude_mcp_stdio_execute(
+  channel : @ipc.IpcChannel,
+  steps : Array[@jsonrpc.RpcStep],
+  session : @claude_mcp.ClaudeMcpSession,
+) -> (String, @claude_mcp.ClaudeMcpSession) {
+  let current_session = session
+  let mut last_response = ""
+  for step in steps {
+    channel.send(step.message) catch {
+      e =>
+        return (
+          build_claude_mcp_error_response(
+            "`claude mcp serve` send failed: " + e.to_string(),
+          ),
+          current_session,
+        )
+    }
+    match step.kind {
+      Notification => continue
+      Request => {
+        let line = channel.recv() catch {
+          e =>
+            return (
+              build_claude_mcp_error_response(
+                "`claude mcp serve` recv failed: " + e.to_string(),
+              ),
+              current_session,
+            )
+        }
+        match line {
+          Some(text) => last_response = text
+          None =>
+            return (
+              build_claude_mcp_error_response(
+                "`claude mcp serve` EOF during communication",
+              ),
+              current_session,
+            )
+        }
+      }
+    }
+  }
+  (last_response, current_session)
+}
+
+///|
+/// Build an error response that tools_result_to_chat can handle
+fn build_claude_mcp_error_response(message : String) -> String {
+  let result : Map[String, Json] = {}
+  let content : Array[Json] = [{ "type": "text", "text": message }]
+  result["content"] = Json::array(content)
+  result["isError"] = true.to_json()
+  let obj : Map[String, Json] = {}
+  obj["result"] = Json::object(result)
+  Json::object(obj).stringify()
+}
+
+// =============================================================================
 // Server lifecycle
 // =============================================================================
 
@@ -746,8 +979,9 @@ async fn run_server(gateway : @gw.Gateway, host : String, port : Int) -> Unit {
 ///|
 fn validate_config(config : @gw.GatewayConfig) -> Unit raise @gw.GatewayError {
   for provider_id, provider in config.providers {
-    // Codex app-server doesn't require API key
-    if provider.api == @gw.ModelApi::CodexAppServer {
+    // Codex app-server and `claude mcp serve` don't require API key
+    if provider.api == @gw.ModelApi::CodexAppServer ||
+       provider.api == @gw.ModelApi::ClaudeMcpServe {
       continue
     }
     let api_key = expand_env(provider.api_key)

@@ -6,4 +6,5 @@ import {
   "trkbt10/llm_interop/src/dialects/anthropic" @anthropic,
   "trkbt10/llm_interop/src/dialects/gemini" @gemini,
   "trkbt10/llm_interop/src/dialects/codex" @codex,
+  "trkbt10/llm_interop/src/dialects/claude_mcp" @claude_mcp,
 }

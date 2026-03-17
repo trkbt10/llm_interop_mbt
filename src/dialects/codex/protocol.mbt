@@ -7,39 +7,21 @@
 // =============================================================================
 
 ///|
-/// Build a JSON-RPC 2.0 success response
+/// Build a JSON-RPC 2.0 success response (delegates to @jsonrpc)
 pub fn codex_rpc_response(id : Int?, result : Json) -> String {
-  let obj : Map[String, Json] = {}
-  obj["jsonrpc"] = Json::string("2.0")
-  match id {
-    Some(i) => obj["id"] = Json::number(i.to_double())
-    None => ()
-  }
-  obj["result"] = result
-  Json::object(obj).stringify()
+  @jsonrpc.build_response(id, result)
 }
 
 ///|
-/// Build a JSON-RPC 2.0 error response
+/// Build a JSON-RPC 2.0 error response (delegates to @jsonrpc)
 pub fn codex_rpc_error(id : Int?, code : Int, message : String) -> String {
-  let obj : Map[String, Json] = {}
-  obj["jsonrpc"] = Json::string("2.0")
-  match id {
-    Some(i) => obj["id"] = Json::number(i.to_double())
-    None => ()
-  }
-  obj["error"] = { "code": Json::number(code.to_double()), "message": message }
-  Json::object(obj).stringify()
+  @jsonrpc.build_error_response(id, code, message)
 }
 
 ///|
-/// Build a JSON-RPC 2.0 notification (no id)
+/// Build a JSON-RPC 2.0 notification (delegates to @jsonrpc)
 pub fn codex_rpc_notification(rpc_method : String, params : Json) -> String {
-  let obj : Map[String, Json] = {}
-  obj["jsonrpc"] = Json::string("2.0")
-  obj["method"] = Json::string(rpc_method)
-  obj["params"] = params
-  Json::object(obj).stringify()
+  @jsonrpc.build_notification(rpc_method, Some(params))
 }
 
 ///|
@@ -50,85 +32,10 @@ pub fn codex_ipc_error_event(message : String) -> String {
 }
 
 // =============================================================================
-// JSON-RPC Base Types
+// JSON-RPC Base Types — provided by src/jsonrpc/
 // =============================================================================
-
-///|
-/// JSON-RPC request message
-pub(all) struct CodexRpcRequest {
-  id : Int?
-  rpc_method : String
-  params : Json?
-} derive(Show, Eq)
-
-///|
-pub fn CodexRpcRequest::from_json(json : Json) -> CodexRpcRequest? {
-  match json {
-    { "method": String(m), .. } => {
-      let id = match json {
-        { "id": Number(n, ..), .. } => Some(n.to_int())
-        _ => None
-      }
-      let params = match json {
-        { "params": p, .. } => Some(p)
-        _ => None
-      }
-      Some({ id, rpc_method: m, params })
-    }
-    _ => None
-  }
-}
-
-///|
-pub fn CodexRpcRequest::to_json(self : CodexRpcRequest) -> Json {
-  let obj : Map[String, Json] = {}
-  match self.id {
-    Some(id) => obj["id"] = Json::number(id.to_double())
-    None => ()
-  }
-  obj["method"] = Json::string(self.rpc_method)
-  match self.params {
-    Some(params) => obj["params"] = params
-    None => ()
-  }
-  Json::object(obj)
-}
-
-///|
-/// JSON-RPC response message
-pub(all) struct CodexRpcResponse {
-  id : Int?
-  result : Json?
-  error : CodexRpcError?
-} derive(Show, Eq)
-
-///|
-/// JSON-RPC error
-pub(all) struct CodexRpcError {
-  code : Int
-  message : String
-} derive(Show, Eq, ToJson, FromJson)
-
-///|
-pub fn CodexRpcResponse::from_json(json : Json) -> CodexRpcResponse? {
-  match json {
-    { "id": Number(id, ..), "result": result, .. } =>
-      Some({ id: Some(id.to_int()), result: Some(result), error: None })
-    {
-      "id": Number(id, ..),
-      "error": { "code": Number(code, ..), "message": String(msg), .. },
-      ..
-    } =>
-      Some({
-        id: Some(id.to_int()),
-        result: None,
-        error: Some({ code: code.to_int(), message: msg }),
-      })
-    { "result": result, .. } =>
-      Some({ id: None, result: Some(result), error: None })
-    _ => None
-  }
-}
+// Use @jsonrpc.RpcRequest, @jsonrpc.RpcResponse, @jsonrpc.RpcError directly.
+// The former @jsonrpc.RpcRequest/Response/Error types have been consolidated there.
 
 // =============================================================================
 // Initialize Request/Response
@@ -909,7 +816,7 @@ pub fn build_initialize_request(
   id : Int,
   client_name : String,
   client_version : String,
-) -> CodexRpcRequest {
+) -> @jsonrpc.RpcRequest {
   let params : CodexInitializeParams = {
     client_info: { name: client_name, version: client_version },
     capabilities: { experimental_api: true },
@@ -925,7 +832,7 @@ pub fn build_thread_start_request(
   cwd : String,
   approval_policy : String,
   dynamic_tools : Array[CodexDynamicTool],
-) -> CodexRpcRequest {
+) -> @jsonrpc.RpcRequest {
   let params : CodexThreadStartParams = {
     model,
     cwd,
@@ -950,7 +857,7 @@ pub fn build_turn_start_request(
   effort : String?,
   cwd : String,
   approval_policy : String,
-) -> CodexRpcRequest {
+) -> @jsonrpc.RpcRequest {
   let params : CodexTurnStartParams = {
     thread_id,
     input: [CodexInputItem::text(prompt)],
@@ -966,7 +873,7 @@ pub fn build_turn_start_request(
 
 ///|
 /// Build initialized notification
-pub fn build_initialized_notification() -> CodexRpcRequest {
+pub fn build_initialized_notification() -> @jsonrpc.RpcRequest {
   { id: None, rpc_method: "initialized", params: Some({}) }
 }
 
@@ -985,7 +892,7 @@ pub fn build_model_list_request(
   id : Int,
   limit : Int,
   include_hidden : Bool,
-) -> CodexRpcRequest {
+) -> @jsonrpc.RpcRequest {
   let params : Map[String, Json] = {}
   params["limit"] = Json::number(limit.to_double())
   params["includeHidden"] = include_hidden.to_json()

@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","id":5,"result":{"content":[{"type":"text","text":"total 32\ndrwxr-xr-x  10 user  staff   320 Mar 17 10:00 .\ndrwxr-xr-x   5 user  staff   160 Mar 17 09:00 ..\n-rw-r--r--   1 user  staff  1234 Mar 17 10:00 README.md\n-rw-r--r--   1 user  staff   567 Mar 17 10:00 moon.pkg.json"}]}}

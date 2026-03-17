@@ -105,6 +105,15 @@ pub fn ModelApi::to_spec(self : ModelApi) -> DialectSpec {
         models_path: fn(base, _key) { base },
         auth_headers: @codex.codex_auth_headers,
       }
+    ClaudeMcpServe =>
+      {
+        id: "claude-mcp-serve",
+        default_base_url: @claude_mcp.claude_mcp_default_base_url(),
+        surface: OpenAI, // `claude mcp serve` is a backend; route via OpenAI surface
+        completion_path: fn(base, _model, _key) { base },
+        models_path: fn(base, _key) { base },
+        auth_headers: @claude_mcp.claude_mcp_auth_headers,
+      }
   }
 }
 

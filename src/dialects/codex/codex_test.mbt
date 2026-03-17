@@ -6,13 +6,13 @@
 // =============================================================================
 
 ///|
-test "CodexRpcRequest::from_json" {
+test "@jsonrpc.RpcRequest::from_json" {
   let json : Json = {
     "id": 1,
     "method": "initialize",
     "params": { "clientInfo": { "name": "test", "version": "0.1" } },
   }
-  let req = CodexRpcRequest::from_json(json)
+  let req = @jsonrpc.RpcRequest::from_json(json)
   match req {
     Some(r) => {
       assert_eq(r.id, Some(1))
@@ -24,9 +24,9 @@ test "CodexRpcRequest::from_json" {
 }
 
 ///|
-test "CodexRpcRequest::from_json notification (no id)" {
+test "@jsonrpc.RpcRequest::from_json notification (no id)" {
   let json : Json = { "method": "initialized", "params": {} }
-  let req = CodexRpcRequest::from_json(json)
+  let req = @jsonrpc.RpcRequest::from_json(json)
   match req {
     Some(r) => {
       assert_eq(r.id, None)
@@ -37,9 +37,9 @@ test "CodexRpcRequest::from_json notification (no id)" {
 }
 
 ///|
-test "CodexRpcRequest::from_json invalid" {
+test "@jsonrpc.RpcRequest::from_json invalid" {
   let json : Json = { "foo": "bar" }
-  assert_eq(CodexRpcRequest::from_json(json), None)
+  assert_eq(@jsonrpc.RpcRequest::from_json(json), None)
 }
 
 ///|
@@ -252,7 +252,7 @@ test "CodexTurnSteerParams::from_json missing required fields" {
 // =============================================================================
 
 ///|
-test "CodexRpcRequest::to_json" {
+test "@jsonrpc.RpcRequest::to_json" {
   let req = build_initialize_request(1, "test-client", "1.0.0")
   let json = req.to_json()
   match json {
@@ -271,9 +271,9 @@ test "CodexRpcRequest::to_json" {
 }
 
 ///|
-test "CodexRpcResponse::from_json result" {
+test "@jsonrpc.RpcResponse::from_json result" {
   let json : Json = { "id": 1, "result": { "ok": true } }
-  let resp = CodexRpcResponse::from_json(json)
+  let resp = @jsonrpc.RpcResponse::from_json(json)
   match resp {
     Some(r) => {
       assert_eq(r.id, Some(1))
@@ -288,12 +288,12 @@ test "CodexRpcResponse::from_json result" {
 }
 
 ///|
-test "CodexRpcResponse::from_json error" {
+test "@jsonrpc.RpcResponse::from_json error" {
   let json : Json = {
     "id": 2,
     "error": { "code": -32600, "message": "Invalid Request" },
   }
-  let resp = CodexRpcResponse::from_json(json)
+  let resp = @jsonrpc.RpcResponse::from_json(json)
   match resp {
     Some(r) => {
       assert_eq(r.id, Some(2))
@@ -608,7 +608,7 @@ test "fixture: parse initialize response" {
       return
     }
   }
-  let resp = CodexRpcResponse::from_json(json)
+  let resp = @jsonrpc.RpcResponse::from_json(json)
   match resp {
     Some(r) => {
       assert_eq(r.id, Some(1))
@@ -631,7 +631,7 @@ test "fixture: parse thread/start response" {
       return
     }
   }
-  let resp = CodexRpcResponse::from_json(json)
+  let resp = @jsonrpc.RpcResponse::from_json(json)
   match resp {
     Some(r) => {
       assert_eq(r.id, Some(2))
@@ -678,7 +678,7 @@ test "fixture: parse turn/start response" {
       return
     }
   }
-  let resp = CodexRpcResponse::from_json(json)
+  let resp = @jsonrpc.RpcResponse::from_json(json)
   match resp {
     Some(r) => {
       assert_eq(r.id, Some(3))
@@ -715,7 +715,7 @@ test "fixture: parse error response" {
       return
     }
   }
-  let resp = CodexRpcResponse::from_json(json)
+  let resp = @jsonrpc.RpcResponse::from_json(json)
   match resp {
     Some(r) => {
       assert_eq(r.id, Some(4))

@@ -588,7 +588,7 @@ async fn dispatch(
       return
     }
   }
-  let req = match @codex.CodexRpcRequest::from_json(json) {
+  let req = match @jsonrpc.RpcRequest::from_json(json) {
     Some(r) => r
     None => {
       emit(send_error(None, -32600, "Invalid Request"))

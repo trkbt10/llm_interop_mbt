@@ -23,6 +23,7 @@ pub(all) enum ModelApi {
   BedrockConverseStream // AWS Bedrock converse stream
   Ollama // Ollama local API
   CodexAppServer // Codex app-server JSON-RPC API
+  ClaudeMcpServe // `claude mcp serve` subprocess API
 } derive(Show, Eq)
 
 ///|
@@ -36,6 +37,7 @@ pub fn ModelApi::from_string(s : String) -> ModelApi? {
     "bedrock-converse-stream" | "bedrock" => Some(BedrockConverseStream)
     "ollama" => Some(Ollama)
     "codex-app-server" | "codex" => Some(CodexAppServer)
+    "claude-mcp-serve" | "claude-mcp" => Some(ClaudeMcpServe)
     _ => None
   }
 }
@@ -51,6 +53,7 @@ pub fn ModelApi::to_string(self : ModelApi) -> String {
     BedrockConverseStream => "bedrock-converse-stream"
     Ollama => "ollama"
     CodexAppServer => "codex-app-server"
+    ClaudeMcpServe => "claude-mcp-serve"
   }
 }
 
@@ -172,6 +175,7 @@ pub(all) struct ProviderConfig {
   models : Array[ModelConfig]
   model_patterns : Array[String] // Prefix patterns for fallback routing (e.g. ["claude-"])
   codex : @codex.CodexConfig? // Codex app-server specific config (subprocess command, timeouts, etc.)
+  claude_mcp : @claude_mcp.ClaudeMcpConfig? // `claude mcp serve` config
 } derive(Show)
 
 ///|
@@ -187,6 +191,7 @@ pub fn ProviderConfig::new(id : String, api : ModelApi) -> ProviderConfig {
     models: [],
     model_patterns: [],
     codex: None,
+    claude_mcp: None,
   }
 }
 
