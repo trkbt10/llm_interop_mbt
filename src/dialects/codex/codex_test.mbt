@@ -265,7 +265,7 @@ test "CodexTokenUsage::from_json nested total" {
 
 ///|
 fn read_codex_fixture(filename : String) -> String raise {
-  @fs.read_file_to_string("testdata/codex_fixtures/" + filename)
+  @fs.read_file_to_string("testdata/codex/" + filename)
 }
 
 ///|

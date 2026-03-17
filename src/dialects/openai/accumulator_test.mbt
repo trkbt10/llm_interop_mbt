@@ -106,7 +106,7 @@ test "ResponsesApiAccumulator tool call stream" {
 ///|
 test "ResponsesApiAccumulator fixture multi tool stream routes deltas by output_index" {
   let jsonl = read_sse_fixture(
-    "testdata/sse_fixtures/openai/responses/multi_toolcall_stream.jsonl",
+    "testdata/openai/responses/multi_toolcall_stream.jsonl",
   ) catch {
     err => {
       fail("Failed to read fixture: " + err.to_string())
@@ -142,7 +142,7 @@ test "ResponsesApiAccumulator fixture multi tool stream routes deltas by output_
 ///|
 test "ResponsesApiAccumulator fixture web search stream returns final text" {
   let jsonl = read_sse_fixture(
-    "testdata/sse_fixtures/openai/responses/websearch_stream.jsonl",
+    "testdata/openai/responses/websearch_stream.jsonl",
   ) catch {
     err => {
       fail("Failed to read fixture: " + err.to_string())

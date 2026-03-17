@@ -450,7 +450,7 @@ test "HarmonyToResponsesTranslator: tool call streaming" {
 ///|
 test "HarmonyToResponsesTranslator: fixture text stream round-trips to Responses API" {
   let translated = translate_harmony_fixture(
-    "testdata/sse_fixtures/groq/harmony/text_stream.jsonl", test_response_id,
+    "testdata/groq/harmony/text_stream.jsonl", test_response_id,
   ) catch {
     err => {
       fail("Failed to translate fixture: " + err.to_string())
@@ -467,7 +467,7 @@ test "HarmonyToResponsesTranslator: fixture text stream round-trips to Responses
 ///|
 test "HarmonyToResponsesTranslator: fixture multi tool stream keeps chunk routing" {
   let translated = translate_harmony_fixture(
-    "testdata/sse_fixtures/groq/harmony/multi_toolcall_stream.jsonl", test_response_id,
+    "testdata/groq/harmony/multi_toolcall_stream.jsonl", test_response_id,
   ) catch {
     err => {
       fail("Failed to translate fixture: " + err.to_string())

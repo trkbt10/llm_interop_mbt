@@ -25,31 +25,31 @@ fn get_jsonl_line(path : String, index : Int) -> String raise {
 }
 
 // =============================================================================
-// Claude Message Fixtures (from fixtures/claude/message-sync.jsonl)
+// Claude Message Fixtures (from testdata/claude/message-sync.jsonl)
 // =============================================================================
 
 ///|
 /// Claude text response fixture (line 0)
 fn claude_text_response_fixture() -> String raise {
-  get_jsonl_line("fixtures/claude/message-sync.jsonl", 0)
+  get_jsonl_line("testdata/claude/message-sync.jsonl", 0)
 }
 
 ///|
 /// Claude tool_use response fixture (line 7)
 fn claude_tool_use_fixture() -> String raise {
-  get_jsonl_line("fixtures/claude/message-sync.jsonl", 7)
+  get_jsonl_line("testdata/claude/message-sync.jsonl", 7)
 }
 
 ///|
 /// Claude multi-tool response fixture (line 8)
 fn claude_multi_tool_fixture() -> String raise {
-  get_jsonl_line("fixtures/claude/message-sync.jsonl", 8)
+  get_jsonl_line("testdata/claude/message-sync.jsonl", 8)
 }
 
 ///|
 /// Claude tool result continuation fixture (line 9)
 fn claude_tool_result_continuation_fixture() -> String raise {
-  get_jsonl_line("fixtures/claude/message-sync.jsonl", 9)
+  get_jsonl_line("testdata/claude/message-sync.jsonl", 9)
 }
 
 // =============================================================================
@@ -61,7 +61,7 @@ fn claude_tool_result_continuation_fixture() -> String raise {
 fn openai_web_search_nonstream_fixture() -> Json raise {
   @json.parse(
     @fs.read_file_to_string(
-      "testdata/sse_fixtures/openai/responses/websearch_nonstream.json",
+      "testdata/openai/responses/websearch_nonstream.json",
     ),
   )
 }
@@ -71,7 +71,7 @@ fn openai_web_search_nonstream_fixture() -> Json raise {
 fn openai_web_search_stream_fixture() -> @types.ModelResponse raise {
   @openai.accumulate_responses_api(
     @fs.read_file_to_string(
-      "testdata/sse_fixtures/openai/responses/websearch_stream.jsonl",
+      "testdata/openai/responses/websearch_stream.jsonl",
     ),
   )
 }

@@ -5,7 +5,7 @@ const path = require("path")
 const readline = require("readline")
 const { spawn } = require("child_process")
 
-const FIXTURES_DIR = path.join(__dirname, "..", "testdata", "codex_fixtures")
+const FIXTURES_DIR = path.join(__dirname, "..", "testdata", "codex")
 
 let nextId = 1
 const pending = new Map()

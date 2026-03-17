@@ -6,7 +6,9 @@ SSE パーサーの実装・検証に使用する。
 ## ディレクトリ構成
 
 ```
-testdata/sse_fixtures/
+testdata/
+├── claude/                    # Claude Messages API (sync fixtures from llm-interop TS)
+├── codex/                     # Codex app-server protocol fixtures
 ├── groq/
 │   ├── chat_completions/   # OpenAI Chat Completions 互換 (/v1/chat/completions)
 │   ├── responses/          # OpenAI Responses API 互換 (/v1/responses)
@@ -20,7 +22,8 @@ testdata/sse_fixtures/
 │   ├── responses/          # OpenAI Responses API (/v1/responses)
 │   ├── models/             # GET /v1/models
 │   └── errors/             # エラーレスポンス
-└── README.md
+└── gemini/
+    └── generate_content/      # Gemini Generate Content API
 ```
 
 ### messages / chat_completions / responses 内のファイル命名規則
