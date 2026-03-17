@@ -278,4 +278,3 @@ pub fn GatewaySurface::to_string(self : GatewaySurface) -> String {
     Codex => "codex"
   }
 }
-

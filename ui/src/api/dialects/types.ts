@@ -133,6 +133,7 @@ export type RequestOptions = {
   topK?: number;
   stop?: string[];
   stream?: boolean;
+  reasoningEffort?: string;
 };
 
 /** Which optional parameters a dialect supports */
@@ -142,6 +143,7 @@ export type SupportedParams = {
   topP: boolean;
   topK: boolean;
   stop: boolean;
+  reasoningEffort: boolean;
 };
 
 export type Dialect = {

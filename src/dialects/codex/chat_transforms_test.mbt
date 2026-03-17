@@ -76,9 +76,34 @@ test "chat_request_to_codex: preserves messages array" {
 }
 
 ///|
+test "chat_request_to_codex: extracts reasoning_effort" {
+  let body =
+    #|{"model":"o3-mini","messages":[{"role":"user","content":"hi"}],"reasoning_effort":"high"}
+  let result = chat_request_to_codex(body, @types.TransformContext::default())
+  let json = @json.parse(result) catch { _ => fail("invalid json") }
+  match json {
+    { "model": String(model), "effort": String(effort), .. } => {
+      assert_eq(model, "o3-mini")
+      assert_eq(effort, "high")
+    }
+    _ => fail("unexpected structure: " + result)
+  }
+}
+
+///|
+test "chat_request_to_codex: omits effort when not present" {
+  let body =
+    #|{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}]}
+  let result = chat_request_to_codex(body, @types.TransformContext::default())
+  let s = result
+  assert_true(not(s.contains("effort")))
+}
+
+///|
 test "chat_request_to_codex: handles invalid JSON gracefully" {
   let result = chat_request_to_codex(
-    "not json", @types.TransformContext::default(),
+    "not json",
+    @types.TransformContext::default(),
   )
   assert_eq(result, "not json")
 }
@@ -328,7 +353,10 @@ test "codex_response_to_chat: is alias for codex_events_to_chat" {
   let events_json = build_events_array_from_fixture() catch {
     err => fail("Failed to load fixture: " + err.to_string())
   }
-  assert_eq(codex_events_to_chat(events_json), codex_response_to_chat(events_json))
+  assert_eq(
+    codex_events_to_chat(events_json),
+    codex_response_to_chat(events_json),
+  )
 }
 
 // =============================================================================
@@ -343,6 +371,7 @@ test "CodexSession::new: creates uninitialized session" {
   assert_eq(session.next_id, 1)
   assert_eq(session.cwd, "/tmp")
   assert_eq(session.approval_policy, "never")
+  assert_eq(session.model, "codex")
 }
 
 ///|
@@ -368,6 +397,7 @@ test "prepare_codex_upstream: ready session produces 1 step" {
     next_id: 5,
     cwd: "/workspace",
     approval_policy: "never",
+    model: "codex",
   }
   let body =
     #|{"prompt":"hello","model":"codex"}
@@ -385,6 +415,7 @@ test "prepare_codex_upstream: extracts prompt from intermediate format" {
     next_id: 1,
     cwd: "/tmp",
     approval_policy: "never",
+    model: "codex",
   }
   let body =
     #|{"prompt":"test prompt","model":"codex"}
@@ -424,6 +455,41 @@ test "patch_turn_start_thread_id: patches threadId in params" {
 }
 
 ///|
+test "prepare_codex_upstream: propagates model and effort to turn/start" {
+  let session : CodexSession = {
+    phase: Ready,
+    thread_id: "t1",
+    next_id: 1,
+    cwd: "/tmp",
+    approval_policy: "never",
+    model: "codex",
+  }
+  let body =
+    #|{"prompt":"hello","model":"o3-mini","effort":"high"}
+  let req = prepare_codex_upstream(body, session)
+  let msg = req.steps[0].message
+  assert_true(msg.contains("o3-mini"))
+  assert_true(msg.contains("high"))
+  // Session model is updated
+  assert_eq(req.next_session.model, "o3-mini")
+}
+
+///|
+test "prepare_codex_upstream: full sequence includes model in thread/start" {
+  let session = CodexSession::new("/workspace")
+  let body =
+    #|{"prompt":"hello","model":"gpt-4o"}
+  let req = prepare_codex_upstream(body, session)
+  assert_eq(req.steps.length(), 4)
+  // thread/start (step 2) should contain model
+  let thread_msg = req.steps[2].message
+  assert_true(thread_msg.contains("gpt-4o"))
+  // turn/start (step 3) should contain model
+  let turn_msg = req.steps[3].message
+  assert_true(turn_msg.contains("gpt-4o"))
+}
+
+///|
 test "mark_session_turn_complete: transitions to Ready" {
   let session : CodexSession = {
     phase: TurnInProgress,
@@ -431,6 +497,7 @@ test "mark_session_turn_complete: transitions to Ready" {
     next_id: 5,
     cwd: "/tmp",
     approval_policy: "never",
+    model: "codex",
   }
   let updated = mark_session_turn_complete(session)
   assert_eq(updated.phase, Ready)

@@ -76,6 +76,7 @@ export function settingsToRequestOptions(settings: ChatSettings): RequestOptions
     ...(topP !== undefined ? { topP } : {}),
     ...(topK !== undefined ? { topK } : {}),
     ...(stop.length > 0 ? { stop } : {}),
+    ...(settings.reasoningEffort ? { reasoningEffort: settings.reasoningEffort } : {}),
   };
 }
 

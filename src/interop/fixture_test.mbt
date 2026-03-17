@@ -60,9 +60,7 @@ fn claude_tool_result_continuation_fixture() -> String raise {
 /// OpenAI Responses web search non-stream fixture
 fn openai_web_search_nonstream_fixture() -> Json raise {
   @json.parse(
-    @utils.read_testdata(
-      "testdata/openai/responses/websearch_nonstream.json",
-    ),
+    @utils.read_testdata("testdata/openai/responses/websearch_nonstream.json"),
   )
 }
 

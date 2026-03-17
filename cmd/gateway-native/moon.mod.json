@@ -5,6 +5,7 @@
     "trkbt10/llm_interop": {
       "path": "../.."
     },
+    "trkbt10/subprocess": "0.2.0",
     "moonbitlang/async": "0.16.7",
     "moonbitlang/x": "0.4.15"
   }

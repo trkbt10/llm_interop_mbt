@@ -110,7 +110,7 @@ function parseChoice(choice: RawChoice): ResponseChoice {
 
 export const openaiChatCompletionDialect: Dialect = {
   name: "openai-chat-completion",
-  supportedParams: { maxTokens: true, temperature: true, topP: true, topK: false, stop: true },
+  supportedParams: { maxTokens: true, temperature: true, topP: true, topK: false, stop: true, reasoningEffort: true },
 
   buildEndpoint(): string {
     return "/v1/chat/completions";
@@ -128,6 +128,7 @@ export const openaiChatCompletionDialect: Dialect = {
       ...(options?.temperature !== undefined ? { temperature: options.temperature } : {}),
       ...(options?.topP !== undefined ? { top_p: options.topP } : {}),
       ...(options?.stop?.length ? { stop: options.stop } : {}),
+      ...(options?.reasoningEffort ? { reasoning_effort: options.reasoningEffort as "low" | "medium" | "high" } : {}),
       stream: false,
     };
   },

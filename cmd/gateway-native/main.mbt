@@ -483,7 +483,7 @@ async fn proxy_to_codex_backend(
         return
       }
     }
-    let state = codex_backends[backend.id].unwrap()
+    let state = codex_backends[backend.id]
     let codex_body = @gw.transform_for_provider(
       backend.provider,
       body,

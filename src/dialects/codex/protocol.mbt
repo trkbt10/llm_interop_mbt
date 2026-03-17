@@ -114,6 +114,7 @@ pub fn CodexCapabilities::to_json(self : CodexCapabilities) -> Json {
 ///|
 /// Thread start request parameters
 pub(all) struct CodexThreadStartParams {
+  model : String
   cwd : String
   approval_policy : String
   sandbox : CodexSandboxConfig?
@@ -127,6 +128,7 @@ pub(all) struct CodexThreadStartParams {
 ///|
 pub fn CodexThreadStartParams::to_json(self : CodexThreadStartParams) -> Json {
   let obj : Map[String, Json] = {}
+  obj["model"] = Json::string(self.model)
   obj["cwd"] = Json::string(self.cwd)
   obj["approvalPolicy"] = Json::string(self.approval_policy)
   match self.sandbox {
@@ -208,6 +210,9 @@ pub fn CodexSandboxConfig::none() -> CodexSandboxConfig {
 pub(all) struct CodexTurnStartParams {
   thread_id : String
   input : Array[CodexInputItem]
+  model : String
+  effort : String?
+  personality : String?
   cwd : String
   approval_policy : String
   sandbox_policy : CodexSandboxPolicy?
@@ -218,6 +223,15 @@ pub fn CodexTurnStartParams::to_json(self : CodexTurnStartParams) -> Json {
   let obj : Map[String, Json] = {}
   obj["threadId"] = Json::string(self.thread_id)
   obj["input"] = Json::array(self.input.map(fn(i) { i.to_json() }))
+  obj["model"] = Json::string(self.model)
+  match self.effort {
+    Some(e) => obj["effort"] = Json::string(e)
+    None => ()
+  }
+  match self.personality {
+    Some(p) => obj["personality"] = Json::string(p)
+    None => ()
+  }
   obj["cwd"] = Json::string(self.cwd)
   obj["approvalPolicy"] = Json::string(self.approval_policy)
   match self.sandbox_policy {
@@ -661,11 +675,13 @@ pub fn build_initialize_request(
 /// Build thread/start request
 pub fn build_thread_start_request(
   id : Int,
+  model : String,
   cwd : String,
   approval_policy : String,
   dynamic_tools : Array[CodexDynamicTool],
 ) -> CodexRpcRequest {
   let params : CodexThreadStartParams = {
+    model,
     cwd,
     approval_policy,
     sandbox: None,
@@ -684,12 +700,17 @@ pub fn build_turn_start_request(
   id : Int,
   thread_id : String,
   prompt : String,
+  model : String,
+  effort : String?,
   cwd : String,
   approval_policy : String,
 ) -> CodexRpcRequest {
   let params : CodexTurnStartParams = {
     thread_id,
     input: [CodexInputItem::text(prompt)],
+    model,
+    effort,
+    personality: None,
     cwd,
     approval_policy,
     sandbox_policy: None,
@@ -710,4 +731,119 @@ pub fn build_approval_response(
   decision : CodexApprovalDecision,
 ) -> Json {
   { "id": id, "result": decision.to_json() }
+}
+
+///|
+/// Build model/list request
+pub fn build_model_list_request(
+  id : Int,
+  limit : Int,
+  include_hidden : Bool,
+) -> CodexRpcRequest {
+  let params : Map[String, Json] = {}
+  params["limit"] = Json::number(limit.to_double())
+  params["includeHidden"] = include_hidden.to_json()
+  { id: Some(id), rpc_method: "model/list", params: Some(Json::object(params)) }
+}
+
+// =============================================================================
+// Model List Types
+// =============================================================================
+
+///|
+/// Model information from model/list response
+pub(all) struct CodexModelInfo {
+  id : String
+  model : String
+  display_name : String
+  hidden : Bool
+  default_reasoning_effort : String?
+  supported_reasoning_efforts : Array[CodexReasoningEffort]
+  input_modalities : Array[String]
+  is_default : Bool
+} derive(Show, Eq)
+
+///|
+/// Reasoning effort option
+pub(all) struct CodexReasoningEffort {
+  reasoning_effort : String
+  description : String
+} derive(Show, Eq)
+
+///|
+pub fn CodexModelInfo::from_json(json : Json) -> CodexModelInfo? {
+  match json {
+    { "id": String(id), "model": String(model), .. } => {
+      let display_name = match json {
+        { "displayName": String(dn), .. } => dn
+        _ => model
+      }
+      let hidden = match json {
+        { "hidden": True, .. } => true
+        _ => false
+      }
+      let default_effort = match json {
+        { "defaultReasoningEffort": String(e), .. } => Some(e)
+        _ => None
+      }
+      let efforts : Array[CodexReasoningEffort] = []
+      match json {
+        { "supportedReasoningEfforts": Array(arr), .. } =>
+          for item in arr {
+            match item {
+              {
+                "reasoning_effort": String(re),
+                "description": String(desc),
+                ..
+              } => efforts.push({ reasoning_effort: re, description: desc })
+              _ => ()
+            }
+          }
+        _ => ()
+      }
+      let modalities : Array[String] = []
+      match json {
+        { "inputModalities": Array(arr), .. } =>
+          for item in arr {
+            match item {
+              String(m) => modalities.push(m)
+              _ => ()
+            }
+          }
+        _ => ()
+      }
+      let is_default = match json {
+        { "isDefault": True, .. } => true
+        _ => false
+      }
+      Some({
+        id,
+        model,
+        display_name,
+        hidden,
+        default_reasoning_effort: default_effort,
+        supported_reasoning_efforts: efforts,
+        input_modalities: modalities,
+        is_default,
+      })
+    }
+    _ => None
+  }
+}
+
+///|
+/// Parse model/list response data array
+pub fn parse_model_list_response(json : Json) -> Array[CodexModelInfo] {
+  let models : Array[CodexModelInfo] = []
+  match json {
+    { "data": Array(items), .. } =>
+      for item in items {
+        match CodexModelInfo::from_json(item) {
+          Some(info) => models.push(info)
+          None => ()
+        }
+      }
+    _ => ()
+  }
+  models
 }

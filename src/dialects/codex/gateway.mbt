@@ -42,6 +42,8 @@ pub(all) struct CodexSession {
   cwd : String
   /// Approval policy for thread/turn
   approval_policy : String
+  /// Current model for this thread
+  model : String
 } derive(Show, Eq)
 
 ///|
@@ -67,6 +69,7 @@ pub fn CodexSession::new(cwd : String) -> CodexSession {
     next_id: 1,
     cwd,
     approval_policy: "never",
+    model: "codex",
   }
 }
 
@@ -119,11 +122,19 @@ pub fn prepare_codex_upstream(
     { "prompt": String(p), .. } => p
     _ => body
   }
+  let model = match json {
+    { "model": String(m), .. } => m
+    _ => session.model
+  }
+  let effort : String? = match json {
+    { "effort": String(e), .. } => Some(e)
+    _ => None
+  }
   match session.phase {
-    Uninitialized => build_full_sequence(session, prompt)
-    Ready => build_turn_only(session, prompt)
+    Uninitialized => build_full_sequence(session, prompt, model, effort)
+    Ready => build_turn_only(session, prompt, model, effort)
     // For other phases, attempt recovery by doing full init
-    _ => build_full_sequence(session, prompt)
+    _ => build_full_sequence(session, prompt, model, effort)
   }
 }
 
@@ -132,17 +143,29 @@ pub fn prepare_codex_upstream(
 fn build_full_sequence(
   session : CodexSession,
   prompt : String,
+  model : String,
+  effort : String?,
 ) -> CodexUpstreamRequest {
   let id = session.next_id
   let init_req = build_initialize_request(id, "llm_interop", "0.1.0")
   let init_notif = build_initialized_notification()
   let thread_req = build_thread_start_request(
-    id + 1, session.cwd, session.approval_policy, [],
+    id + 1,
+    model,
+    session.cwd,
+    session.approval_policy,
+    [],
   )
   // turn/start needs thread_id from thread/start response.
   // We build it with empty thread_id; host fills it from the response.
   let turn_req = build_turn_start_request(
-    id + 2, "", prompt, session.cwd, session.approval_policy,
+    id + 2,
+    "",
+    prompt,
+    model,
+    effort,
+    session.cwd,
+    session.approval_policy,
   )
   {
     steps: [
@@ -151,11 +174,7 @@ fn build_full_sequence(
       { message: thread_req.to_json().stringify(), kind: Request },
       { message: turn_req.to_json().stringify(), kind: TurnStart },
     ],
-    next_session: {
-      ..session,
-      phase: TurnInProgress,
-      next_id: id + 3,
-    },
+    next_session: { ..session, phase: TurnInProgress, next_id: id + 3, model },
   }
 }
 
@@ -164,11 +183,15 @@ fn build_full_sequence(
 fn build_turn_only(
   session : CodexSession,
   prompt : String,
+  model : String,
+  effort : String?,
 ) -> CodexUpstreamRequest {
   let turn_req = build_turn_start_request(
     session.next_id,
     session.thread_id,
     prompt,
+    model,
+    effort,
     session.cwd,
     session.approval_policy,
   )
@@ -178,6 +201,7 @@ fn build_turn_only(
       ..session,
       phase: TurnInProgress,
       next_id: session.next_id + 1,
+      model,
     },
   }
 }

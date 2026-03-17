@@ -45,6 +45,7 @@ export const codexAppServerDialect: Dialect = {
     topP: false,
     topK: false,
     stop: false,
+    reasoningEffort: true,
   },
 
   buildEndpoint(): string {
@@ -54,7 +55,7 @@ export const codexAppServerDialect: Dialect = {
   buildRequest(
     messages: ChatMessage[],
     model: string,
-    _options?: RequestOptions,
+    options?: RequestOptions,
   ): unknown {
     // Build OpenAI-compatible request; the gateway transforms to Codex JSON-RPC
     return {
@@ -66,6 +67,7 @@ export const codexAppServerDialect: Dialect = {
             ? msg.content
             : JSON.stringify(msg.content),
       })),
+      ...(options?.reasoningEffort ? { reasoning_effort: options.reasoningEffort } : {}),
     };
   },
 

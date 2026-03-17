@@ -27,9 +27,17 @@ pub fn chat_request_to_codex(
   }
   // Build prompt from all messages, preserving conversation context
   let prompt = build_prompt_from_messages(messages)
+  let effort : String? = match json {
+    { "reasoning_effort": String(e), .. } => Some(e)
+    _ => None
+  }
   let obj : Map[String, Json] = {}
   obj["prompt"] = Json::string(prompt)
   obj["model"] = Json::string(model)
+  match effort {
+    Some(e) => obj["effort"] = Json::string(e)
+    None => ()
+  }
   // Preserve the full messages array for richer turn input in the future
   obj["messages"] = Json::array(messages)
   Json::object(obj).stringify()
@@ -166,10 +174,8 @@ fn process_event(acc : EventAccumulator, event : Json) -> Unit {
     "codex/event/agent_message" =>
       if acc.content == "" {
         match event {
-          {
-            "params": { "msg": { "message": String(msg), .. }, .. },
-            ..
-          } => acc.content = msg
+          { "params": { "msg": { "message": String(msg), .. }, .. }, .. } =>
+            acc.content = msg
           _ => ()
         }
       }
@@ -178,10 +184,7 @@ fn process_event(acc : EventAccumulator, event : Json) -> Unit {
       if acc.content == "" {
         match event {
           {
-            "params": {
-              "msg": { "last_agent_message": String(msg), .. },
-              ..
-            },
+            "params": { "msg": { "last_agent_message": String(msg), .. }, .. },
             ..
           } => acc.content = msg
           _ => ()
@@ -195,21 +198,12 @@ fn process_event(acc : EventAccumulator, event : Json) -> Unit {
         _ => ()
       }
       match event {
-        {
-          "params": { "turn": { "status": String(status), .. }, .. },
-          ..
-        } =>
+        { "params": { "turn": { "status": String(status), .. }, .. }, .. } =>
           acc.finish_reason = codex_status_to_finish_reason(status)
         _ => ()
       }
       match event {
-        {
-          "params": {
-            "turn": { "error": String(err_msg), .. },
-            ..
-          },
-          ..
-        } => {
+        { "params": { "turn": { "error": String(err_msg), .. }, .. }, .. } => {
           acc.has_error = true
           acc.error_message = err_msg
         }
@@ -259,10 +253,7 @@ fn process_event(acc : EventAccumulator, event : Json) -> Unit {
       // Extract model context window for metadata
       match event {
         {
-          "params": {
-            "msg": { "model_context_window": Number(w, ..), .. },
-            ..
-          },
+          "params": { "msg": { "model_context_window": Number(w, ..), .. }, .. },
           ..
         } => ignore(w)
         _ => ()
@@ -371,9 +362,7 @@ fn build_openai_response(acc : EventAccumulator) -> String {
   usage["completion_tokens"] = Json::number(acc.output_tokens.to_double())
   usage["total_tokens"] = Json::number(acc.total_tokens.to_double())
   if acc.cached_input_tokens > 0 {
-    usage["cached_tokens"] = Json::number(
-      acc.cached_input_tokens.to_double(),
-    )
+    usage["cached_tokens"] = Json::number(acc.cached_input_tokens.to_double())
   }
   if acc.reasoning_output_tokens > 0 {
     usage["reasoning_tokens"] = Json::number(

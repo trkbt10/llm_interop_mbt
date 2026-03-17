@@ -61,6 +61,7 @@ test "CodexRpcResponse::from_json error" {
 ///|
 test "CodexThreadStartParams::to_json" {
   let params : CodexThreadStartParams = {
+    model: "o3-mini",
     cwd: "/workspace",
     approval_policy: "never",
     sandbox: Some(CodexSandboxConfig::none()),
@@ -72,7 +73,13 @@ test "CodexThreadStartParams::to_json" {
   }
   let json = params.to_json()
   match json {
-    { "cwd": String(cwd), "approvalPolicy": String(policy), .. } => {
+    {
+      "model": String(model),
+      "cwd": String(cwd),
+      "approvalPolicy": String(policy),
+      ..
+    } => {
+      assert_eq(model, "o3-mini")
       assert_eq(cwd, "/workspace")
       assert_eq(policy, "never")
     }
@@ -98,18 +105,48 @@ test "CodexTurnStartParams::to_json" {
   let params : CodexTurnStartParams = {
     thread_id: "thread-123",
     input: [CodexInputItem::text("Test prompt")],
+    model: "o3-mini",
+    effort: Some("high"),
+    personality: None,
     cwd: "/workspace",
     approval_policy: "never",
     sandbox_policy: None,
   }
   let json = params.to_json()
   match json {
-    { "threadId": String(tid), "input": Array(inputs), .. } => {
+    {
+      "threadId": String(tid),
+      "input": Array(inputs),
+      "model": String(model),
+      "effort": String(effort),
+      ..
+    } => {
       assert_eq(tid, "thread-123")
       assert_eq(inputs.length(), 1)
+      assert_eq(model, "o3-mini")
+      assert_eq(effort, "high")
     }
     _ => fail("Unexpected JSON structure")
   }
+}
+
+///|
+test "CodexTurnStartParams::to_json omits optional fields when None" {
+  let params : CodexTurnStartParams = {
+    thread_id: "thread-123",
+    input: [CodexInputItem::text("Test")],
+    model: "codex",
+    effort: None,
+    personality: None,
+    cwd: "/workspace",
+    approval_policy: "never",
+    sandbox_policy: None,
+  }
+  let json = params.to_json()
+  let s = json.stringify()
+  // effort and personality should not appear in output
+  assert_true(not(s.contains("effort")))
+  assert_true(not(s.contains("personality")))
 }
 
 ///|
@@ -214,18 +251,51 @@ test "CodexConfig::default" {
 
 ///|
 test "build_thread_start_request" {
-  let req = build_thread_start_request(2, "/workspace", "never", [])
+  let req = build_thread_start_request(2, "o3-mini", "/workspace", "never", [])
   assert_eq(req.id, Some(2))
   assert_eq(req.rpc_method, "thread/start")
+  // Verify model is in params
+  match req.to_json() {
+    { "params": { "model": String(m), .. }, .. } => assert_eq(m, "o3-mini")
+    _ => fail("Expected model in params")
+  }
 }
 
 ///|
 test "build_turn_start_request" {
   let req = build_turn_start_request(
-    3, "thread-abc", "What is 2+2?", "/workspace", "never",
+    3,
+    "thread-abc",
+    "What is 2+2?",
+    "o3-mini",
+    Some("medium"),
+    "/workspace",
+    "never",
   )
   assert_eq(req.id, Some(3))
   assert_eq(req.rpc_method, "turn/start")
+  match req.to_json() {
+    { "params": { "model": String(m), "effort": String(e), .. }, .. } => {
+      assert_eq(m, "o3-mini")
+      assert_eq(e, "medium")
+    }
+    _ => fail("Expected model and effort in params")
+  }
+}
+
+///|
+test "build_turn_start_request without effort" {
+  let req = build_turn_start_request(
+    4,
+    "thread-abc",
+    "Hello",
+    "codex",
+    None,
+    "/workspace",
+    "never",
+  )
+  let s = req.to_json().stringify()
+  assert_true(not(s.contains("effort")))
 }
 
 ///|
@@ -650,4 +720,76 @@ test "fixture: parse events.jsonl turn_completed" {
     }
   }
   assert_true(found)
+}
+
+// =============================================================================
+// model/list Tests
+// =============================================================================
+
+///|
+test "build_model_list_request" {
+  let req = build_model_list_request(5, 50, false)
+  assert_eq(req.id, Some(5))
+  assert_eq(req.rpc_method, "model/list")
+  match req.to_json() {
+    { "params": { "limit": Number(limit, ..), "includeHidden": False, .. }, .. } =>
+      assert_eq(limit.to_int(), 50)
+    _ => fail("Expected limit and includeHidden in params")
+  }
+}
+
+///|
+test "CodexModelInfo::from_json" {
+  let json : Json = {
+    "id": "model-1",
+    "model": "o3-mini",
+    "displayName": "O3 Mini",
+    "hidden": false,
+    "defaultReasoningEffort": "medium",
+    "supportedReasoningEfforts": [
+      { "reasoning_effort": "low", "description": "Fast responses" },
+      { "reasoning_effort": "medium", "description": "Balanced" },
+      { "reasoning_effort": "high", "description": "Thorough reasoning" },
+    ],
+    "inputModalities": ["text", "image"],
+    "isDefault": true,
+  }
+  let info = CodexModelInfo::from_json(json)
+  match info {
+    Some(m) => {
+      assert_eq(m.id, "model-1")
+      assert_eq(m.model, "o3-mini")
+      assert_eq(m.display_name, "O3 Mini")
+      assert_eq(m.hidden, false)
+      assert_eq(m.default_reasoning_effort, Some("medium"))
+      assert_eq(m.supported_reasoning_efforts.length(), 3)
+      assert_eq(m.input_modalities.length(), 2)
+      assert_eq(m.is_default, true)
+    }
+    None => fail("Failed to parse model info")
+  }
+}
+
+///|
+test "parse_model_list_response" {
+  let json : Json = {
+    "data": [
+      {
+        "id": "m1",
+        "model": "o3-mini",
+        "displayName": "O3 Mini",
+        "isDefault": true,
+      },
+      {
+        "id": "m2",
+        "model": "codex-mini-latest",
+        "displayName": "Codex Mini",
+        "isDefault": false,
+      },
+    ],
+  }
+  let models = parse_model_list_response(json)
+  assert_eq(models.length(), 2)
+  assert_eq(models[0].model, "o3-mini")
+  assert_eq(models[1].model, "codex-mini-latest")
 }

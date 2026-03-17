@@ -167,7 +167,7 @@ function parseCandidate(candidate: RawCandidate): ResponseChoice {
 
 export const geminiGenerateContentDialect: Dialect = {
   name: "gemini-generate-content",
-  supportedParams: { maxTokens: true, temperature: true, topP: true, topK: true, stop: true },
+  supportedParams: { maxTokens: true, temperature: true, topP: true, topK: true, stop: true, reasoningEffort: false },
 
   buildEndpoint(model: string): string {
     return `/v1/models/${model}:generateContent`;

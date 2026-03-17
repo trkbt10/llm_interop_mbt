@@ -11,6 +11,7 @@ export type ChatSettings = {
   topP: string;
   topK: string;
   stop: string;
+  reasoningEffort: string;
   systemMessage: string;
 };
 
@@ -20,6 +21,7 @@ export const defaultChatSettings: ChatSettings = {
   topP: "",
   topK: "",
   stop: "",
+  reasoningEffort: "",
   systemMessage: "",
 };
 
@@ -143,6 +145,21 @@ export function SettingsPanel({
                 size="sm"
                 placeholder="comma-separated"
                 aria-label="Stop sequences"
+              />
+            </PropertyRow>
+          )}
+          {supportedParams.reasoningEffort && (
+            <PropertyRow label="Reasoning effort">
+              <Select
+                value={settings.reasoningEffort}
+                onChange={(v) => update("reasoningEffort", v)}
+                options={[
+                  { value: "", label: "Default" },
+                  { value: "low", label: "Low" },
+                  { value: "medium", label: "Medium" },
+                  { value: "high", label: "High" },
+                ]}
+                aria-label="Reasoning effort"
               />
             </PropertyRow>
           )}

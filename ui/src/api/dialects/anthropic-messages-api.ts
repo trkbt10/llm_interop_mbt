@@ -137,7 +137,7 @@ function parseContentBlock(block: RawContentBlock): ResponseContentBlock | null 
 
 export const anthropicMessagesApiDialect: Dialect = {
   name: "anthropic-messages-api",
-  supportedParams: { maxTokens: true, temperature: true, topP: true, topK: true, stop: true },
+  supportedParams: { maxTokens: true, temperature: true, topP: true, topK: true, stop: true, reasoningEffort: false },
 
   buildEndpoint(): string {
     return "/v1/messages";
