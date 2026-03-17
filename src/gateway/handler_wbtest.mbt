@@ -82,7 +82,8 @@ test "resolve: GET /v1/models returns ListModels" {
 ///|
 test "resolve: POST /v1/chat/completions with OpenAI dialect" {
   let gw = Gateway::new(create_test_config(), OpenAI)
-  let body = #|{"model": "gpt-4o", "messages": []}
+  let body =
+    #|{"model": "gpt-4o", "messages": []}
   match gw.resolve("POST", "/v1/chat/completions", body) {
     Completion(dialect=OpenAI, ..) => ()
     other => fail("expected Completion(openai), got \{other}")
@@ -92,7 +93,8 @@ test "resolve: POST /v1/chat/completions with OpenAI dialect" {
 ///|
 test "resolve: POST /v1/responses with OpenAI dialect" {
   let gw = Gateway::new(create_test_config(), OpenAI)
-  let body = #|{"model": "gpt-4o", "input": []}
+  let body =
+    #|{"model": "gpt-4o", "input": []}
   match gw.resolve("POST", "/v1/responses", body) {
     ResponsesApi(..) => ()
     other => fail("expected ResponsesApi, got \{other}")
@@ -102,7 +104,8 @@ test "resolve: POST /v1/responses with OpenAI dialect" {
 ///|
 test "resolve: POST /v1/messages with Anthropic dialect" {
   let gw = Gateway::new(create_test_config(), Anthropic)
-  let body = #|{"model": "claude-sonnet-4-20250514", "max_tokens": 100, "messages": []}
+  let body =
+    #|{"model": "claude-sonnet-4-20250514", "max_tokens": 100, "messages": []}
   match gw.resolve("POST", "/v1/messages", body) {
     Completion(dialect=Anthropic, ..) => ()
     other => fail("expected Completion(anthropic), got \{other}")
@@ -121,7 +124,8 @@ test "resolve: POST /v1/messages returns NotFound for OpenAI dialect" {
 ///|
 test "resolve: Gemini generateContent" {
   let gw = Gateway::new(create_test_config(), Gemini)
-  let body = #|{"contents": [{"parts": [{"text": "hi"}]}]}
+  let body =
+    #|{"contents": [{"parts": [{"text": "hi"}]}]}
   match gw.resolve("POST", "/v1/models/gemini-pro:generateContent", body) {
     CompletionWithModel(dialect=Gemini, model="gemini-pro", ..) => ()
     other => fail("expected CompletionWithModel(gemini), got \{other}")
@@ -203,9 +207,15 @@ test "prepare_upstream: OpenAI provider builds correct request" {
     models: [],
     model_patterns: [],
   }
-  let body = #|{"model": "gpt-4o", "messages": [{"role": "user", "content": "hi"}]}
+  let body =
+    #|{"model": "gpt-4o", "messages": [{"role": "user", "content": "hi"}]}
   let req = prepare_upstream(
-    provider, body, OpenAI, "gpt-4o", "https://api.openai.com/v1", "sk-test",
+    provider,
+    body,
+    OpenAI,
+    "gpt-4o",
+    "https://api.openai.com/v1",
+    "sk-test",
   )
   assert_eq(req.origin, "https://api.openai.com")
   assert_eq(req.path, "/v1/chat/completions")
@@ -226,9 +236,15 @@ test "prepare_upstream: Anthropic provider builds correct request" {
     models: [],
     model_patterns: [],
   }
-  let body = #|{"model": "claude-sonnet-4-20250514", "messages": [{"role": "user", "content": "hi"}]}
+  let body =
+    #|{"model": "claude-sonnet-4-20250514", "messages": [{"role": "user", "content": "hi"}]}
   let req = prepare_upstream(
-    provider, body, OpenAI, "claude-sonnet-4-20250514", "https://api.anthropic.com", "sk-ant-test",
+    provider,
+    body,
+    OpenAI,
+    "claude-sonnet-4-20250514",
+    "https://api.anthropic.com",
+    "sk-ant-test",
   )
   assert_eq(req.origin, "https://api.anthropic.com")
   assert_eq(req.path, "/messages")
@@ -251,7 +267,8 @@ test "prepare_upstream: Gemini provider puts key in URL" {
     models: [],
     model_patterns: [],
   }
-  let body = #|{"model": "gemini-pro", "messages": [{"role": "user", "content": "hi"}]}
+  let body =
+    #|{"model": "gemini-pro", "messages": [{"role": "user", "content": "hi"}]}
   let req = prepare_upstream(
     provider,
     body,
@@ -280,9 +297,15 @@ test "prepare_upstream: cross-dialect transforms body" {
     models: [],
     model_patterns: [],
   }
-  let body = #|{"model": "claude-sonnet-4-20250514", "messages": [{"role": "user", "content": "hello"}]}
+  let body =
+    #|{"model": "claude-sonnet-4-20250514", "messages": [{"role": "user", "content": "hello"}]}
   let req = prepare_upstream(
-    provider, body, OpenAI, "claude-sonnet-4-20250514", "https://api.anthropic.com", "key",
+    provider,
+    body,
+    OpenAI,
+    "claude-sonnet-4-20250514",
+    "https://api.anthropic.com",
+    "key",
   )
   // Body should be transformed from OpenAI to Anthropic format
   let parsed = @json.parse(req.body) catch {
@@ -345,7 +368,8 @@ test "prepare_models_request: Anthropic provider" {
 
 ///|
 test "parse_models_response: OpenAI format" {
-  let response = #|{"data": [{"id": "gpt-4o"}, {"id": "gpt-4o-mini"}]}
+  let response =
+    #|{"data": [{"id": "gpt-4o"}, {"id": "gpt-4o-mini"}]}
   let models = parse_models_response(response, "openai")
   assert_eq(models.length(), 2)
   match models[0] {
@@ -356,7 +380,8 @@ test "parse_models_response: OpenAI format" {
 
 ///|
 test "parse_models_response: Anthropic format" {
-  let response = #|{"models": [{"id": "claude-sonnet-4-20250514"}]}
+  let response =
+    #|{"models": [{"id": "claude-sonnet-4-20250514"}]}
   let models = parse_models_response(response, "anthropic")
   assert_eq(models.length(), 1)
   match models[0] {
@@ -377,7 +402,8 @@ test "parse_models_response: invalid JSON returns empty" {
 
 ///|
 test "extract_json_field: valid body" {
-  let body = #|{"model": "gpt-4o", "messages": []}
+  let body =
+    #|{"model": "gpt-4o", "messages": []}
   match @utils.extract_json_field(body, "model") {
     Some("gpt-4o") => ()
     other => fail("expected Some(gpt-4o), got \{other}")
@@ -386,7 +412,8 @@ test "extract_json_field: valid body" {
 
 ///|
 test "extract_json_field: missing field" {
-  let body = #|{"messages": []}
+  let body =
+    #|{"messages": []}
   match @utils.extract_json_field(body, "model") {
     None => ()
     other => fail("expected None, got \{other}")
@@ -403,11 +430,10 @@ test "extract_json_field: invalid JSON" {
 
 ///|
 test "inject_json_field: adds field when missing" {
-  let body = #|{"messages": []}
+  let body =
+    #|{"messages": []}
   let result = @utils.inject_json_field(body, "model", "gpt-4o")
-  let json = @json.parse(result) catch {
-    _ => fail("failed to parse result")
-  }
+  let json = @json.parse(result) catch { _ => fail("failed to parse result") }
   match json {
     { "model": "gpt-4o", .. } => ()
     _ => fail("expected model field")
@@ -416,11 +442,10 @@ test "inject_json_field: adds field when missing" {
 
 ///|
 test "inject_json_field: preserves existing field" {
-  let body = #|{"model": "existing", "messages": []}
+  let body =
+    #|{"model": "existing", "messages": []}
   let result = @utils.inject_json_field(body, "model", "gpt-4o")
-  let json = @json.parse(result) catch {
-    _ => fail("failed to parse result")
-  }
+  let json = @json.parse(result) catch { _ => fail("failed to parse result") }
   match json {
     { "model": "existing", .. } => ()
     _ => fail("expected original model preserved")
@@ -446,13 +471,20 @@ test "list_configured_models returns all models" {
 
 ///|
 test "extract_gemini_model_from_path extracts model correctly" {
-  assert_eq(@gemini.extract_gemini_model_from_path("/v1/models/gemini-pro:generateContent"), "gemini-pro")
+  assert_eq(
+    @gemini.extract_gemini_model_from_path(
+      "/v1/models/gemini-pro:generateContent",
+    ),
+    "gemini-pro",
+  )
 }
 
 ///|
 test "extract_gemini_model_from_path handles complex model names" {
   assert_eq(
-    @gemini.extract_gemini_model_from_path("/v1/models/gemini-1.5-pro-latest:generateContent"),
+    @gemini.extract_gemini_model_from_path(
+      "/v1/models/gemini-1.5-pro-latest:generateContent",
+    ),
     "gemini-1.5-pro-latest",
   )
 }

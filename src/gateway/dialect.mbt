@@ -9,84 +9,106 @@
 /// Resolve a ModelApi to its full protocol specification
 pub fn ModelApi::to_spec(self : ModelApi) -> DialectSpec {
   match self {
-    OpenAICompletions => {
-      id: "openai-completions",
-      default_base_url: @openai.chat_completions_default_base_url(),
-      surface: OpenAI,
-      completion_path: fn(base, _model, _key) {
-        @openai.chat_completions_path(base)
-      },
-      models_path: fn(base, _key) { @openai.chat_completions_models_path(base) },
-      auth_headers: @openai.chat_completions_auth_headers,
-    }
-    OpenAIResponses => {
-      id: "openai-responses",
-      default_base_url: @openai.responses_api_default_base_url(),
-      surface: OpenAI,
-      completion_path: fn(base, _model, _key) {
-        @openai.responses_api_path(base)
-      },
-      models_path: fn(base, _key) { @openai.chat_completions_models_path(base) },
-      auth_headers: @openai.chat_completions_auth_headers,
-    }
-    AnthropicMessages => {
-      id: "anthropic-messages",
-      default_base_url: @anthropic.anthropic_default_base_url(),
-      surface: Anthropic,
-      completion_path: fn(base, _model, _key) {
-        @anthropic.anthropic_completion_path(base)
-      },
-      models_path: fn(base, _key) { @openai.chat_completions_models_path(base) },
-      auth_headers: @anthropic.anthropic_auth_headers,
-    }
-    GoogleGenerativeAI => {
-      id: "google-generative-ai",
-      default_base_url: @gemini.gemini_default_base_url(),
-      surface: Gemini,
-      completion_path: @gemini.gemini_completion_path,
-      models_path: @gemini.gemini_models_path,
-      auth_headers: fn(_key) { @gemini.gemini_auth_headers() },
-    }
-    GithubCopilot => {
-      id: "github-copilot",
-      default_base_url: "https://api.github.com/copilot",
-      surface: OpenAI,
-      completion_path: fn(base, _model, _key) {
-        @openai.chat_completions_path(base)
-      },
-      models_path: fn(base, _key) { @openai.chat_completions_models_path(base) },
-      auth_headers: @openai.chat_completions_auth_headers,
-    }
-    BedrockConverseStream => {
-      id: "bedrock-converse-stream",
-      default_base_url: "",
-      surface: OpenAI,
-      completion_path: fn(base, _model, _key) {
-        @openai.chat_completions_path(base)
-      },
-      models_path: fn(base, _key) { @openai.chat_completions_models_path(base) },
-      auth_headers: @openai.chat_completions_auth_headers,
-    }
-    Ollama => {
-      id: "ollama",
-      default_base_url: "http://localhost:11434",
-      surface: OpenAI,
-      completion_path: fn(base, _model, _key) {
-        @openai.chat_completions_path(base)
-      },
-      models_path: fn(base, _key) { @openai.chat_completions_models_path(base) },
-      auth_headers: @openai.chat_completions_auth_headers,
-    }
-    CodexAppServer => {
-      id: "codex-app-server",
-      default_base_url: "",
-      surface: OpenAI,
-      completion_path: fn(base, _model, _key) {
-        @openai.chat_completions_path(base)
-      },
-      models_path: fn(base, _key) { @openai.chat_completions_models_path(base) },
-      auth_headers: @openai.chat_completions_auth_headers,
-    }
+    OpenAICompletions =>
+      {
+        id: "openai-completions",
+        default_base_url: @openai.chat_completions_default_base_url(),
+        surface: OpenAI,
+        completion_path: fn(base, _model, _key) {
+          @openai.chat_completions_path(base)
+        },
+        models_path: fn(base, _key) {
+          @openai.chat_completions_models_path(base)
+        },
+        auth_headers: @openai.chat_completions_auth_headers,
+      }
+    OpenAIResponses =>
+      {
+        id: "openai-responses",
+        default_base_url: @openai.responses_api_default_base_url(),
+        surface: OpenAI,
+        completion_path: fn(base, _model, _key) {
+          @openai.responses_api_path(base)
+        },
+        models_path: fn(base, _key) {
+          @openai.chat_completions_models_path(base)
+        },
+        auth_headers: @openai.chat_completions_auth_headers,
+      }
+    AnthropicMessages =>
+      {
+        id: "anthropic-messages",
+        default_base_url: @anthropic.anthropic_default_base_url(),
+        surface: Anthropic,
+        completion_path: fn(base, _model, _key) {
+          @anthropic.anthropic_completion_path(base)
+        },
+        models_path: fn(base, _key) {
+          @openai.chat_completions_models_path(base)
+        },
+        auth_headers: @anthropic.anthropic_auth_headers,
+      }
+    GoogleGenerativeAI =>
+      {
+        id: "google-generative-ai",
+        default_base_url: @gemini.gemini_default_base_url(),
+        surface: Gemini,
+        completion_path: @gemini.gemini_completion_path,
+        models_path: @gemini.gemini_models_path,
+        auth_headers: fn(_key) { @gemini.gemini_auth_headers() },
+      }
+    GithubCopilot =>
+      {
+        id: "github-copilot",
+        default_base_url: "https://api.github.com/copilot",
+        surface: OpenAI,
+        completion_path: fn(base, _model, _key) {
+          @openai.chat_completions_path(base)
+        },
+        models_path: fn(base, _key) {
+          @openai.chat_completions_models_path(base)
+        },
+        auth_headers: @openai.chat_completions_auth_headers,
+      }
+    BedrockConverseStream =>
+      {
+        id: "bedrock-converse-stream",
+        default_base_url: "",
+        surface: OpenAI,
+        completion_path: fn(base, _model, _key) {
+          @openai.chat_completions_path(base)
+        },
+        models_path: fn(base, _key) {
+          @openai.chat_completions_models_path(base)
+        },
+        auth_headers: @openai.chat_completions_auth_headers,
+      }
+    Ollama =>
+      {
+        id: "ollama",
+        default_base_url: "http://localhost:11434",
+        surface: OpenAI,
+        completion_path: fn(base, _model, _key) {
+          @openai.chat_completions_path(base)
+        },
+        models_path: fn(base, _key) {
+          @openai.chat_completions_models_path(base)
+        },
+        auth_headers: @openai.chat_completions_auth_headers,
+      }
+    CodexAppServer =>
+      {
+        id: "codex-app-server",
+        default_base_url: "",
+        surface: OpenAI,
+        completion_path: fn(base, _model, _key) {
+          @openai.chat_completions_path(base)
+        },
+        models_path: fn(base, _key) {
+          @openai.chat_completions_models_path(base)
+        },
+        auth_headers: @openai.chat_completions_auth_headers,
+      }
   }
 }
 
@@ -145,15 +167,15 @@ pub fn GatewaySurface::resolve_completion(
 ) -> RouteResult? {
   match self {
     OpenAI => {
-        match @openai.chat_completions_resolve(meth, path, body) {
-          Some((_, b)) => return Some(Completion(dialect=OpenAI, body=b))
-          None => ()
-        }
-        match @openai.responses_api_resolve(meth, path, body) {
-          Some((_, b)) => Some(ResponsesApi(body=b))
-          None => None
-        }
+      match @openai.chat_completions_resolve(meth, path, body) {
+        Some((_, b)) => return Some(Completion(dialect=OpenAI, body=b))
+        None => ()
       }
+      match @openai.responses_api_resolve(meth, path, body) {
+        Some((_, b)) => Some(ResponsesApi(body=b))
+        None => None
+      }
+    }
     Anthropic =>
       match @anthropic.anthropic_resolve_completion(meth, path, body) {
         Some((_, _, b)) => Some(Completion(dialect=Anthropic, body=b))

@@ -167,4 +167,3 @@ test "split_lines handles various line endings" {
   assert_eq(lines[1], "line2")
   assert_eq(lines[2], "line3")
 }
-

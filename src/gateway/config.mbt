@@ -75,7 +75,17 @@ fn parse_provider(
   }
   let models = parse_models(json)
   let model_patterns = parse_model_patterns(json)
-  { id, base_url, api_key, auth, api, headers, auth_header, models, model_patterns }
+  {
+    id,
+    base_url,
+    api_key,
+    auth,
+    api,
+    headers,
+    auth_header,
+    models,
+    model_patterns,
+  }
 }
 
 ///|

@@ -258,9 +258,7 @@ test "interop: all providers can be compared via is_same_tool_call_id" {
     _ => []
   }
   let openai_chat_calls = match
-    @openai.parse_openai_chat_response(
-      fixture_openai_chat_toolcall_response(),
-    ) {
+    @openai.parse_openai_chat_response(fixture_openai_chat_toolcall_response()) {
     @types.ModelResponse::ToolCalls(c) => c
     _ => []
   }

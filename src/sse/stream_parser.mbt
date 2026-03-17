@@ -11,9 +11,7 @@ pub(all) struct ParsedChunk {
 
 ///|
 /// Parse SSE chunk in OpenAI "data: json" format
-pub fn parse_openai_sse_chunk(
-  content : String,
-) -> ParsedChunk {
+pub fn parse_openai_sse_chunk(content : String) -> ParsedChunk {
   let events : Array[SseEvent] = []
   let lines = @utils.split_lines(content)
   let remaining = StringBuilder::new()
@@ -45,9 +43,7 @@ pub fn parse_openai_sse_chunk(
 
 ///|
 /// Parse SSE chunk in Anthropic "event: type\ndata: json" format
-pub fn parse_anthropic_sse_chunk(
-  content : String,
-) -> ParsedChunk {
+pub fn parse_anthropic_sse_chunk(content : String) -> ParsedChunk {
   let events : Array[SseEvent] = []
   let lines = @utils.split_lines(content)
   let remaining = StringBuilder::new()

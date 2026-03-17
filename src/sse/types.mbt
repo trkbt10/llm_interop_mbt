@@ -9,4 +9,3 @@ pub(all) struct SseEvent {
   /// Data payload
   data : Json
 }
-

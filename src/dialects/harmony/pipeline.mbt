@@ -5,7 +5,7 @@
 /// Convert Responses API request to Chat Completions request body
 pub fn responses_request_to_chat_completions(
   request : Json,
-  stream~ : Bool = true,
+  stream? : Bool = true,
 ) -> Json {
   let model = match request {
     { "model": String(m), .. } => m
@@ -13,7 +13,8 @@ pub fn responses_request_to_chat_completions(
   }
   let messages = match request {
     { "input": Array(items), .. } => responses_input_to_messages(items)
-    { "input": String(text), .. } => [@types.ModelMessage::User(content=text, name=None)]
+    { "input": String(text), .. } =>
+      [@types.ModelMessage::User(content=text, name=None)]
     _ => []
   }
   let msgs_json = @openai.messages_to_openai_json(messages)

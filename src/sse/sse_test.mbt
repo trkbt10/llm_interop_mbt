@@ -28,4 +28,3 @@ test "parse_event_stream_jsonl handles event+data format" {
   inspect(events[0].event, content="message_start")
   inspect(events[1].event, content="content_block_delta")
 }
-

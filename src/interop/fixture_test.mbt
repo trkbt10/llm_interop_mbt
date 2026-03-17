@@ -70,9 +70,7 @@ fn openai_web_search_nonstream_fixture() -> Json raise {
 /// OpenAI Responses web search stream fixture accumulated to final response
 fn openai_web_search_stream_fixture() -> @types.ModelResponse raise {
   @openai.accumulate_responses_api(
-    @fs.read_file_to_string(
-      "testdata/openai/responses/websearch_stream.jsonl",
-    ),
+    @fs.read_file_to_string("testdata/openai/responses/websearch_stream.jsonl"),
   )
 }
 

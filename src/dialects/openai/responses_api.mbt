@@ -270,4 +270,3 @@ fn parse_web_search_trace(output : Json, id : String) -> @types.ToolCallTrace {
     arguments=Json::object(arguments),
   )
 }
-

@@ -68,7 +68,9 @@ pub fn ChatCompletionsAccumulator::finish(
   self : ChatCompletionsAccumulator,
 ) -> @types.ModelResponse {
   if self.finish_reason == "tool_calls" && self.tool_calls.length() > 0 {
-    @types.ModelResponse::ToolCalls(@types.tool_calls_to_requests(self.tool_calls))
+    @types.ModelResponse::ToolCalls(
+      @types.tool_calls_to_requests(self.tool_calls),
+    )
   } else {
     @types.ModelResponse::Text(self.text.to_string())
   }

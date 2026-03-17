@@ -40,10 +40,8 @@ pub fn ClientConfig::new(
 ///|
 fn get_endpoint(provider : Provider) -> String {
   match provider {
-    Anthropic =>
-      @anthropic.anthropic_default_base_url() + "/messages"
-    OpenAI =>
-      @openai.chat_completions_default_base_url() + "/chat/completions"
+    Anthropic => @anthropic.anthropic_default_base_url() + "/messages"
+    OpenAI => @openai.chat_completions_default_base_url() + "/chat/completions"
     OpenAICompatible(base_url~) => base_url + "/v1/chat/completions"
   }
 }
@@ -52,7 +50,8 @@ fn get_endpoint(provider : Provider) -> String {
 fn get_headers(config : ClientConfig) -> Map[String, String] {
   match config.provider {
     Anthropic => @anthropic.anthropic_auth_headers(config.api_key)
-    OpenAI | OpenAICompatible(_) => @openai.chat_completions_auth_headers(config.api_key)
+    OpenAI | OpenAICompatible(_) =>
+      @openai.chat_completions_auth_headers(config.api_key)
   }
 }
 
@@ -140,9 +139,7 @@ pub(all) struct StreamEvent {
 
 ///|
 /// Select the appropriate SSE chunk parser for a provider
-fn get_chunk_parser(
-  provider : Provider,
-) -> (String) -> @sse.ParsedChunk {
+fn get_chunk_parser(provider : Provider) -> (String) -> @sse.ParsedChunk {
   match provider {
     Anthropic => @sse.parse_anthropic_sse_chunk
     OpenAI | OpenAICompatible(_) => @sse.parse_openai_sse_chunk

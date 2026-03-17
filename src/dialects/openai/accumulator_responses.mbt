@@ -56,7 +56,11 @@ pub fn ResponsesApiAccumulator::feed(
             _ => ""
           }
           let call_index = self.function_calls.length()
-          self.function_calls.push(@types.ToolCallAcc::{ id, name, arguments: StringBuilder::new() })
+          self.function_calls.push(@types.ToolCallAcc::{
+            id,
+            name,
+            arguments: StringBuilder::new(),
+          })
           match event.data {
             { "output_index": Number(output_index, ..), .. } =>
               self.output_index_map[output_index.to_int().to_string()] = call_index
@@ -226,7 +230,9 @@ pub fn ResponsesApiAccumulator::finish(
   self : ResponsesApiAccumulator,
 ) -> @types.ModelResponse {
   if self.function_calls.length() > 0 {
-    @types.ModelResponse::ToolCalls(@types.tool_calls_to_requests(self.function_calls))
+    @types.ModelResponse::ToolCalls(
+      @types.tool_calls_to_requests(self.function_calls),
+    )
   } else if self.annotations.length() > 0 || self.web_search_traces.length() > 0 {
     @types.ModelResponse::RichText(
       @types.RichTextResponse::new(

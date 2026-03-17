@@ -26,7 +26,11 @@ pub fn extract_json_field(body : String, field : String) -> String? {
 
 ///|
 /// Inject a string field into JSON body if not already present
-pub fn inject_json_field(body : String, field : String, value : String) -> String {
+pub fn inject_json_field(
+  body : String,
+  field : String,
+  value : String,
+) -> String {
   let json = @json.parse(body) catch { _ => return body }
   match json {
     Object(obj) =>
