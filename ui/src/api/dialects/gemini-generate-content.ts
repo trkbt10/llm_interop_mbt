@@ -1,8 +1,7 @@
 import type { Content, Part } from "@google/generative-ai";
 import type { ChatMessage } from "react-editor-ui/chat/ChatMessageDisplay";
-import type { Dialect, RequestOptions } from "./types";
-
-type ContentPart = { type: string; text?: string; url?: string };
+import type { ContentPart, Dialect, RequestOptions } from "./types";
+import { parseDataUrl } from "../../utils/dataUrl";
 
 type GeminiRequest = {
   contents: Content[];
@@ -12,23 +11,16 @@ type GeminiRequest = {
   };
 };
 
-function toGeminiPart(part: ContentPart): Part | null {
+function toPart(part: ContentPart): Part | null {
   switch (part.type) {
     case "text": {
       return { text: part.text ?? "" };
     }
     case "image": {
       const url = part.url ?? "";
-      if (url.startsWith("data:")) {
-        const commaIndex = url.indexOf(",");
-        if (commaIndex === -1) {
-          return null;
-        }
-        const header = url.slice(0, commaIndex);
-        const data = url.slice(commaIndex + 1);
-        const mimeTypeMatch = /data:([^;]+)/.exec(header);
-        const mimeType = mimeTypeMatch?.[1] ?? "image/png";
-        return { inlineData: { mimeType, data } };
+      const parsed = parseDataUrl(url);
+      if (parsed) {
+        return { inlineData: { mimeType: parsed.mimeType, data: parsed.data } };
       }
       return { text: `[Image: ${url}]` };
     }
@@ -38,7 +30,7 @@ function toGeminiPart(part: ContentPart): Part | null {
   }
 }
 
-function toGeminiContent(msg: ChatMessage): Content | null {
+function toContent(msg: ChatMessage): Content | null {
   if (msg.role === "system") {
     return null;
   }
@@ -47,7 +39,7 @@ function toGeminiContent(msg: ChatMessage): Content | null {
     return { role, parts: [{ text: msg.content }] };
   }
   const parts = (msg.content as ContentPart[])
-    .map(toGeminiPart)
+    .map(toPart)
     .filter((p): p is Part => p !== null);
   if (parts.length === 0) {
     return null;
@@ -59,8 +51,8 @@ export function buildGeminiEndpoint(model: string): string {
   return `/v1/models/${model}:generateContent`;
 }
 
-export const geminiDialect: Dialect = {
-  name: "gemini",
+export const geminiGenerateContentDialect: Dialect = {
+  name: "gemini-generate-content",
   endpoint: "", // Dynamic, use buildGeminiEndpoint
 
   buildRequest(
@@ -69,7 +61,7 @@ export const geminiDialect: Dialect = {
     options?: RequestOptions
   ): GeminiRequest {
     const contents = messages
-      .map(toGeminiContent)
+      .map(toContent)
       .filter((c): c is Content => c !== null);
 
     const request: GeminiRequest = { contents };

@@ -1,6 +1,8 @@
 import type { ChatMessage } from "react-editor-ui/chat/ChatMessageDisplay";
 
-export type DialectName = "openai" | "anthropic" | "gemini";
+export type ContentPart = { type: string; text?: string; url?: string };
+
+export type DialectName = "openai-chat-completion" | "openai-responses-api" | "anthropic-messages-api" | "gemini-generate-content";
 
 export type Dialect = {
   readonly name: DialectName;

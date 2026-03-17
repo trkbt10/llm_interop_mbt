@@ -64,7 +64,7 @@ export async function sendChat(
   const body = dialectImpl.buildRequest(messages, model, options);
 
   const endpoint =
-    dialect === "gemini" ? buildGeminiEndpoint(model) : dialectImpl.endpoint;
+    dialect === "gemini-generate-content" ? buildGeminiEndpoint(model) : dialectImpl.endpoint;
 
   const response = await request<unknown>(endpoint, {
     method: "POST",
@@ -79,7 +79,7 @@ function parseResponse(dialect: string, response: unknown): ChatCompletionRespon
   const resp = response as Record<string, unknown>;
 
   switch (dialect) {
-    case "openai": {
+    case "openai-chat-completion": {
       const choices = resp.choices as { message?: { content?: string } }[] | undefined;
       const id = typeof resp.id === "string" ? resp.id : "";
       return {
@@ -87,7 +87,12 @@ function parseResponse(dialect: string, response: unknown): ChatCompletionRespon
         content: choices?.[0]?.message?.content ?? "",
       };
     }
-    case "anthropic": {
+    case "openai-responses-api": {
+      const id = typeof resp.id === "string" ? resp.id : "";
+      const outputText = typeof resp.output_text === "string" ? resp.output_text : "";
+      return { id, content: outputText };
+    }
+    case "anthropic-messages-api": {
       const content = resp.content as { type?: string; text?: string }[] | undefined;
       const text = content?.find((c) => c.type === "text")?.text ?? "";
       const id = typeof resp.id === "string" ? resp.id : "";
@@ -96,7 +101,7 @@ function parseResponse(dialect: string, response: unknown): ChatCompletionRespon
         content: text,
       };
     }
-    case "gemini": {
+    case "gemini-generate-content": {
       const candidates = resp.candidates as {
         content?: { parts?: { text?: string }[] };
       }[] | undefined;

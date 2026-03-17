@@ -4,11 +4,9 @@ import type {
   ChatCompletionContentPart,
 } from "openai/resources/chat/completions";
 import type { ChatMessage } from "react-editor-ui/chat/ChatMessageDisplay";
-import type { Dialect, RequestOptions } from "./types";
+import type { ContentPart, Dialect, RequestOptions } from "./types";
 
-type ContentPart = { type: string; text?: string; url?: string };
-
-function toOpenAIContentPart(part: ContentPart): ChatCompletionContentPart | null {
+function toContentPart(part: ContentPart): ChatCompletionContentPart | null {
   switch (part.type) {
     case "text": {
       return { type: "text", text: part.text ?? "" };
@@ -22,7 +20,7 @@ function toOpenAIContentPart(part: ContentPart): ChatCompletionContentPart | nul
   }
 }
 
-function toOpenAIMessage(msg: ChatMessage): ChatCompletionMessageParam {
+function toMessage(msg: ChatMessage): ChatCompletionMessageParam {
   switch (msg.role) {
     case "system": {
       const text = typeof msg.content === "string" ? msg.content : "";
@@ -38,15 +36,15 @@ function toOpenAIMessage(msg: ChatMessage): ChatCompletionMessageParam {
         typeof msg.content === "string"
           ? msg.content
           : (msg.content as ContentPart[])
-              .map(toOpenAIContentPart)
+              .map(toContentPart)
               .filter((p): p is ChatCompletionContentPart => p !== null);
       return { role: "user", content };
     }
   }
 }
 
-export const openaiDialect: Dialect = {
-  name: "openai",
+export const openaiChatCompletionDialect: Dialect = {
+  name: "openai-chat-completion",
   endpoint: "/v1/chat/completions",
 
   buildRequest(
@@ -56,7 +54,7 @@ export const openaiDialect: Dialect = {
   ): ChatCompletionCreateParamsNonStreaming {
     return {
       model,
-      messages: messages.map(toOpenAIMessage),
+      messages: messages.map(toMessage),
       max_tokens: options?.maxTokens,
       temperature: options?.temperature,
       stream: false,

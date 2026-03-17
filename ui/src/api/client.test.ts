@@ -66,7 +66,7 @@ describe("fetchHealth", () => {
 });
 
 describe("sendChat", () => {
-  it("sends openai request to correct endpoint", async () => {
+  it("sends openai chat completion request to correct endpoint", async () => {
     const mockResponse = {
       id: "chatcmpl-123",
       choices: [{ message: { content: "Hello!" } }],
@@ -77,7 +77,7 @@ describe("sendChat", () => {
     });
 
     const messages = [{ id: "1", role: "user" as const, content: "Hi" }];
-    const result = await sendChat("openai", messages, "gpt-4o");
+    const result = await sendChat("openai-chat-completion", messages, "gpt-4o");
 
     expect(mockFetch).toHaveBeenCalledWith(
       "/v1/chat/completions",
@@ -87,7 +87,28 @@ describe("sendChat", () => {
     expect(result.content).toBe("Hello!");
   });
 
-  it("sends anthropic request to messages endpoint", async () => {
+  it("sends openai responses api request to correct endpoint", async () => {
+    const mockResponse = {
+      id: "resp-123",
+      output_text: "Hi from Responses API!",
+    };
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve(mockResponse),
+    });
+
+    const messages = [{ id: "1", role: "user" as const, content: "Hi" }];
+    const result = await sendChat("openai-responses-api", messages, "gpt-4o");
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      "/v1/responses",
+      expect.objectContaining({ method: "POST" })
+    );
+    expect(result.id).toBe("resp-123");
+    expect(result.content).toBe("Hi from Responses API!");
+  });
+
+  it("sends anthropic messages api request to messages endpoint", async () => {
     const mockResponse = {
       id: "msg-123",
       content: [{ type: "text", text: "Hi there!" }],
@@ -98,7 +119,7 @@ describe("sendChat", () => {
     });
 
     const messages = [{ id: "1", role: "user" as const, content: "Hello" }];
-    const result = await sendChat("anthropic", messages, "claude-sonnet-4-20250514");
+    const result = await sendChat("anthropic-messages-api", messages, "claude-sonnet-4-20250514");
 
     expect(mockFetch).toHaveBeenCalledWith(
       "/v1/messages",
@@ -108,7 +129,7 @@ describe("sendChat", () => {
     expect(result.content).toBe("Hi there!");
   });
 
-  it("sends gemini request to model-specific endpoint", async () => {
+  it("sends gemini generate content request to model-specific endpoint", async () => {
     const mockResponse = {
       candidates: [{ content: { parts: [{ text: "Gemini response" }] } }],
     };
@@ -118,7 +139,7 @@ describe("sendChat", () => {
     });
 
     const messages = [{ id: "1", role: "user" as const, content: "Test" }];
-    const result = await sendChat("gemini", messages, "gemini-pro");
+    const result = await sendChat("gemini-generate-content", messages, "gemini-pro");
 
     expect(mockFetch).toHaveBeenCalledWith(
       "/v1/models/gemini-pro:generateContent",
@@ -135,7 +156,7 @@ describe("sendChat", () => {
     });
 
     const messages = [{ id: "1", role: "user" as const, content: "Hi" }];
-    await expect(sendChat("openai", messages, "invalid")).rejects.toThrow("Invalid model");
+    await expect(sendChat("openai-chat-completion", messages, "invalid")).rejects.toThrow("Invalid model");
   });
 
   it("throws ApiError with status when no message", async () => {
@@ -146,7 +167,7 @@ describe("sendChat", () => {
     });
 
     const messages = [{ id: "1", role: "user" as const, content: "Hi" }];
-    const err = await sendChat("openai", messages, "gpt-4o").catch((e: unknown) => e);
+    const err = await sendChat("openai-chat-completion", messages, "gpt-4o").catch((e: unknown) => e);
     expect(err).toBeInstanceOf(ApiError);
     expect((err as ApiError).status).toBe(503);
   });
