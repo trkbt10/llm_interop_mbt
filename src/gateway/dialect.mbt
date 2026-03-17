@@ -1,66 +1,169 @@
 ///|
-/// Provider-specific behavior consolidated on ModelApi
-///
-/// All dialect/provider-dependent logic lives here.
-/// Adding a new provider = updating only this file.
+/// ModelApi → DialectSpec resolution and GatewaySurface route dispatch
+
+// =============================================================================
+// ModelApi → DialectSpec
+// =============================================================================
 
 ///|
-/// Map ModelApi to chat.Dialect for body transformation
-pub fn ModelApi::to_dialect(self : ModelApi) -> @chat.Dialect {
+/// Resolve a ModelApi to its full protocol specification
+pub fn ModelApi::to_spec(self : ModelApi) -> DialectSpec {
   match self {
-    OpenAICompletions | OpenAIResponses => @chat.Dialect::OpenAI
-    AnthropicMessages => @chat.Dialect::Anthropic
-    GoogleGenerativeAI => @chat.Dialect::Gemini
-    _ => @chat.Dialect::OpenAI
+    OpenAICompletions => {
+      id: "openai-completions",
+      default_base_url: @openai.chat_completions_default_base_url(),
+      surface: OpenAI,
+      completion_path: fn(base, _model, _key) {
+        @openai.chat_completions_path(base)
+      },
+      models_path: fn(base, _key) { @openai.chat_completions_models_path(base) },
+      auth_headers: @openai.chat_completions_auth_headers,
+    }
+    OpenAIResponses => {
+      id: "openai-responses",
+      default_base_url: @openai.responses_api_default_base_url(),
+      surface: OpenAI,
+      completion_path: fn(base, _model, _key) {
+        @openai.responses_api_path(base)
+      },
+      models_path: fn(base, _key) { @openai.chat_completions_models_path(base) },
+      auth_headers: @openai.chat_completions_auth_headers,
+    }
+    AnthropicMessages => {
+      id: "anthropic-messages",
+      default_base_url: @anthropic.anthropic_default_base_url(),
+      surface: Anthropic,
+      completion_path: fn(base, _model, _key) {
+        @anthropic.anthropic_completion_path(base)
+      },
+      models_path: fn(base, _key) { @openai.chat_completions_models_path(base) },
+      auth_headers: @anthropic.anthropic_auth_headers,
+    }
+    GoogleGenerativeAI => {
+      id: "google-generative-ai",
+      default_base_url: @gemini.gemini_default_base_url(),
+      surface: Gemini,
+      completion_path: @gemini.gemini_completion_path,
+      models_path: @gemini.gemini_models_path,
+      auth_headers: fn(_key) { @gemini.gemini_auth_headers() },
+    }
+    GithubCopilot => {
+      id: "github-copilot",
+      default_base_url: "https://api.github.com/copilot",
+      surface: OpenAI,
+      completion_path: fn(base, _model, _key) {
+        @openai.chat_completions_path(base)
+      },
+      models_path: fn(base, _key) { @openai.chat_completions_models_path(base) },
+      auth_headers: @openai.chat_completions_auth_headers,
+    }
+    BedrockConverseStream => {
+      id: "bedrock-converse-stream",
+      default_base_url: "",
+      surface: OpenAI,
+      completion_path: fn(base, _model, _key) {
+        @openai.chat_completions_path(base)
+      },
+      models_path: fn(base, _key) { @openai.chat_completions_models_path(base) },
+      auth_headers: @openai.chat_completions_auth_headers,
+    }
+    Ollama => {
+      id: "ollama",
+      default_base_url: "http://localhost:11434",
+      surface: OpenAI,
+      completion_path: fn(base, _model, _key) {
+        @openai.chat_completions_path(base)
+      },
+      models_path: fn(base, _key) { @openai.chat_completions_models_path(base) },
+      auth_headers: @openai.chat_completions_auth_headers,
+    }
+    CodexAppServer => {
+      id: "codex-app-server",
+      default_base_url: "",
+      surface: OpenAI,
+      completion_path: fn(base, _model, _key) {
+        @openai.chat_completions_path(base)
+      },
+      models_path: fn(base, _key) { @openai.chat_completions_models_path(base) },
+      auth_headers: @openai.chat_completions_auth_headers,
+    }
   }
 }
 
 ///|
-/// Build upstream path for completion requests
+/// Convenience: get GatewaySurface from ModelApi
+pub fn ModelApi::to_dialect(self : ModelApi) -> GatewaySurface {
+  self.to_spec().surface
+}
+
+///|
+/// Convenience: get default base URL
+pub fn ModelApi::default_base_url(self : ModelApi) -> String {
+  self.to_spec().default_base_url
+}
+
+///|
+/// Convenience: build completion path
 pub fn ModelApi::completion_path(
   self : ModelApi,
   base_path : String,
   model : String,
   api_key : String,
 ) -> String {
-  match self {
-    OpenAICompletions | OpenAIResponses => base_path + "/chat/completions"
-    AnthropicMessages => base_path + "/messages"
-    GoogleGenerativeAI =>
-      base_path + "/models/" + model + ":generateContent?key=" + api_key
-    _ => base_path + "/chat/completions"
-  }
+  (self.to_spec().completion_path)(base_path, model, api_key)
 }
 
 ///|
-/// Build upstream path for model listing
+/// Convenience: build models path
 pub fn ModelApi::models_path(
   self : ModelApi,
   base_path : String,
   api_key : String,
 ) -> String {
-  match self {
-    GoogleGenerativeAI => base_path + "/models?key=" + api_key
-    _ => base_path + "/models"
-  }
+  (self.to_spec().models_path)(base_path, api_key)
 }
 
 ///|
-/// Build auth headers for this provider type
+/// Convenience: build auth headers
 pub fn ModelApi::auth_headers(
   self : ModelApi,
   api_key : String,
 ) -> Map[String, String] {
-  let headers : Map[String, String] = {}
-  headers["Content-Type"] = "application/json"
-  match self {
-    AnthropicMessages => {
-      headers["x-api-key"] = api_key
-      headers["anthropic-version"] = "2023-06-01"
-    }
-    GoogleGenerativeAI => () // API key in URL
-    _ => headers["Authorization"] = "Bearer " + api_key
-  }
-  headers
+  (self.to_spec().auth_headers)(api_key)
 }
 
+// =============================================================================
+// GatewaySurface route dispatch
+// =============================================================================
+
+///|
+pub fn GatewaySurface::resolve_completion(
+  self : GatewaySurface,
+  meth : String,
+  path : String,
+  body : String,
+) -> RouteResult? {
+  match self {
+    OpenAI => {
+        match @openai.chat_completions_resolve(meth, path, body) {
+          Some((_, b)) => return Some(Completion(dialect=OpenAI, body=b))
+          None => ()
+        }
+        match @openai.responses_api_resolve(meth, path, body) {
+          Some((_, b)) => Some(ResponsesApi(body=b))
+          None => None
+        }
+      }
+    Anthropic =>
+      match @anthropic.anthropic_resolve_completion(meth, path, body) {
+        Some((_, _, b)) => Some(Completion(dialect=Anthropic, body=b))
+        None => None
+      }
+    Gemini =>
+      match @gemini.gemini_resolve_completion(meth, path, body) {
+        Some((_, model, b)) =>
+          Some(CompletionWithModel(dialect=Gemini, model~, body=b))
+        None => None
+      }
+  }
+}

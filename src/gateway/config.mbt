@@ -319,7 +319,7 @@ fn parse_legacy_backend(json : Json) -> BackendConfig raise GatewayError {
   }
   let base_url = match json {
     { "provider": { "baseURL": String(u), .. }, .. } => u
-    _ => default_base_url(api)
+    _ => api.default_base_url()
   }
   let api_key = match json {
     { "provider": { "apiKey": String(k), .. }, .. } => k
@@ -341,19 +341,6 @@ fn parse_legacy_backend(json : Json) -> BackendConfig raise GatewayError {
     model_patterns: [],
   }
   { id, provider, weight }
-}
-
-///|
-fn default_base_url(api : ModelApi) -> String {
-  match api {
-    OpenAICompletions | OpenAIResponses => "https://api.openai.com/v1"
-    AnthropicMessages => "https://api.anthropic.com/v1"
-    GoogleGenerativeAI => "https://generativelanguage.googleapis.com/v1beta"
-    GithubCopilot => "https://api.github.com/copilot"
-    BedrockConverseStream => ""
-    Ollama => "http://localhost:11434"
-    CodexAppServer => "" // Codex uses stdin/stdout, no HTTP URL
-  }
 }
 
 ///|

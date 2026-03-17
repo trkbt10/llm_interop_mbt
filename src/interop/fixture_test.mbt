@@ -20,7 +20,7 @@ fn get_jsonl_line(path : String, index : Int) -> String raise {
   if index >= 0 && index < lines.length() {
     lines[index]
   } else {
-    raise @builtin.Failure("Line index out of bounds: \{index}")
+    fail("Line index out of bounds: \{index}")
   }
 }
 
@@ -69,7 +69,7 @@ fn openai_web_search_nonstream_fixture() -> Json raise {
 ///|
 /// OpenAI Responses web search stream fixture accumulated to final response
 fn openai_web_search_stream_fixture() -> @types.ModelResponse raise {
-  @sse.accumulate_responses_api(
+  @openai.accumulate_responses_api(
     @fs.read_file_to_string(
       "testdata/sse_fixtures/openai/responses/websearch_stream.jsonl",
     ),
@@ -200,7 +200,7 @@ test "fixture: parse OpenAI Responses web search non-stream response" {
       return
     }
   }
-  let result = @protocol.parse_responses_api_response(fixture)
+  let result = @openai.parse_responses_api_response(fixture)
   match result {
     @types.ModelResponse::RichText(rich) => {
       assert_true(rich.content.contains("weather in Tokyo"))

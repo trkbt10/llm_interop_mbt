@@ -196,7 +196,7 @@ async fn send_to_backend(
   gateway : @gw.Gateway,
   model : String,
   body : String,
-  dialect : @chat.Dialect,
+  dialect : @gw.GatewaySurface,
 ) -> (@gw.BackendConfig, Int, String) raise {
   let backend = match gateway.select_backend(model) {
     Some(b) => b
@@ -216,7 +216,7 @@ async fn send_to_backend(
 async fn proxy_to_backend(
   gateway : @gw.Gateway,
   body : String,
-  target_dialect : @chat.Dialect,
+  target_dialect : @gw.GatewaySurface,
   model : String,
 ) -> @gw.HttpResponse {
   let (backend, status, response_text) = try {
@@ -226,7 +226,7 @@ async fn proxy_to_backend(
       return @gw.HttpResponse::error(503, "No backend available for model: " + m)
     e => return @gw.HttpResponse::error(502, e.to_string())
   }
-  let final_body = @chat.transform_response(
+  let final_body = @gw.transform_response(
     response_text,
     backend.provider.api.to_dialect(),
     target_dialect,
@@ -248,7 +248,7 @@ async fn proxy_responses_api(
   let request_json = try { @json.parse(body) } catch { _ => Json::object({}) }
   let chat_body = @harmony.responses_request_to_chat_completions(request_json, stream=false).stringify()
   let (_backend, status, response_text) = try {
-    send_to_backend(gateway, model, chat_body, @chat.Dialect::OpenAI)
+    send_to_backend(gateway, model, chat_body, @gw.GatewaySurface::OpenAI)
   } catch {
     @gw.GatewayError::BackendNotFound(m) =>
       return @gw.HttpResponse::error(503, "No backend available for model: " + m)
@@ -260,7 +260,7 @@ async fn proxy_responses_api(
     return { status, headers, body: response_text }
   }
   let response_json = try { @json.parse(response_text) } catch { _ => Json::object({}) }
-  let model_response = @protocol.parse_openai_chat_response(response_json)
+  let model_response = @openai.parse_openai_chat_response(response_json)
   let response_id : String = match response_json {
     { "id": String(id), .. } => id
     _ => "resp_" + model

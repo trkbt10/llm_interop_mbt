@@ -84,7 +84,7 @@ test "resolve: POST /v1/chat/completions with OpenAI dialect" {
   let gw = Gateway::new(create_test_config(), OpenAI)
   let body = #|{"model": "gpt-4o", "messages": []}
   match gw.resolve("POST", "/v1/chat/completions", body) {
-    Completion(dialect=@chat.Dialect::OpenAI, ..) => ()
+    Completion(dialect=OpenAI, ..) => ()
     other => fail("expected Completion(openai), got \{other}")
   }
 }
@@ -104,7 +104,7 @@ test "resolve: POST /v1/messages with Anthropic dialect" {
   let gw = Gateway::new(create_test_config(), Anthropic)
   let body = #|{"model": "claude-sonnet-4-20250514", "max_tokens": 100, "messages": []}
   match gw.resolve("POST", "/v1/messages", body) {
-    Completion(dialect=@chat.Dialect::Anthropic, ..) => ()
+    Completion(dialect=Anthropic, ..) => ()
     other => fail("expected Completion(anthropic), got \{other}")
   }
 }
@@ -123,7 +123,7 @@ test "resolve: Gemini generateContent" {
   let gw = Gateway::new(create_test_config(), Gemini)
   let body = #|{"contents": [{"parts": [{"text": "hi"}]}]}
   match gw.resolve("POST", "/v1/models/gemini-pro:generateContent", body) {
-    CompletionWithModel(dialect=@chat.Dialect::Gemini, model="gemini-pro", ..) => ()
+    CompletionWithModel(dialect=Gemini, model="gemini-pro", ..) => ()
     other => fail("expected CompletionWithModel(gemini), got \{other}")
   }
 }
@@ -205,7 +205,7 @@ test "prepare_upstream: OpenAI provider builds correct request" {
   }
   let body = #|{"model": "gpt-4o", "messages": [{"role": "user", "content": "hi"}]}
   let req = prepare_upstream(
-    provider, body, @chat.Dialect::OpenAI, "gpt-4o", "https://api.openai.com/v1", "sk-test",
+    provider, body, OpenAI, "gpt-4o", "https://api.openai.com/v1", "sk-test",
   )
   assert_eq(req.origin, "https://api.openai.com")
   assert_eq(req.path, "/v1/chat/completions")
@@ -228,7 +228,7 @@ test "prepare_upstream: Anthropic provider builds correct request" {
   }
   let body = #|{"model": "claude-sonnet-4-20250514", "messages": [{"role": "user", "content": "hi"}]}
   let req = prepare_upstream(
-    provider, body, @chat.Dialect::OpenAI, "claude-sonnet-4-20250514", "https://api.anthropic.com", "sk-ant-test",
+    provider, body, OpenAI, "claude-sonnet-4-20250514", "https://api.anthropic.com", "sk-ant-test",
   )
   assert_eq(req.origin, "https://api.anthropic.com")
   assert_eq(req.path, "/messages")
@@ -255,7 +255,7 @@ test "prepare_upstream: Gemini provider puts key in URL" {
   let req = prepare_upstream(
     provider,
     body,
-    @chat.Dialect::OpenAI,
+    OpenAI,
     "gemini-pro",
     "https://generativelanguage.googleapis.com/v1",
     "gemini-key",
@@ -282,7 +282,7 @@ test "prepare_upstream: cross-dialect transforms body" {
   }
   let body = #|{"model": "claude-sonnet-4-20250514", "messages": [{"role": "user", "content": "hello"}]}
   let req = prepare_upstream(
-    provider, body, @chat.Dialect::OpenAI, "claude-sonnet-4-20250514", "https://api.anthropic.com", "key",
+    provider, body, OpenAI, "claude-sonnet-4-20250514", "https://api.anthropic.com", "key",
   )
   // Body should be transformed from OpenAI to Anthropic format
   let parsed = @json.parse(req.body) catch {
@@ -445,14 +445,14 @@ test "list_configured_models returns all models" {
 }
 
 ///|
-test "extract_model_from_path extracts model correctly" {
-  assert_eq(extract_model_from_path("/v1/models/gemini-pro:generateContent"), "gemini-pro")
+test "extract_gemini_model_from_path extracts model correctly" {
+  assert_eq(@gemini.extract_gemini_model_from_path("/v1/models/gemini-pro:generateContent"), "gemini-pro")
 }
 
 ///|
-test "extract_model_from_path handles complex model names" {
+test "extract_gemini_model_from_path handles complex model names" {
   assert_eq(
-    extract_model_from_path("/v1/models/gemini-1.5-pro-latest:generateContent"),
+    @gemini.extract_gemini_model_from_path("/v1/models/gemini-1.5-pro-latest:generateContent"),
     "gemini-1.5-pro-latest",
   )
 }

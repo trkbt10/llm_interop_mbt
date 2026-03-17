@@ -1,7 +1,0 @@
-import {
-  "moonbitlang/core/json",
-  "trkbt10/llm_interop/src/types",
-  "trkbt10/llm_interop/src/protocol",
-  "trkbt10/llm_interop/src/interop/util" @interop_util,
-  "trkbt10/llm_interop/src/interop/harmony" @harmony,
-}

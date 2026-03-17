@@ -48,7 +48,7 @@ fn demo_tools() -> Array[@types.ToolDefinition] {
 
 ///|
 fn build_demo_request() -> Json {
-  @protocol.build_responses_api_body(demo_model, demo_messages(), demo_tools())
+  @openai.build_responses_api_body(demo_model, demo_messages(), demo_tools())
 }
 
 ///|

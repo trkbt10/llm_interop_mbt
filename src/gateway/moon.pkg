@@ -1,5 +1,7 @@
 import {
   "moonbitlang/core/json",
-  "trkbt10/llm_interop/src/interop/chat" @chat,
   "trkbt10/llm_interop/src/utils" @utils,
+  "trkbt10/llm_interop/src/dialects/openai" @openai,
+  "trkbt10/llm_interop/src/dialects/anthropic" @anthropic,
+  "trkbt10/llm_interop/src/dialects/gemini" @gemini,
 }

@@ -123,7 +123,7 @@ test "build_request_body for OpenAI" {
 }
 
 ///|
-test "parse_sse_events for OpenAI format" {
+test "parse_openai_sse_chunk for OpenAI format" {
   let content =
     #|data: {"choices":[{"delta":{"content":"Hello"}}]}
     #|
@@ -131,13 +131,13 @@ test "parse_sse_events for OpenAI format" {
     #|
     #|data: [DONE]
     #|
-  let result = parse_sse_events(content, Provider::OpenAI)
+  let result = @sse.parse_openai_sse_chunk(content)
   assert_eq(result.events.length(), 2)
   assert_eq(result.remaining, "")
 }
 
 ///|
-test "parse_sse_events for Anthropic format" {
+test "parse_anthropic_sse_chunk for Anthropic format" {
   let content =
     #|event: content_block_delta
     #|data: {"type":"content_block_delta","delta":{"text":"Hi"}}
@@ -145,15 +145,15 @@ test "parse_sse_events for Anthropic format" {
     #|event: message_stop
     #|data: {"type":"message_stop"}
     #|
-  let result = parse_sse_events(content, Provider::Anthropic)
+  let result = @sse.parse_anthropic_sse_chunk(content)
   assert_eq(result.events.length(), 2)
   assert_eq(result.events[0].event, "content_block_delta")
 }
 
 ///|
-test "parse_sse_events handles incomplete chunks" {
+test "parse_openai_sse_chunk handles incomplete chunks" {
   let content = "data: {\"partial\":"
-  let result = parse_sse_events(content, Provider::OpenAI)
+  let result = @sse.parse_openai_sse_chunk(content)
   assert_eq(result.events.length(), 0)
   assert_eq(result.remaining, "data: {\"partial\":")
 }
@@ -168,9 +168,3 @@ test "split_lines handles various line endings" {
   assert_eq(lines[2], "line3")
 }
 
-///|
-test "safe_substring extracts correctly" {
-  assert_eq(safe_substring("event: hello", 7), "hello")
-  assert_eq(safe_substring("data: {}", 6), "{}")
-  assert_eq(safe_substring("short", 10), "")
-}

@@ -230,6 +230,24 @@ pub fn GatewayConfig::default() -> GatewayConfig {
 }
 
 ///|
+/// Protocol behavior specification
+/// Each dialect provides one via its gateway.mbt
+pub(all) struct DialectSpec {
+  /// Protocol identifier string (e.g. "openai-completions")
+  id : String
+  /// Default upstream base URL
+  default_base_url : String
+  /// Gateway surface this protocol belongs to
+  surface : GatewaySurface
+  /// Build completion path from (base_path, model, api_key)
+  completion_path : (String, String, String) -> String
+  /// Build models listing path from (base_path, api_key)
+  models_path : (String, String) -> String
+  /// Build auth headers from api_key
+  auth_headers : (String) -> Map[String, String]
+}
+
+///|
 /// Gateway surface type (which API dialect to expose)
 pub(all) enum GatewaySurface {
   OpenAI

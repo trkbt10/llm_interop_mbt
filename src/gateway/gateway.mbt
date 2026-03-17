@@ -16,7 +16,7 @@ pub(all) struct UpstreamRequest {
 pub fn prepare_upstream(
   provider : ProviderConfig,
   body : String,
-  target_dialect : @chat.Dialect,
+  target_dialect : GatewaySurface,
   model : String,
   base_url : String,
   api_key : String,
@@ -28,7 +28,7 @@ pub fn prepare_upstream(
     origin,
     path: provider.api.completion_path(base_path, model, api_key),
     headers: provider.api.auth_headers(api_key),
-    body: @chat.transform_request(body, from, to, model),
+    body: transform_request(body, from, to, model),
   }
 }
 
@@ -37,9 +37,9 @@ pub fn prepare_upstream(
 pub(all) enum RouteResult {
   Health
   ListModels
-  Completion(dialect~ : @chat.Dialect, body~ : String)
+  Completion(dialect~ : GatewaySurface, body~ : String)
   ResponsesApi(body~ : String)
-  CompletionWithModel(dialect~ : @chat.Dialect, model~ : String, body~ : String)
+  CompletionWithModel(dialect~ : GatewaySurface, model~ : String, body~ : String)
   NotFound(path~ : String, dialect~ : String)
 } derive(Show)
 
@@ -58,56 +58,9 @@ pub fn Gateway::resolve(
   if path == "/v1/models" && meth == "GET" {
     return ListModels
   }
-  match self.dialect {
-    GatewaySurface::OpenAI => {
-      if path == "/v1/chat/completions" && meth == "POST" {
-        return Completion(dialect=@chat.Dialect::OpenAI, body~)
-      }
-      if path == "/v1/responses" && meth == "POST" {
-        return ResponsesApi(body~)
-      }
-    }
-    GatewaySurface::Anthropic => {
-      if path == "/v1/messages" && meth == "POST" {
-        return Completion(dialect=@chat.Dialect::Anthropic, body~)
-      }
-    }
-    GatewaySurface::Gemini => {
-      if path.has_prefix("/v1/models/") &&
-        path.has_suffix(":generateContent") &&
-        meth == "POST" {
-        let model = extract_model_from_path(path)
-        return CompletionWithModel(dialect=@chat.Dialect::Gemini, model~, body~)
-      }
-    }
-  }
-  NotFound(path~, dialect=self.dialect.to_string())
-}
-
-///|
-/// Extract model name from Gemini generateContent path
-/// Path format: /v1/models/{model}:generateContent
-pub fn extract_model_from_path(path : String) -> String {
-  let prefix = "/v1/models/"
-  let suffix = ":generateContent"
-  if path.has_prefix(prefix) && path.has_suffix(suffix) {
-    let start = prefix.length()
-    let end = path.length() - suffix.length()
-    if end > start {
-      let mut result = ""
-      let mut idx = 0
-      for c in path {
-        if idx >= start && idx < end {
-          result = result + c.to_string()
-        }
-        idx = idx + 1
-      }
-      result
-    } else {
-      ""
-    }
-  } else {
-    ""
+  match self.dialect.resolve_completion(meth, path, body) {
+    Some(result) => result
+    None => NotFound(path~, dialect=self.dialect.to_string())
   }
 }
 

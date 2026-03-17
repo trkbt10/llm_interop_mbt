@@ -10,10 +10,3 @@ pub(all) struct SseEvent {
   data : Json
 }
 
-///|
-/// Tool call accumulation internal structure
-struct ToolCallAcc {
-  mut id : String
-  mut name : String
-  arguments : StringBuilder
-}

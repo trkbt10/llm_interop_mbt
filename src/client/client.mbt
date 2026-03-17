@@ -40,25 +40,20 @@ pub fn ClientConfig::new(
 ///|
 fn get_endpoint(provider : Provider) -> String {
   match provider {
-    Anthropic => "https://api.anthropic.com/v1/messages"
-    OpenAI => "https://api.openai.com/v1/chat/completions"
+    Anthropic =>
+      @anthropic.anthropic_default_base_url() + "/messages"
+    OpenAI =>
+      @openai.chat_completions_default_base_url() + "/chat/completions"
     OpenAICompatible(base_url~) => base_url + "/v1/chat/completions"
   }
 }
 
 ///|
 fn get_headers(config : ClientConfig) -> Map[String, String] {
-  let headers : Map[String, String] = {}
-  headers["Content-Type"] = "application/json"
   match config.provider {
-    Anthropic => {
-      headers["x-api-key"] = config.api_key
-      headers["anthropic-version"] = "2023-06-01"
-    }
-    OpenAI | OpenAICompatible(_) =>
-      headers["Authorization"] = "Bearer " + config.api_key
+    Anthropic => @anthropic.anthropic_auth_headers(config.api_key)
+    OpenAI | OpenAICompatible(_) => @openai.chat_completions_auth_headers(config.api_key)
   }
-  headers
 }
 
 ///|
@@ -69,7 +64,7 @@ fn build_request_body(
 ) -> String {
   let body = match config.provider {
     Anthropic =>
-      @protocol.build_anthropic_body(
+      @anthropic.build_anthropic_body(
         config.model,
         messages,
         tools,
@@ -77,7 +72,7 @@ fn build_request_body(
         temperature=config.temperature,
       )
     OpenAI | OpenAICompatible(_) =>
-      @protocol.build_openai_chat_body(
+      @openai.build_openai_chat_body(
         config.model,
         messages,
         tools,
@@ -91,8 +86,8 @@ fn build_request_body(
 ///|
 fn parse_response(config : ClientConfig, json : Json) -> @types.ModelResponse {
   match config.provider {
-    Anthropic => @protocol.parse_anthropic_response(json)
-    OpenAI | OpenAICompatible(_) => @protocol.parse_openai_chat_response(json)
+    Anthropic => @anthropic.parse_anthropic_response(json)
+    OpenAI | OpenAICompatible(_) => @openai.parse_openai_chat_response(json)
   }
 }
 
@@ -144,6 +139,17 @@ pub(all) struct StreamEvent {
 }
 
 ///|
+/// Select the appropriate SSE chunk parser for a provider
+fn get_chunk_parser(
+  provider : Provider,
+) -> (String) -> @sse.ParsedChunk {
+  match provider {
+    Anthropic => @sse.parse_anthropic_sse_chunk
+    OpenAI | OpenAICompatible(_) => @sse.parse_openai_sse_chunk
+  }
+}
+
+///|
 /// Send a chat request with streaming
 pub async fn chat_stream(
   config : ClientConfig,
@@ -153,10 +159,9 @@ pub async fn chat_stream(
 ) -> @types.ModelResponse raise ClientError {
   let url = get_endpoint(config.provider)
   let headers = get_headers(config)
-  // Add stream parameter to body
   let body_json = match config.provider {
     Anthropic => {
-      let base = @protocol.build_anthropic_body(
+      let base = @anthropic.build_anthropic_body(
         config.model,
         messages,
         tools,
@@ -166,7 +171,7 @@ pub async fn chat_stream(
       @utils.set_json_field(base, "stream", Json::boolean(true))
     }
     OpenAI | OpenAICompatible(_) => {
-      let base = @protocol.build_openai_chat_body(
+      let base = @openai.build_openai_chat_body(
         config.model,
         messages,
         tools,
@@ -192,10 +197,9 @@ pub async fn chat_stream(
     let body_str = bytes_to_string(body_bytes)
     raise ClientError::ApiError(code=response.code, message=body_str)
   }
-  // Create accumulator based on provider
+  let parse_chunk = get_chunk_parser(config.provider)
   let buffer = StringBuilder::new()
   let all_events : Array[@sse.SseEvent] = []
-  // Read stream chunks
   while true {
     let chunk = stream.read_some() catch { _ => break }
     match chunk {
@@ -203,9 +207,7 @@ pub async fn chat_stream(
       Some(bytes) => {
         let text = bytes_to_string(bytes)
         buffer.write_string(text)
-        // Try to parse complete events from buffer
-        let content = buffer.to_string()
-        let result = parse_sse_events(content, config.provider)
+        let result = parse_chunk(buffer.to_string())
         for e in result.events {
           on_event({ event: e.event, data: e.data })
           all_events.push(e)
@@ -215,108 +217,28 @@ pub async fn chat_stream(
       }
     }
   }
-  // Process remaining buffer
   let remaining = buffer.to_string()
   if remaining.length() > 0 {
-    let result = parse_sse_events(remaining + "\n", config.provider)
+    let result = parse_chunk(remaining + "\n")
     for e in result.events {
       on_event({ event: e.event, data: e.data })
       all_events.push(e)
     }
   }
-  // Accumulate all events
   match config.provider {
     Anthropic => {
-      let acc = @sse.AnthropicMessagesAccumulator::new()
+      let acc = @anthropic.AnthropicMessagesAccumulator::new()
       for e in all_events {
         acc.feed(e)
       }
       acc.finish()
     }
     OpenAI | OpenAICompatible(_) => {
-      let acc = @sse.ChatCompletionsAccumulator::new()
+      let acc = @openai.ChatCompletionsAccumulator::new()
       for e in all_events {
         acc.feed(e)
       }
       acc.finish()
     }
   }
-}
-
-///|
-priv struct ParsedEvents {
-  events : Array[@sse.SseEvent]
-  remaining : String
-}
-
-///|
-fn parse_sse_events(content : String, provider : Provider) -> ParsedEvents {
-  let events : Array[@sse.SseEvent] = []
-  let lines = @utils.split_lines(content)
-  let remaining = StringBuilder::new()
-  let mut i = 0
-  while i < lines.length() {
-    let line = lines[i]
-    let trimmed = line.trim().to_string()
-    // Check if this might be an incomplete line (last line without proper ending)
-    if i == lines.length() - 1 &&
-      trimmed.length() > 0 &&
-      not(content.has_suffix("\n")) {
-      // Keep as remaining for next chunk
-      remaining.write_string(line)
-      break
-    }
-    if trimmed.length() == 0 || trimmed == "[DONE]" {
-      i = i + 1
-      continue
-    }
-    // Parse based on provider format
-    match provider {
-      Anthropic =>
-        // Anthropic uses "event: type\ndata: json" format
-        if trimmed.has_prefix("event:") {
-          let event_type = safe_substring(trimmed, 6)
-          i = i + 1
-          if i < lines.length() {
-            let data_line = lines[i].trim().to_string()
-            if data_line.has_prefix("data:") {
-              let data_str = safe_substring(data_line, 5)
-              let data = @json.parse(data_str) catch { _ => Json::null() }
-              events.push({ event: event_type, data })
-            }
-          }
-        } else if trimmed.has_prefix("data:") {
-          let data_str = safe_substring(trimmed, 5)
-          let data = @json.parse(data_str) catch { _ => Json::null() }
-          events.push({ event: "", data })
-        }
-      OpenAI | OpenAICompatible(_) =>
-        // OpenAI uses "data: json" format
-        if trimmed.has_prefix("data:") {
-          let data_str = safe_substring(trimmed, 5)
-          if data_str != "[DONE]" {
-            let data = @json.parse(data_str) catch { _ => Json::null() }
-            events.push({ event: "", data })
-          }
-        }
-    }
-    i = i + 1
-  }
-  { events, remaining: remaining.to_string() }
-}
-
-///|
-fn safe_substring(s : String, start : Int) -> String {
-  if start >= s.length() {
-    return ""
-  }
-  let buf = StringBuilder::new()
-  let mut idx = 0
-  for c in s {
-    if idx >= start {
-      buf.write_char(c)
-    }
-    idx = idx + 1
-  }
-  buf.to_string().trim().to_string()
 }
