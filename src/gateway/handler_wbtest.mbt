@@ -13,6 +13,7 @@ fn create_test_config() -> GatewayConfig {
     auth_header: true,
     models: [ModelConfig::new("gpt-4o"), ModelConfig::new("gpt-4o-mini")],
     model_patterns: ["gpt-", "o1", "o3", "o4"],
+    codex: None,
   }
   let anthropic_provider : ProviderConfig = {
     id: "anthropic",
@@ -24,6 +25,7 @@ fn create_test_config() -> GatewayConfig {
     auth_header: true,
     models: [ModelConfig::new("claude-sonnet-4-20250514")],
     model_patterns: ["claude-"],
+    codex: None,
   }
   let gemini_provider : ProviderConfig = {
     id: "gemini",
@@ -35,6 +37,7 @@ fn create_test_config() -> GatewayConfig {
     auth_header: true,
     models: [ModelConfig::new("gemini-pro")],
     model_patterns: ["gemini-"],
+    codex: None,
   }
   {
     mode: Merge,
@@ -206,6 +209,7 @@ test "prepare_upstream: OpenAI provider builds correct request" {
     auth_header: true,
     models: [],
     model_patterns: [],
+    codex: None,
   }
   let body =
     #|{"model": "gpt-4o", "messages": [{"role": "user", "content": "hi"}]}
@@ -235,6 +239,7 @@ test "prepare_upstream: Anthropic provider builds correct request" {
     auth_header: true,
     models: [],
     model_patterns: [],
+    codex: None,
   }
   let body =
     #|{"model": "claude-sonnet-4-20250514", "messages": [{"role": "user", "content": "hi"}]}
@@ -266,6 +271,7 @@ test "prepare_upstream: Gemini provider puts key in URL" {
     auth_header: true,
     models: [],
     model_patterns: [],
+    codex: None,
   }
   let body =
     #|{"model": "gemini-pro", "messages": [{"role": "user", "content": "hi"}]}
@@ -296,6 +302,7 @@ test "prepare_upstream: cross-dialect transforms body" {
     auth_header: true,
     models: [],
     model_patterns: [],
+    codex: None,
   }
   let body =
     #|{"model": "claude-sonnet-4-20250514", "messages": [{"role": "user", "content": "hello"}]}
@@ -334,6 +341,7 @@ test "prepare_models_request: OpenAI provider" {
     auth_header: true,
     models: [],
     model_patterns: [],
+    codex: None,
   }
   let req = prepare_models_request(
     provider, "https://api.openai.com/v1", "sk-test",
@@ -354,6 +362,7 @@ test "prepare_models_request: Anthropic provider" {
     auth_header: true,
     models: [],
     model_patterns: [],
+    codex: None,
   }
   let req = prepare_models_request(
     provider, "https://api.anthropic.com", "sk-ant-test",

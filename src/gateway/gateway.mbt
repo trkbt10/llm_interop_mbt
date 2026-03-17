@@ -34,6 +34,20 @@ pub fn prepare_upstream(
 }
 
 ///|
+/// Transform request body for a specific provider and model.
+/// Convenience for host runtime to call transform_request with correct context.
+pub fn transform_for_provider(
+  provider : ProviderConfig,
+  body : String,
+  from : GatewaySurface,
+  to : GatewaySurface,
+  model : String,
+) -> String {
+  let ctx = build_transform_context(provider, model)
+  transform_request(body, from, to, model, ctx)
+}
+
+///|
 fn build_transform_context(
   provider : ProviderConfig,
   model : String,

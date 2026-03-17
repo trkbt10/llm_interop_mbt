@@ -12,7 +12,7 @@ let test_model_harmony : String = "openai/gpt-oss-20b"
 
 ///|
 fn read_harmony_fixture(path : String) -> String raise {
-  @fs.read_file_to_string(path)
+  @utils.read_testdata(path)
 }
 
 ///|

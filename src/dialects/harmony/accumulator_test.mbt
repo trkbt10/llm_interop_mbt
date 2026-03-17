@@ -3,7 +3,7 @@
 
 ///|
 fn read_sse_fixture(path : String) -> String raise {
-  @fs.read_file_to_string(path)
+  @utils.read_testdata(path)
 }
 
 // =============================================================================

@@ -3,7 +3,6 @@ import {
 }
 
 import {
-  "moonbitlang/x/fs" @fs,
   "trkbt10/llm_interop/src/types",
   "trkbt10/llm_interop/src/utils" @utils,
   "trkbt10/llm_interop/src/interop/util" @util,

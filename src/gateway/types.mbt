@@ -171,6 +171,7 @@ pub(all) struct ProviderConfig {
   auth_header : Bool // Include auth in header
   models : Array[ModelConfig]
   model_patterns : Array[String] // Prefix patterns for fallback routing (e.g. ["claude-"])
+  codex : @codex.CodexConfig? // Codex app-server specific config (subprocess command, timeouts, etc.)
 } derive(Show)
 
 ///|
@@ -185,6 +186,7 @@ pub fn ProviderConfig::new(id : String, api : ModelApi) -> ProviderConfig {
     auth_header: true,
     models: [],
     model_patterns: [],
+    codex: None,
   }
 }
 
@@ -253,6 +255,7 @@ pub(all) enum GatewaySurface {
   OpenAI
   Anthropic
   Gemini
+  Codex
 } derive(Show, Eq)
 
 ///|
@@ -261,6 +264,7 @@ pub fn GatewaySurface::from_string(s : String) -> GatewaySurface? {
     "openai" => Some(OpenAI)
     "anthropic" | "claude" => Some(Anthropic)
     "gemini" | "google" => Some(Gemini)
+    "codex" => Some(Codex)
     _ => None
   }
 }
@@ -271,5 +275,7 @@ pub fn GatewaySurface::to_string(self : GatewaySurface) -> String {
     OpenAI => "openai"
     Anthropic => "anthropic"
     Gemini => "gemini"
+    Codex => "codex"
   }
 }
+

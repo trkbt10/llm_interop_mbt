@@ -4,6 +4,5 @@ import {
 }
 
 import {
-  "moonbitlang/x/fs" @fs,
   "trkbt10/llm_interop/src/utils" @utils,
 } for "test"

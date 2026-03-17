@@ -219,6 +219,18 @@ async fn proxy_to_backend(
   target_dialect : @gw.GatewaySurface,
   model : String,
 ) -> @gw.HttpResponse {
+  // Check if this model routes to a Codex backend
+  let backend = match gateway.select_backend(model) {
+    Some(b) => b
+    None =>
+      return @gw.HttpResponse::error(
+        503, "No backend available for model: " + model,
+      )
+  }
+  if backend.provider.api.to_dialect() == @gw.GatewaySurface::Codex {
+    return proxy_to_codex_backend(gateway, body, target_dialect, model, backend)
+  }
+  // Standard HTTP path
   let (backend, status, response_text) = try {
     send_to_backend(gateway, model, body, target_dialect)
   } catch {
@@ -300,6 +312,18 @@ async fn proxy_list_models(gateway : @gw.Gateway) -> @gw.HttpResponse {
   let all_models : Array[Json] = []
   let errors : Array[String] = []
   for _, provider in gateway.config.providers {
+    // Codex app-server uses stdio JSON-RPC, not REST.
+    // Return configured models directly — no HTTP models endpoint.
+    if provider.api == @gw.ModelApi::CodexAppServer {
+      for m in provider.models {
+        let obj : Map[String, Json] = {}
+        obj["id"] = Json::string(m.id)
+        obj["object"] = Json::string("model")
+        obj["owned_by"] = Json::string(provider.id)
+        all_models.push(Json::object(obj))
+      }
+      continue
+    }
     let base_url = expand_env(provider.base_url)
     let api_key = expand_env(provider.api_key)
     let upstream = @gw.prepare_models_request(provider, base_url, api_key)
@@ -361,6 +385,239 @@ async fn http_get(req : @gw.UpstreamRequest) -> (Int, String) {
   let text = response_body.text() catch { _ => "" }
   client.close()
   (response.code, text)
+}
+
+// =============================================================================
+// Codex JSON-RPC stdio transport
+// =============================================================================
+
+///|
+/// Per-provider Codex state: session + live subprocess channel
+struct CodexBackendState {
+  mut session : @codex.CodexSession
+  mut channel : @ipc.IpcChannel?
+}
+
+///|
+/// Mutable state for Codex providers, keyed by provider ID
+let codex_backends : Map[String, CodexBackendState] = {}
+
+///|
+/// Spawn or reuse a Codex app-server subprocess for a provider.
+async fn get_codex_channel(
+  group : @async.TaskGroup[Unit],
+  backend_id : String,
+  command : String,
+  cwd : String,
+  api_key : String,
+) -> @ipc.IpcChannel raise @gw.GatewayError {
+  match codex_backends.get(backend_id) {
+    Some(state) =>
+      match state.channel {
+        Some(ch) => return ch
+        None => ()
+      }
+    None => ()
+  }
+  // Spawn a new codex app-server subprocess
+  // Pass API key as environment variable if configured
+  let env : Map[String, String] = {}
+  if api_key != "" {
+    env["OPENAI_API_KEY"] = api_key
+  }
+  let child = @subprocess.spawn_shell(
+    group,
+    command,
+    cwd=cwd,
+    env=env,
+    pipe_stdin=true,
+    pipe_stdout=true,
+    pipe_stderr=true,
+  ) catch {
+    e =>
+      raise @gw.GatewayError::NetworkError(
+        "Failed to spawn codex app-server: " + e.to_string(),
+      )
+  }
+  let channel = @ipc.IpcChannel::from_child(child)
+  match codex_backends.get(backend_id) {
+    Some(state) => state.channel = Some(channel)
+    None => {
+      let session = @codex.CodexSession::new(cwd)
+      codex_backends[backend_id] = { session, channel: Some(channel) }
+    }
+  }
+  channel
+}
+
+///|
+/// Proxy a completion request to a Codex backend via stdio JSON-RPC.
+async fn proxy_to_codex_backend(
+  _gateway : @gw.Gateway,
+  body : String,
+  target_dialect : @gw.GatewaySurface,
+  model : String,
+  backend : @gw.BackendConfig,
+) -> @gw.HttpResponse {
+  let codex_cfg = match backend.provider.codex {
+    Some(cfg) => cfg
+    None => @codex.CodexConfig::default()
+  }
+  let cwd = if backend.provider.base_url != "" {
+    expand_env(backend.provider.base_url)
+  } else {
+    "."
+  }
+  let command = codex_cfg.command
+  let mut result : @gw.HttpResponse = @gw.HttpResponse::error(
+    502, "Codex transport failed",
+  )
+  @async.with_task_group(async fn(group) {
+    let api_key = expand_env(backend.provider.api_key)
+    let channel = get_codex_channel(
+      group, backend.id, command, cwd, api_key,
+    ) catch {
+      e => {
+        result = @gw.HttpResponse::error(502, e.to_string())
+        group.return_immediately(())
+        return
+      }
+    }
+    let state = codex_backends[backend.id].unwrap()
+    let codex_body = @gw.transform_for_provider(
+      backend.provider,
+      body,
+      target_dialect,
+      @gw.GatewaySurface::Codex,
+      model,
+    )
+    let req = @codex.prepare_codex_upstream(codex_body, state.session)
+    let (events_json, new_session) = codex_stdio_execute(
+      channel, req.steps, req.next_session,
+    )
+    state.session = new_session
+    let final_body = @gw.transform_response(
+      events_json, @gw.GatewaySurface::Codex, target_dialect,
+    )
+    let headers : Map[String, String] = {}
+    headers["Content-Type"] = "application/json"
+    result = { status: 200, headers, body: final_body }
+    group.return_immediately(())
+  })
+  result
+}
+
+///|
+/// Execute Codex JSON-RPC steps over an IPC channel (stdio pipe).
+/// Sends messages to stdin, reads responses/events from stdout.
+async fn codex_stdio_execute(
+  channel : @ipc.IpcChannel,
+  steps : Array[@codex.CodexRpcStep],
+  session : @codex.CodexSession,
+) -> (String, @codex.CodexSession) {
+  let mut current_session = session
+  let events : Array[Json] = []
+  for step in steps {
+    let msg = match step.kind {
+      TurnStart =>
+        if current_session.thread_id != "" {
+          @codex.patch_turn_start_thread_id(
+            step.message, current_session.thread_id,
+          )
+        } else {
+          step.message
+        }
+      _ => step.message
+    }
+    // Send the message
+    channel.send(msg) catch {
+      e =>
+        return (
+          "[{\"method\":\"error\",\"params\":{\"message\":\"Codex send failed: \{e}\"}}]",
+          current_session,
+        )
+    }
+    match step.kind {
+      Notification =>
+        // No response expected
+        continue
+      Request => {
+        // Read a single JSON-RPC response line
+        let line = channel.recv() catch {
+          e =>
+            return (
+              "[{\"method\":\"error\",\"params\":{\"message\":\"Codex recv failed: \{e}\"}}]",
+              current_session,
+            )
+        }
+        match line {
+          Some(text) => {
+            let json = @json.parse(text) catch { _ => Json::null() }
+            current_session = @codex.update_session_from_thread_response(
+              current_session, json,
+            )
+            current_session = @codex.update_session_from_init_response(
+              current_session, json,
+            )
+          }
+          None =>
+            return (
+              "[{\"method\":\"error\",\"params\":{\"message\":\"Codex EOF during setup\"}}]",
+              current_session,
+            )
+        }
+      }
+      TurnStart => {
+        // Read a single response for the turn/start request itself
+        let first_line = channel.recv() catch {
+          e =>
+            return (
+              "[{\"method\":\"error\",\"params\":{\"message\":\"Codex recv failed: \{e}\"}}]",
+              current_session,
+            )
+        }
+        match first_line {
+          Some(text) => {
+            let json = @json.parse(text) catch { _ => Json::null() }
+            // Check for error response
+            match json {
+              { "error": _, .. } =>
+                return (
+                  "[" + text + "]",
+                  current_session,
+                )
+              _ => ()
+            }
+          }
+          None =>
+            return (
+              "[{\"method\":\"error\",\"params\":{\"message\":\"Codex EOF on turn/start\"}}]",
+              current_session,
+            )
+        }
+        // Now read streaming events until turn/completed
+        let mut turn_done = false
+        while not(turn_done) {
+          let line = channel.recv() catch { _ => break }
+          match line {
+            Some(text) => {
+              let json = @json.parse(text) catch { _ => continue }
+              events.push(json)
+              // Check if this is turn/completed
+              match json {
+                { "method": String("turn/completed"), .. } =>
+                  turn_done = true
+                _ => ()
+              }
+            }
+            None => break // EOF
+          }
+        }
+        current_session = @codex.mark_session_turn_complete(current_session)
+      }
+    }
+  }
+  (Json::array(events).stringify(), current_session)
 }
 
 // =============================================================================
@@ -428,6 +685,10 @@ async fn run_server(gateway : @gw.Gateway, host : String, port : Int) -> Unit {
 ///|
 fn validate_config(config : @gw.GatewayConfig) -> Unit raise @gw.GatewayError {
   for provider_id, provider in config.providers {
+    // Codex app-server doesn't require API key
+    if provider.api == @gw.ModelApi::CodexAppServer {
+      continue
+    }
     let api_key = expand_env(provider.api_key)
     if api_key == "" {
       raise @gw.GatewayError::ConfigError(

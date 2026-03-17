@@ -2,6 +2,7 @@ import { openaiChatCompletionDialect } from "./openai-chat-completion";
 import { openaiResponsesApiDialect } from "./openai-responses-api";
 import { anthropicMessagesApiDialect } from "./anthropic-messages-api";
 import { geminiGenerateContentDialect } from "./gemini-generate-content";
+import { codexAppServerDialect } from "./codex-app-server";
 import type { Dialect, DialectName, ModelResponse, RequestOptions, ResponseChoice, ResponseContentBlock, SupportedParams } from "./types";
 
 export type { Dialect, DialectName, ModelResponse, RequestOptions, ResponseChoice, ResponseContentBlock, SupportedParams };
@@ -11,6 +12,7 @@ const dialects: Record<DialectName, Dialect> = {
   "openai-responses-api": openaiResponsesApiDialect,
   "anthropic-messages-api": anthropicMessagesApiDialect,
   "gemini-generate-content": geminiGenerateContentDialect,
+  "codex-app-server": codexAppServerDialect,
 };
 
 export function getDialect(name: string): Dialect {
@@ -34,6 +36,8 @@ export function surfaceToDialect(surface: string): DialectName {
       return "anthropic-messages-api";
     case "gemini":
       return "gemini-generate-content";
+    case "codex":
+      return "codex-app-server";
     case "openai":
     default:
       return "openai-chat-completion";

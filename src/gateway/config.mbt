@@ -75,6 +75,7 @@ fn parse_provider(
   }
   let models = parse_models(json)
   let model_patterns = parse_model_patterns(json)
+  let codex = parse_codex_config(json)
   {
     id,
     base_url,
@@ -85,6 +86,55 @@ fn parse_provider(
     auth_header,
     models,
     model_patterns,
+    codex,
+  }
+}
+
+///|
+/// Parse optional Codex app-server configuration from provider JSON.
+fn parse_codex_config(json : Json) -> @codex.CodexConfig? {
+  match json {
+    { "codex": Object(obj), .. } => {
+      let defaults = @codex.CodexConfig::default()
+      let command = match obj.get("command") {
+        Some(String(s)) => s
+        _ => defaults.command
+      }
+      let approval_policy = match obj.get("approvalPolicy") {
+        Some(String(s)) => Some(s)
+        _ => defaults.approval_policy
+      }
+      let thread_sandbox = match obj.get("threadSandbox") {
+        Some(String(s)) => Some(s)
+        _ => defaults.thread_sandbox
+      }
+      let turn_sandbox_policy = match obj.get("turnSandboxPolicy") {
+        Some(String(s)) => Some(s)
+        _ => defaults.turn_sandbox_policy
+      }
+      let turn_timeout_ms = match obj.get("turnTimeoutMs") {
+        Some(Number(n, ..)) => n.to_int()
+        _ => defaults.turn_timeout_ms
+      }
+      let read_timeout_ms = match obj.get("readTimeoutMs") {
+        Some(Number(n, ..)) => n.to_int()
+        _ => defaults.read_timeout_ms
+      }
+      let stall_timeout_ms = match obj.get("stallTimeoutMs") {
+        Some(Number(n, ..)) => n.to_int()
+        _ => defaults.stall_timeout_ms
+      }
+      Some({
+        command,
+        approval_policy,
+        thread_sandbox,
+        turn_sandbox_policy,
+        turn_timeout_ms,
+        read_timeout_ms,
+        stall_timeout_ms,
+      })
+    }
+    _ => None
   }
 }
 
@@ -349,6 +399,7 @@ fn parse_legacy_backend(json : Json) -> BackendConfig raise GatewayError {
     auth_header: true,
     models: [ModelConfig::new(model_id)],
     model_patterns: [],
+    codex: None,
   }
   { id, provider, weight }
 }

@@ -5,6 +5,3 @@ import {
   "trkbt10/llm_interop/src/sse" @sse,
 }
 
-import {
-  "moonbitlang/x/fs" @fs,
-} for "test"

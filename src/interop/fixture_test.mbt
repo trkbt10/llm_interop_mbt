@@ -9,7 +9,7 @@
 ///|
 /// Read a JSONL file and return lines as array
 fn read_jsonl_lines(path : String) -> Array[String] raise {
-  let content = @fs.read_file_to_string(path)
+  let content = @utils.read_testdata(path)
   @utils.split_lines(content)
 }
 
@@ -60,7 +60,7 @@ fn claude_tool_result_continuation_fixture() -> String raise {
 /// OpenAI Responses web search non-stream fixture
 fn openai_web_search_nonstream_fixture() -> Json raise {
   @json.parse(
-    @fs.read_file_to_string(
+    @utils.read_testdata(
       "testdata/openai/responses/websearch_nonstream.json",
     ),
   )
@@ -70,7 +70,7 @@ fn openai_web_search_nonstream_fixture() -> Json raise {
 /// OpenAI Responses web search stream fixture accumulated to final response
 fn openai_web_search_stream_fixture() -> @types.ModelResponse raise {
   @openai.accumulate_responses_api(
-    @fs.read_file_to_string("testdata/openai/responses/websearch_stream.jsonl"),
+    @utils.read_testdata("testdata/openai/responses/websearch_stream.jsonl"),
   )
 }
 

@@ -99,15 +99,11 @@ pub fn ModelApi::to_spec(self : ModelApi) -> DialectSpec {
     CodexAppServer =>
       {
         id: "codex-app-server",
-        default_base_url: "",
-        surface: OpenAI,
-        completion_path: fn(base, _model, _key) {
-          @openai.chat_completions_path(base)
-        },
-        models_path: fn(base, _key) {
-          @openai.chat_completions_models_path(base)
-        },
-        auth_headers: @openai.chat_completions_auth_headers,
+        default_base_url: @codex.codex_default_base_url(),
+        surface: Codex,
+        completion_path: fn(base, _model, _key) { base },
+        models_path: fn(base, _key) { base },
+        auth_headers: @codex.codex_auth_headers,
       }
   }
 }
@@ -185,6 +181,12 @@ pub fn GatewaySurface::resolve_completion(
       match @gemini.gemini_resolve_completion(meth, path, body) {
         Some((_, model, b)) =>
           Some(CompletionWithModel(dialect=Gemini, model~, body=b))
+        None => None
+      }
+    Codex =>
+      // Codex is a backend-only surface; inbound routing delegates to OpenAI surface
+      match @openai.chat_completions_resolve(meth, path, body) {
+        Some((_, b)) => Some(Completion(dialect=Codex, body=b))
         None => None
       }
   }

@@ -124,7 +124,7 @@ export type ModelResponse = {
 // Dialect interface
 // ---------------------------------------------------------------------------
 
-export type DialectName = "openai-chat-completion" | "openai-responses-api" | "anthropic-messages-api" | "gemini-generate-content";
+export type DialectName = "openai-chat-completion" | "openai-responses-api" | "anthropic-messages-api" | "gemini-generate-content" | "codex-app-server";
 
 export type RequestOptions = {
   maxTokens?: number;
