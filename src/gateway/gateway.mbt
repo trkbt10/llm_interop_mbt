@@ -24,12 +24,29 @@ pub fn prepare_upstream(
   let (origin, base_path) = @utils.parse_url(base_url)
   let from = target_dialect
   let to = provider.api.to_dialect()
+  let ctx = build_transform_context(provider, model)
   {
     origin,
     path: provider.api.completion_path(base_path, model, api_key),
     headers: provider.api.auth_headers(api_key),
-    body: transform_request(body, from, to, model),
+    body: transform_request(body, from, to, model, ctx),
   }
+}
+
+///|
+fn build_transform_context(
+  provider : ProviderConfig,
+  model : String,
+) -> @types.TransformContext {
+  for m in provider.models {
+    if m.id == model {
+      return {
+        max_tokens: m.max_tokens,
+        max_tokens_field: m.compat.max_tokens_field,
+      }
+    }
+  }
+  @types.TransformContext::default()
 }
 
 ///|
@@ -39,7 +56,11 @@ pub(all) enum RouteResult {
   ListModels
   Completion(dialect~ : GatewaySurface, body~ : String)
   ResponsesApi(body~ : String)
-  CompletionWithModel(dialect~ : GatewaySurface, model~ : String, body~ : String)
+  CompletionWithModel(
+    dialect~ : GatewaySurface,
+    model~ : String,
+    body~ : String
+  )
   NotFound(path~ : String, dialect~ : String)
 } derive(Show)
 

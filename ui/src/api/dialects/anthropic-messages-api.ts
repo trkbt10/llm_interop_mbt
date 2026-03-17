@@ -1,5 +1,4 @@
 import type {
-  MessageCreateParamsNonStreaming,
   MessageParam,
   ContentBlockParam,
 } from "@anthropic-ai/sdk/resources/messages";
@@ -138,6 +137,7 @@ function parseContentBlock(block: RawContentBlock): ResponseContentBlock | null 
 
 export const anthropicMessagesApiDialect: Dialect = {
   name: "anthropic-messages-api",
+  supportedParams: { maxTokens: true, temperature: true, topP: true, topK: true, stop: true },
 
   buildEndpoint(): string {
     return "/v1/messages";
@@ -147,15 +147,21 @@ export const anthropicMessagesApiDialect: Dialect = {
     messages: ChatMessage[],
     model: string,
     options?: RequestOptions
-  ): MessageCreateParamsNonStreaming {
+  ): unknown {
     const system = extractSystemMessage(messages);
     const converted = messages
       .map(toMessage)
       .filter((m): m is MessageParam => m !== null);
 
+    // max_tokens is omitted when unspecified; the gateway fills it
+    // from model config before forwarding to the Anthropic API.
     return {
       model,
-      max_tokens: options?.maxTokens ?? 4096,
+      ...(options?.maxTokens !== undefined ? { max_tokens: options.maxTokens } : {}),
+      ...(options?.temperature !== undefined ? { temperature: options.temperature } : {}),
+      ...(options?.topP !== undefined ? { top_p: options.topP } : {}),
+      ...(options?.topK !== undefined ? { top_k: options.topK } : {}),
+      ...(options?.stop?.length ? { stop_sequences: options.stop } : {}),
       messages: converted,
       ...(system ? { system } : {}),
     };

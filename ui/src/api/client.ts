@@ -4,6 +4,7 @@ import {
   type ModelResponse,
   type RequestOptions,
 } from "./dialects";
+import type { ChatSettings } from "../components/SettingsPanel";
 
 export class ApiError extends Error {
   constructor(
@@ -51,6 +52,31 @@ export function fetchHealth(): Promise<HealthResponse> {
 
 export function fetchModels(): Promise<ModelsResponse> {
   return request<ModelsResponse>("/v1/models");
+}
+
+function parseOptionalNumber(value: string): number | undefined {
+  if (!value) return undefined;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+export function settingsToRequestOptions(settings: ChatSettings): RequestOptions {
+  const maxTokens = parseOptionalNumber(settings.maxTokens);
+  const temperature = parseOptionalNumber(settings.temperature);
+  const topP = parseOptionalNumber(settings.topP);
+  const topK = parseOptionalNumber(settings.topK);
+  const stop = settings.stop
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  return {
+    ...(maxTokens !== undefined && maxTokens > 0 ? { maxTokens } : {}),
+    ...(temperature !== undefined ? { temperature } : {}),
+    ...(topP !== undefined ? { topP } : {}),
+    ...(topK !== undefined ? { topK } : {}),
+    ...(stop.length > 0 ? { stop } : {}),
+  };
 }
 
 export async function sendChat(

@@ -1,13 +1,25 @@
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import type { ChatMessage, ChatMessageDisplayHandle } from "react-editor-ui/chat/ChatMessageDisplay";
-import { fetchModels, fetchHealth, sendChat, type Model } from "../api/client";
+import { GridLayout } from "react-panel-layout";
+import type { PanelLayoutConfig, LayerDefinition } from "react-panel-layout";
+import { fetchModels, fetchHealth, sendChat, settingsToRequestOptions, type Model } from "../api/client";
+import { surfaceToDialect, type DialectName } from "../api/dialects";
 import { toContentParts } from "../utils/responseContent";
-import { ChatHeader } from "../components/ChatHeader";
 import { ChatMessages } from "../components/ChatMessages";
 import { ChatInputArea } from "../components/ChatInputArea";
+import { SettingsPanel, defaultChatSettings, type ChatSettings } from "../components/SettingsPanel";
 import { useAttachments, readFileAsBase64 } from "../hooks/useAttachments";
 
 type ContentPart = { type: "text"; text: string } | { type: "image"; url: string };
+
+const layoutConfig: PanelLayoutConfig = {
+  areas: [["settings", "chat"]],
+  rows: [{ size: "1fr" }],
+  columns: [
+    { size: "360px", resizable: true, minSize: 280, maxSize: 520 },
+    { size: "1fr" },
+  ],
+};
 
 export function IndexPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -15,14 +27,15 @@ export function IndexPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [models, setModels] = useState<Model[]>([]);
   const [selectedModel, setSelectedModel] = useState("");
-  const [dialect, setDialect] = useState("");
+  const [dialect, setDialect] = useState<DialectName>("openai-chat-completion");
+  const [settings, setSettings] = useState<ChatSettings>(defaultChatSettings);
   const displayRef = useRef<ChatMessageDisplayHandle>(null);
   const attachments = useAttachments();
 
   useEffect(() => {
     fetchHealth()
       .then((res) => {
-        setDialect(res.dialect);
+        setDialect(surfaceToDialect(res.dialect));
       })
       .catch((err: unknown) => {
         console.error("Failed to fetch health:", err);
@@ -45,7 +58,7 @@ export function IndexPage() {
     const files = attachments.attachments;
     const hasContent = text || files.length > 0;
 
-    if (!hasContent || isLoading || !selectedModel || !dialect) {
+    if (!hasContent || isLoading || !selectedModel) {
       return;
     }
 
@@ -77,9 +90,12 @@ export function IndexPage() {
     setTimeout(() => displayRef.current?.scrollToBottom(), 0);
 
     try {
-      const response = await sendChat(dialect, newMessages, selectedModel, {
-        maxTokens: 4096,
-      });
+      const response = await sendChat(
+        dialect,
+        newMessages,
+        selectedModel,
+        settingsToRequestOptions(settings),
+      );
 
       const firstChoice = response.choices[0] as typeof response.choices[number] | undefined;
       if (firstChoice && firstChoice.content.length > 0) {
@@ -105,39 +121,74 @@ export function IndexPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [inputValue, isLoading, messages, selectedModel, dialect, attachments]);
+  }, [inputValue, isLoading, messages, selectedModel, dialect, attachments, settings]);
 
   const files = attachments.attachments.map((a) => a.file);
   const canSend =
-    (!!inputValue.trim() || files.length > 0) && !isLoading && !!selectedModel && !!dialect;
+    (!!inputValue.trim() || files.length > 0) && !isLoading && !!selectedModel;
+
+  const layers: LayerDefinition[] = useMemo(
+    () => [
+      {
+        id: "settings",
+        gridArea: "settings",
+        scrollable: true,
+        component: (
+          <SettingsPanel
+            models={models}
+            selectedModel={selectedModel}
+            onModelChange={setSelectedModel}
+            dialect={dialect}
+            onDialectChange={setDialect}
+            settings={settings}
+            onSettingsChange={setSettings}
+          />
+        ),
+      },
+      {
+        id: "chat",
+        gridArea: "chat",
+        component: (
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              height: "100%",
+              overflow: "hidden",
+            }}
+          >
+            <ChatMessages displayRef={displayRef} messages={messages} isLoading={isLoading} />
+            <ChatInputArea
+              value={inputValue}
+              onChange={setInputValue}
+              onSend={() => void handleSend()}
+              isLoading={isLoading}
+              canSend={canSend}
+              attachedFiles={files}
+              onFileSelect={attachments.add}
+              onFileRemove={attachments.removeAt}
+            />
+          </div>
+        ),
+      },
+    ],
+    [
+      models, selectedModel, dialect, settings,
+      messages, isLoading, inputValue, canSend, files,
+      attachments.add, attachments.removeAt, handleSend,
+    ],
+  );
 
   return (
-    <div
+    <GridLayout
+      config={layoutConfig}
+      layers={layers}
+      root
       style={{
-        display: "flex",
-        flexDirection: "column",
         height: "100vh",
         backgroundColor: "var(--rei-color-surface)",
         color: "var(--rei-color-text)",
       }}
-    >
-      <ChatHeader
-        dialect={dialect}
-        models={models}
-        selectedModel={selectedModel}
-        onModelChange={setSelectedModel}
-      />
-      <ChatMessages displayRef={displayRef} messages={messages} isLoading={isLoading} />
-      <ChatInputArea
-        value={inputValue}
-        onChange={setInputValue}
-        onSend={() => void handleSend()}
-        isLoading={isLoading}
-        canSend={canSend}
-        attachedFiles={files}
-        onFileSelect={attachments.add}
-        onFileRemove={attachments.removeAt}
-      />
-    </div>
+    />
   );
 }

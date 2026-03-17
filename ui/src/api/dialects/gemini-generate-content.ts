@@ -15,6 +15,9 @@ type GeminiRequest = {
   generationConfig?: {
     maxOutputTokens?: number;
     temperature?: number;
+    topP?: number;
+    topK?: number;
+    stopSequences?: string[];
   };
 };
 
@@ -164,6 +167,7 @@ function parseCandidate(candidate: RawCandidate): ResponseChoice {
 
 export const geminiGenerateContentDialect: Dialect = {
   name: "gemini-generate-content",
+  supportedParams: { maxTokens: true, temperature: true, topP: true, topK: true, stop: true },
 
   buildEndpoint(model: string): string {
     return `/v1/models/${model}:generateContent`;
@@ -180,13 +184,28 @@ export const geminiGenerateContentDialect: Dialect = {
 
     const request: GeminiRequest = { contents };
 
-    if (options?.maxTokens !== undefined || options?.temperature !== undefined) {
+    const hasGenConfig =
+      options?.maxTokens !== undefined ||
+      options?.temperature !== undefined ||
+      options?.topP !== undefined ||
+      options?.topK !== undefined ||
+      (options?.stop?.length ?? 0) > 0;
+    if (hasGenConfig) {
       request.generationConfig = {};
-      if (options.maxTokens !== undefined) {
+      if (options?.maxTokens !== undefined) {
         request.generationConfig.maxOutputTokens = options.maxTokens;
       }
-      if (options.temperature !== undefined) {
+      if (options?.temperature !== undefined) {
         request.generationConfig.temperature = options.temperature;
+      }
+      if (options?.topP !== undefined) {
+        request.generationConfig.topP = options.topP;
+      }
+      if (options?.topK !== undefined) {
+        request.generationConfig.topK = options.topK;
+      }
+      if (options?.stop?.length) {
+        request.generationConfig.stopSequences = options.stop;
       }
     }
 

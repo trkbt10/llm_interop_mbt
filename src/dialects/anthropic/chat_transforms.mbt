@@ -6,7 +6,10 @@
 
 ///|
 /// Transform Anthropic Messages request to OpenAI Chat Completions format
-pub fn anthropic_request_to_chat(body : String) -> String {
+pub fn anthropic_request_to_chat(
+  body : String,
+  ctx : @types.TransformContext,
+) -> String {
   let json = @json.parse(body) catch { _ => return body }
   let result : Map[String, Json] = {}
   // Copy model
@@ -14,11 +17,8 @@ pub fn anthropic_request_to_chat(body : String) -> String {
     { "model": model, .. } => result["model"] = model
     _ => ()
   }
-  // Copy max_tokens
-  match json {
-    { "max_tokens": max_tokens, .. } => result["max_tokens"] = max_tokens
-    _ => ()
-  }
+  // Extract and apply generation parameters
+  @types.GenerationParams::from_anthropic(json).apply_to_openai(result, ctx)
   // Build messages array
   let messages : Array[Json] = []
   // Add system message if present
@@ -39,7 +39,6 @@ pub fn anthropic_request_to_chat(body : String) -> String {
           { "role": String(role), "content": content, .. } => {
             let new_msg : Map[String, Json] = {}
             new_msg["role"] = Json::string(role)
-            // Convert Anthropic content format to OpenAI
             new_msg["content"] = transform_anthropic_content_to_openai(content)
             messages.push(Json::object(new_msg))
           }
@@ -89,7 +88,10 @@ fn transform_anthropic_content_to_openai(content : Json) -> Json {
 
 ///|
 /// Transform OpenAI Chat Completions request to Anthropic Messages format
-pub fn chat_request_to_anthropic(body : String) -> String {
+pub fn chat_request_to_anthropic(
+  body : String,
+  ctx : @types.TransformContext,
+) -> String {
   let json = @json.parse(body) catch { _ => return body }
   let result : Map[String, Json] = {}
   // Copy model
@@ -97,11 +99,8 @@ pub fn chat_request_to_anthropic(body : String) -> String {
     { "model": model, .. } => result["model"] = model
     _ => ()
   }
-  // Copy or default max_tokens (required by Anthropic)
-  match json {
-    { "max_tokens": max_tokens, .. } => result["max_tokens"] = max_tokens
-    _ => result["max_tokens"] = Json::number(4096.0)
-  }
+  // Extract and apply generation parameters (includes max_tokens default)
+  @types.GenerationParams::from_openai(json).apply_to_anthropic(result, ctx)
   // Extract system message and convert messages
   let messages : Array[Json] = []
   match json {
@@ -140,7 +139,11 @@ fn transform_openai_content_to_anthropic(content : Json) -> Json {
             p["text"] = Json::string(text)
             anthropic_parts.push(Json::object(p))
           }
-          { "type": String("image_url"), "image_url": { "url": String(url), .. }, .. } =>
+          {
+            "type": String("image_url"),
+            "image_url": { "url": String(url), .. },
+            ..
+          } =>
             match parse_data_url(url) {
               Some((media_type, data)) => {
                 let source : Map[String, Json] = {}
@@ -188,10 +191,9 @@ pub fn anthropic_response_to_chat(body : String) -> String {
       }
     _ => ()
   }
-  let content = texts.iter().fold(
-    init="",
-    fn(acc, t) { if acc == "" { t } else { acc + "\n\n" + t } },
-  )
+  let content = texts
+    .iter()
+    .fold(init="", fn(acc, t) { if acc == "" { t } else { acc + "\n\n" + t } })
   // Build OpenAI format response
   let message : Map[String, Json] = {}
   message["role"] = Json::string("assistant")
@@ -334,7 +336,7 @@ pub fn extract_anthropic_error(json : Json) -> Json? {
 ///|
 /// Parse data URL to extract media type and base64 data
 fn parse_data_url(url : String) -> (String, String)? {
-  if not(url.has_prefix("data:")) {
+  if !url.has_prefix("data:") {
     return None
   }
   // Find semicolon after "data:"

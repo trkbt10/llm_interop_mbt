@@ -6,7 +6,11 @@
 
 ///|
 /// Transform Gemini GenerateContent request to OpenAI Chat Completions format
-pub fn gemini_request_to_chat(body : String, model : String) -> String {
+pub fn gemini_request_to_chat(
+  body : String,
+  model : String,
+  ctx : @types.TransformContext,
+) -> String {
   let json = @json.parse(body) catch { _ => return body }
   let result : Map[String, Json] = {}
   result["model"] = Json::string(model)
@@ -18,7 +22,6 @@ pub fn gemini_request_to_chat(body : String, model : String) -> String {
         match content {
           { "role": String(role), "parts": Array(parts), .. } => {
             let openai_role = if role == "model" { "assistant" } else { "user" }
-            // Extract text from parts
             let texts : Array[String] = []
             for part in parts {
               match part {
@@ -26,10 +29,15 @@ pub fn gemini_request_to_chat(body : String, model : String) -> String {
                 _ => ()
               }
             }
-            let content_text = texts.iter().fold(
-              init="",
-              fn(acc, t) { if acc == "" { t } else { acc + "\n" + t } },
-            )
+            let content_text = texts
+              .iter()
+              .fold(init="", fn(acc, t) {
+                if acc == "" {
+                  t
+                } else {
+                  acc + "\n" + t
+                }
+              })
             let msg : Map[String, Json] = {}
             msg["role"] = Json::string(openai_role)
             msg["content"] = Json::string(content_text)
@@ -41,18 +49,17 @@ pub fn gemini_request_to_chat(body : String, model : String) -> String {
     _ => ()
   }
   result["messages"] = Json::array(messages)
-  // Copy generation config
-  match json {
-    { "generationConfig": { "maxOutputTokens": max_tokens, .. }, .. } =>
-      result["max_tokens"] = max_tokens
-    _ => ()
-  }
+  // Extract and apply all generation parameters
+  @types.GenerationParams::from_gemini(json).apply_to_openai(result, ctx)
   Json::object(result).stringify()
 }
 
 ///|
 /// Transform OpenAI Chat Completions request to Gemini GenerateContent format
-pub fn chat_request_to_gemini(body : String) -> String {
+pub fn chat_request_to_gemini(
+  body : String,
+  ctx : @types.TransformContext,
+) -> String {
   let json = @json.parse(body) catch { _ => return body }
   // Transform messages to Gemini contents format
   let contents : Array[Json] = []
@@ -75,6 +82,8 @@ pub fn chat_request_to_gemini(body : String) -> String {
   }
   let gemini_body : Map[String, Json] = {}
   gemini_body["contents"] = Json::array(contents)
+  // Extract and apply all generation parameters as generationConfig
+  @types.GenerationParams::from_openai(json).apply_to_gemini(gemini_body, ctx)
   Json::object(gemini_body).stringify()
 }
 
@@ -96,7 +105,11 @@ fn transform_openai_content_to_gemini(content : Json) -> Array[Json] {
             p["text"] = Json::string(text)
             gemini_parts.push(Json::object(p))
           }
-          { "type": String("image_url"), "image_url": { "url": String(url), .. }, .. } =>
+          {
+            "type": String("image_url"),
+            "image_url": { "url": String(url), .. },
+            ..
+          } =>
             match parse_data_url(url) {
               Some((mime_type, data)) => {
                 let inline_data : Map[String, Json] = {}
@@ -138,10 +151,15 @@ pub fn gemini_response_to_chat(body : String) -> String {
             }
           _ => ()
         }
-        let content = texts.iter().fold(
-          init="",
-          fn(acc, t) { if acc == "" { t } else { acc + "\n\n" + t } },
-        )
+        let content = texts
+          .iter()
+          .fold(init="", fn(acc, t) {
+            if acc == "" {
+              t
+            } else {
+              acc + "\n\n" + t
+            }
+          })
         let message : Map[String, Json] = {}
         message["role"] = Json::string("assistant")
         message["content"] = Json::string(content)
@@ -217,7 +235,7 @@ pub fn openai_error_to_gemini(body : String) -> String {
 ///|
 /// Parse data URL to extract media type and base64 data
 fn parse_data_url(url : String) -> (String, String)? {
-  if not(url.has_prefix("data:")) {
+  if !url.has_prefix("data:") {
     return None
   }
   // Find semicolon after "data:"

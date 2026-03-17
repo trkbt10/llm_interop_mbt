@@ -129,11 +129,24 @@ export type DialectName = "openai-chat-completion" | "openai-responses-api" | "a
 export type RequestOptions = {
   maxTokens?: number;
   temperature?: number;
+  topP?: number;
+  topK?: number;
+  stop?: string[];
   stream?: boolean;
+};
+
+/** Which optional parameters a dialect supports */
+export type SupportedParams = {
+  maxTokens: boolean;
+  temperature: boolean;
+  topP: boolean;
+  topK: boolean;
+  stop: boolean;
 };
 
 export type Dialect = {
   readonly name: DialectName;
+  readonly supportedParams: SupportedParams;
   buildEndpoint: (model: string) => string;
   buildRequest: (
     messages: ChatMessage[],

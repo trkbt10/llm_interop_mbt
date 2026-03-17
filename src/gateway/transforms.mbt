@@ -5,22 +5,82 @@ pub fn transform_request(
   from : GatewaySurface,
   to : GatewaySurface,
   model : String,
+  ctx : @types.TransformContext,
 ) -> String {
   match (from, to) {
-    (OpenAI, OpenAI) | (Anthropic, Anthropic) | (Gemini, Gemini) => body
-    (Anthropic, OpenAI) => @anthropic.anthropic_request_to_chat(body)
-    (Gemini, OpenAI) => @gemini.gemini_request_to_chat(body, model)
-    (OpenAI, Anthropic) => @anthropic.chat_request_to_anthropic(body)
+    (OpenAI, OpenAI) => normalize_openai_params(body, ctx)
+    (Anthropic, Anthropic) => normalize_anthropic_params(body, ctx)
+    (Gemini, Gemini) => normalize_gemini_params(body, ctx)
+    (Anthropic, OpenAI) => @anthropic.anthropic_request_to_chat(body, ctx)
+    (Gemini, OpenAI) => @gemini.gemini_request_to_chat(body, model, ctx)
+    (OpenAI, Anthropic) => @anthropic.chat_request_to_anthropic(body, ctx)
     (Gemini, Anthropic) => {
-      let openai = @gemini.gemini_request_to_chat(body, model)
-      @anthropic.chat_request_to_anthropic(openai)
+      let openai = @gemini.gemini_request_to_chat(body, model, ctx)
+      @anthropic.chat_request_to_anthropic(openai, ctx)
     }
-    (OpenAI, Gemini) => @gemini.chat_request_to_gemini(body)
+    (OpenAI, Gemini) => @gemini.chat_request_to_gemini(body, ctx)
     (Anthropic, Gemini) => {
-      let openai = @anthropic.anthropic_request_to_chat(body)
-      @gemini.chat_request_to_gemini(openai)
+      let openai = @anthropic.anthropic_request_to_chat(body, ctx)
+      @gemini.chat_request_to_gemini(openai, ctx)
     }
   }
+}
+
+///|
+/// Normalize OpenAI request parameters using model config.
+/// Handles max_tokens_field renaming (e.g. max_tokens → max_completion_tokens for o1).
+fn normalize_openai_params(
+  body : String,
+  ctx : @types.TransformContext,
+) -> String {
+  if ctx.max_tokens_field == "max_tokens" {
+    return body
+  }
+  let json = @json.parse(body) catch { _ => return body }
+  match json {
+    Object(obj) => {
+      // Rename max_tokens to the model's expected field name
+      match obj.get("max_tokens") {
+        Some(val) if !obj.contains(ctx.max_tokens_field) => {
+          obj.remove("max_tokens")
+          obj[ctx.max_tokens_field] = val
+        }
+        _ => ()
+      }
+      Json::object(obj).stringify()
+    }
+    _ => body
+  }
+}
+
+///|
+/// Normalize Anthropic request parameters using model config.
+/// Ensures max_tokens is present (required field).
+fn normalize_anthropic_params(
+  body : String,
+  ctx : @types.TransformContext,
+) -> String {
+  let json = @json.parse(body) catch { _ => return body }
+  match json {
+    Object(obj) => {
+      if !obj.contains("max_tokens") && ctx.max_tokens > 0 {
+        obj["max_tokens"] = Json::number(ctx.max_tokens.to_double())
+        return Json::object(obj).stringify()
+      }
+      body
+    }
+    _ => body
+  }
+}
+
+///|
+/// Normalize Gemini request parameters using model config.
+/// No normalization needed currently — Gemini field names are stable.
+fn normalize_gemini_params(
+  body : String,
+  _ctx : @types.TransformContext,
+) -> String {
+  body
 }
 
 ///|

@@ -1,6 +1,7 @@
 import { useRef } from "react";
 import { ChatInput, SendButton, FilePreview } from "react-editor-ui/chat/ChatInput";
 import { IconButton } from "react-editor-ui/IconButton";
+import { useAutoResize } from "react-editor-ui/hooks";
 import { Paperclip } from "lucide-react";
 import { ICON_SIZE } from "./iconSize";
 
@@ -26,9 +27,12 @@ export function ChatInputArea({
   onFileRemove,
 }: ChatInputAreaProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useAutoResize(textareaRef, value, { minHeight: 44, maxHeight: 200 });
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) {
+    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
       onSend();
     }
@@ -66,6 +70,7 @@ export function ChatInputArea({
         )}
         <ChatInput.Content>
           <textarea
+            ref={textareaRef}
             value={value}
             onChange={(e) => onChange(e.target.value)}
             onKeyDown={handleKeyDown}
@@ -73,8 +78,6 @@ export function ChatInputArea({
             disabled={isLoading}
             style={{
               width: "100%",
-              minHeight: "44px",
-              maxHeight: "200px",
               padding: "var(--rei-space-md) var(--rei-space-lg)",
               border: "none",
               background: "transparent",

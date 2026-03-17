@@ -211,6 +211,7 @@ function parseOutputItem(item: RawOutputItem): ResponseContentBlock[] {
 
 export const openaiResponsesApiDialect: Dialect = {
   name: "openai-responses-api",
+  supportedParams: { maxTokens: true, temperature: true, topP: true, topK: false, stop: false },
 
   buildEndpoint(): string {
     return "/v1/responses";
@@ -229,6 +230,7 @@ export const openaiResponsesApiDialect: Dialect = {
       ...(instructions ? { instructions } : {}),
       ...(options?.maxTokens ? { max_output_tokens: options.maxTokens } : {}),
       ...(options?.temperature !== undefined ? { temperature: options.temperature } : {}),
+      ...(options?.topP !== undefined ? { top_p: options.topP } : {}),
       stream: false,
     };
   },
