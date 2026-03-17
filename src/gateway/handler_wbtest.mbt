@@ -94,8 +94,8 @@ test "resolve: POST /v1/responses with OpenAI dialect" {
   let gw = Gateway::new(create_test_config(), OpenAI)
   let body = #|{"model": "gpt-4o", "input": []}
   match gw.resolve("POST", "/v1/responses", body) {
-    Completion(dialect=@chat.Dialect::OpenAI, ..) => ()
-    other => fail("expected Completion(responses), got \{other}")
+    ResponsesApi(..) => ()
+    other => fail("expected ResponsesApi, got \{other}")
   }
 }
 

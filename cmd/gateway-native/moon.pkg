@@ -1,6 +1,8 @@
 import {
   "trkbt10/llm_interop/src/gateway" @gw,
   "trkbt10/llm_interop/src/interop/chat" @chat,
+  "trkbt10/llm_interop/src/interop/harmony" @harmony,
+  "trkbt10/llm_interop/src/protocol" @protocol,
   "trkbt10/llm_interop/src/utils" @utils,
   "moonbitlang/core/json",
   "moonbitlang/core/strconv",

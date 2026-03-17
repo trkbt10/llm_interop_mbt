@@ -24,3 +24,10 @@ export function parseDataUrl(url: string): ParsedDataUrl | null {
   const mimeType = mimeTypeMatch?.[1] ?? "image/png";
   return { mimeType, data };
 }
+
+/**
+ * Build a base64 data URL from MIME type and data.
+ */
+export function buildDataUrl(mimeType: string, data: string): string {
+  return `data:${mimeType};base64,${data}`;
+}

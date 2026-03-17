@@ -1,6 +1,8 @@
 import { useRef } from "react";
 import { ChatInput, SendButton, FilePreview } from "react-editor-ui/chat/ChatInput";
 import { IconButton } from "react-editor-ui/IconButton";
+import { Paperclip } from "lucide-react";
+import { ICON_SIZE } from "./iconSize";
 
 type ChatInputAreaProps = {
   value: string;
@@ -87,7 +89,7 @@ export function ChatInputArea({
         </ChatInput.Content>
         <ChatInput.Toolbar>
           <IconButton
-            icon="+"
+            icon={<Paperclip size={ICON_SIZE.toolbar} />}
             aria-label="Attach image"
             onClick={() => fileInputRef.current?.click()}
             disabled={isLoading}

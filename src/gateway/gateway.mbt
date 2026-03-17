@@ -38,6 +38,7 @@ pub(all) enum RouteResult {
   Health
   ListModels
   Completion(dialect~ : @chat.Dialect, body~ : String)
+  ResponsesApi(body~ : String)
   CompletionWithModel(dialect~ : @chat.Dialect, model~ : String, body~ : String)
   NotFound(path~ : String, dialect~ : String)
 } derive(Show)
@@ -63,7 +64,7 @@ pub fn Gateway::resolve(
         return Completion(dialect=@chat.Dialect::OpenAI, body~)
       }
       if path == "/v1/responses" && meth == "POST" {
-        return Completion(dialect=@chat.Dialect::OpenAI, body~)
+        return ResponsesApi(body~)
       }
     }
     GatewaySurface::Anthropic => {

@@ -1,8 +1,7 @@
 import type { ChatMessage } from "react-editor-ui/chat/ChatMessageDisplay";
 import {
   getDialect,
-  buildGeminiEndpoint,
-  type ChatCompletionResponse,
+  type ModelResponse,
   type RequestOptions,
 } from "./dialects";
 
@@ -59,12 +58,10 @@ export async function sendChat(
   messages: ChatMessage[],
   model: string,
   options?: RequestOptions
-): Promise<ChatCompletionResponse> {
+): Promise<ModelResponse> {
   const dialectImpl = getDialect(dialect);
   const body = dialectImpl.buildRequest(messages, model, options);
-
-  const endpoint =
-    dialect === "gemini-generate-content" ? buildGeminiEndpoint(model) : dialectImpl.endpoint;
+  const endpoint = dialectImpl.buildEndpoint(model);
 
   const response = await request<unknown>(endpoint, {
     method: "POST",
@@ -72,47 +69,5 @@ export async function sendChat(
     body: JSON.stringify(body),
   });
 
-  return parseResponse(dialect, response);
-}
-
-function parseResponse(dialect: string, response: unknown): ChatCompletionResponse {
-  const resp = response as Record<string, unknown>;
-
-  switch (dialect) {
-    case "openai-chat-completion": {
-      const choices = resp.choices as { message?: { content?: string } }[] | undefined;
-      const id = typeof resp.id === "string" ? resp.id : "";
-      return {
-        id,
-        content: choices?.[0]?.message?.content ?? "",
-      };
-    }
-    case "openai-responses-api": {
-      const id = typeof resp.id === "string" ? resp.id : "";
-      const outputText = typeof resp.output_text === "string" ? resp.output_text : "";
-      return { id, content: outputText };
-    }
-    case "anthropic-messages-api": {
-      const content = resp.content as { type?: string; text?: string }[] | undefined;
-      const text = content?.find((c) => c.type === "text")?.text ?? "";
-      const id = typeof resp.id === "string" ? resp.id : "";
-      return {
-        id,
-        content: text,
-      };
-    }
-    case "gemini-generate-content": {
-      const candidates = resp.candidates as {
-        content?: { parts?: { text?: string }[] };
-      }[] | undefined;
-      const text = candidates?.[0]?.content?.parts?.[0]?.text ?? "";
-      return {
-        id: "",
-        content: text,
-      };
-    }
-    default: {
-      return { id: "", content: "" };
-    }
-  }
+  return dialectImpl.parseResponse(response);
 }

@@ -173,6 +173,13 @@ async fn handle_request(
       }
       proxy_to_backend(gateway, body, dialect, model)
     }
+    @gw.RouteResult::ResponsesApi(body~) => {
+      let model = match @utils.extract_json_field(body, "model") {
+        Some(m) => m
+        None => return @gw.HttpResponse::error(400, "model field is required")
+      }
+      proxy_responses_api(gateway, body, model)
+    }
     @gw.RouteResult::CompletionWithModel(dialect~, model~, body~) =>
       proxy_to_backend(gateway, @utils.inject_json_field(body, "model", model), dialect, model)
     @gw.RouteResult::NotFound(path~, dialect~) =>
@@ -183,32 +190,42 @@ async fn handle_request(
   }
 }
 
-// =============================================================================
-// HTTP transport - the only async/native-dependent code
-// =============================================================================
+///|
+/// Common: select backend, prepare upstream, send HTTP, return raw result.
+async fn send_to_backend(
+  gateway : @gw.Gateway,
+  model : String,
+  body : String,
+  dialect : @chat.Dialect,
+) -> (@gw.BackendConfig, Int, String) raise {
+  let backend = match gateway.select_backend(model) {
+    Some(b) => b
+    None => raise @gw.GatewayError::BackendNotFound(model)
+  }
+  let base_url = expand_env(backend.provider.base_url)
+  let api_key = expand_env(backend.provider.api_key)
+  let upstream = @gw.prepare_upstream(
+    backend.provider, body, dialect, model, base_url, api_key,
+  )
+  let (status, response_text) = http_post(upstream)
+  (backend, status, response_text)
+}
 
 ///|
-/// Select backend and proxy request
+/// Proxy a completion request (Chat Completions / Messages / generateContent).
 async fn proxy_to_backend(
   gateway : @gw.Gateway,
   body : String,
   target_dialect : @chat.Dialect,
   model : String,
 ) -> @gw.HttpResponse {
-  let backend = match gateway.select_backend(model) {
-    Some(b) => b
-    None =>
-      return @gw.HttpResponse::error(
-        503,
-        "No backend available for model: " + model,
-      )
+  let (backend, status, response_text) = try {
+    send_to_backend(gateway, model, body, target_dialect)
+  } catch {
+    @gw.GatewayError::BackendNotFound(m) =>
+      return @gw.HttpResponse::error(503, "No backend available for model: " + m)
+    e => return @gw.HttpResponse::error(502, e.to_string())
   }
-  let base_url = expand_env(backend.provider.base_url)
-  let api_key = expand_env(backend.provider.api_key)
-  let upstream = @gw.prepare_upstream(
-    backend.provider, body, target_dialect, model, base_url, api_key,
-  )
-  let (status, response_text) = http_post(upstream)
   let final_body = @chat.transform_response(
     response_text,
     backend.provider.api.to_dialect(),
@@ -217,6 +234,41 @@ async fn proxy_to_backend(
   let headers : Map[String, String] = {}
   headers["Content-Type"] = "application/json"
   { status, headers, body: final_body }
+}
+
+///|
+/// Proxy a Responses API request via the harmony pipeline:
+///   request(Responses API) → harmony → upstream(Chat Completions)
+///   response(Chat Completions) → parse → harmony → response(Responses API)
+async fn proxy_responses_api(
+  gateway : @gw.Gateway,
+  body : String,
+  model : String,
+) -> @gw.HttpResponse {
+  let request_json = try { @json.parse(body) } catch { _ => Json::object({}) }
+  let chat_body = @harmony.responses_request_to_chat_completions(request_json, stream=false).stringify()
+  let (_backend, status, response_text) = try {
+    send_to_backend(gateway, model, chat_body, @chat.Dialect::OpenAI)
+  } catch {
+    @gw.GatewayError::BackendNotFound(m) =>
+      return @gw.HttpResponse::error(503, "No backend available for model: " + m)
+    e => return @gw.HttpResponse::error(502, e.to_string())
+  }
+  let headers : Map[String, String] = {}
+  headers["Content-Type"] = "application/json"
+  if status >= 400 {
+    return { status, headers, body: response_text }
+  }
+  let response_json = try { @json.parse(response_text) } catch { _ => Json::object({}) }
+  let model_response = @protocol.parse_openai_chat_response(response_json)
+  let response_id : String = match response_json {
+    { "id": String(id), .. } => id
+    _ => "resp_" + model
+  }
+  let result = @harmony.model_response_to_responses_json(
+    model_response, response_id~, model~,
+  )
+  { status, headers, body: result.stringify() }
 }
 
 ///|

@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 
 export type Attachment = {
   file: File;
@@ -7,14 +7,16 @@ export type Attachment = {
 
 export function useAttachments() {
   const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const attachmentsRef = useRef(attachments);
+  attachmentsRef.current = attachments;
 
   useEffect(() => {
     return () => {
-      attachments.forEach((a) => {
+      attachmentsRef.current.forEach((a) => {
         URL.revokeObjectURL(a.previewUrl);
       });
     };
-  }, [attachments]);
+  }, []);
 
   const add = useCallback((files: File[]) => {
     if (files.length === 0) {

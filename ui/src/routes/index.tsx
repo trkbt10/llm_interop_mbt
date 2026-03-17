@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import type { ChatMessage, ChatMessageDisplayHandle } from "react-editor-ui/chat/ChatMessageDisplay";
 import { fetchModels, fetchHealth, sendChat, type Model } from "../api/client";
+import { toContentParts } from "../utils/responseContent";
 import { ChatHeader } from "../components/ChatHeader";
 import { ChatMessages } from "../components/ChatMessages";
 import { ChatInputArea } from "../components/ChatInputArea";
@@ -80,14 +81,14 @@ export function IndexPage() {
         maxTokens: 4096,
       });
 
-      const assistantContent = response.content;
-      if (assistantContent.trim()) {
+      const firstChoice = response.choices[0] as typeof response.choices[number] | undefined;
+      if (firstChoice && firstChoice.content.length > 0) {
         setMessages((prev) => [
           ...prev,
           {
             id: response.id || crypto.randomUUID(),
             role: "assistant",
-            content: assistantContent,
+            content: toContentParts(firstChoice),
           },
         ]);
         setTimeout(() => displayRef.current?.scrollToBottom(), 0);

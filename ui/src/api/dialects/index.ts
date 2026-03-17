@@ -1,11 +1,10 @@
 import { openaiChatCompletionDialect } from "./openai-chat-completion";
 import { openaiResponsesApiDialect } from "./openai-responses-api";
 import { anthropicMessagesApiDialect } from "./anthropic-messages-api";
-import { geminiGenerateContentDialect, buildGeminiEndpoint } from "./gemini-generate-content";
-import type { Dialect, DialectName, RequestOptions, ChatCompletionResponse } from "./types";
+import { geminiGenerateContentDialect } from "./gemini-generate-content";
+import type { Dialect, DialectName, ModelResponse, RequestOptions, ResponseChoice, ResponseContentBlock } from "./types";
 
-export type { Dialect, DialectName, RequestOptions, ChatCompletionResponse };
-export { buildGeminiEndpoint };
+export type { Dialect, DialectName, ModelResponse, RequestOptions, ResponseChoice, ResponseContentBlock };
 
 const dialects: Record<DialectName, Dialect> = {
   "openai-chat-completion": openaiChatCompletionDialect,
