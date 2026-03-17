@@ -2,7 +2,7 @@ import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import type { ChatMessage, ChatMessageDisplayHandle } from "react-editor-ui/chat/ChatMessageDisplay";
 import { GridLayout } from "react-panel-layout";
 import type { PanelLayoutConfig, LayerDefinition } from "react-panel-layout";
-import { fetchModels, fetchHealth, sendChat, settingsToRequestOptions, type Model } from "../api/client";
+import { fetchModels, fetchHealth, sendChat, settingsToRequestOptions, type Model, modelKey, modelIdFromKey } from "../api/client";
 import { surfaceToDialect, type DialectName } from "../api/dialects";
 import { toContentParts } from "../utils/responseContent";
 import { ChatMessages } from "../components/ChatMessages";
@@ -45,7 +45,7 @@ export function IndexPage() {
       .then((res) => {
         setModels(res.data);
         if (res.data.length > 0) {
-          setSelectedModel(res.data[0].id);
+          setSelectedModel(modelKey(res.data[0]));
         }
       })
       .catch((err: unknown) => {
@@ -93,7 +93,7 @@ export function IndexPage() {
       const response = await sendChat(
         dialect,
         newMessages,
-        selectedModel,
+        modelIdFromKey(selectedModel),
         settingsToRequestOptions(settings),
       );
 

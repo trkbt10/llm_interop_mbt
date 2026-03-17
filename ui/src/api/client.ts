@@ -46,6 +46,17 @@ export type ModelsResponse = {
   data: Model[];
 };
 
+/** Create a unique key for a model (provider + model id). */
+export function modelKey(m: Model): string {
+  return `${m.owned_by}:${m.id}`;
+}
+
+/** Extract the model id from a composite key. */
+export function modelIdFromKey(key: string): string {
+  const idx = key.indexOf(":");
+  return idx >= 0 ? key.slice(idx + 1) : key;
+}
+
 export function fetchHealth(): Promise<HealthResponse> {
   return request<HealthResponse>("/health");
 }

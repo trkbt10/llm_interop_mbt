@@ -2,7 +2,7 @@ import { PropertySection } from "react-editor-ui/PropertySection";
 import { PropertyRow } from "react-editor-ui/PropertyRow";
 import { Select } from "react-editor-ui/Select";
 import { Input } from "react-editor-ui/Input";
-import type { Model } from "../api/client";
+import { modelKey, type Model } from "../api/client";
 import { getDialect, dialectNames, type DialectName } from "../api/dialects";
 
 export type ChatSettings = {
@@ -84,7 +84,7 @@ export function SettingsPanel({
           value={selectedModel}
           onChange={onModelChange}
           options={models.map((m) => ({
-            value: m.id,
+            value: modelKey(m),
             label: `${m.owned_by} / ${m.id}`,
           }))}
           placeholder="Select model..."

@@ -1,5 +1,5 @@
 import { Select } from "react-editor-ui/Select";
-import type { Model } from "../api/client";
+import { modelKey, type Model } from "../api/client";
 
 type ChatHeaderProps = {
   dialect: string;
@@ -44,7 +44,7 @@ export function ChatHeader({
           value={selectedModel}
           onChange={onModelChange}
           options={models.map((m) => ({
-            value: m.id,
+            value: modelKey(m),
             label: `${m.owned_by} / ${m.id}`,
           }))}
           placeholder="Select model..."
