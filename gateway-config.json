@@ -96,15 +96,7 @@
         "command": "codex app-server",
         "approvalPolicy": "never"
       },
-      "models": [
-        {
-          "id": "codex",
-          "name": "Codex App Server",
-          "input": ["text"],
-          "contextWindow": 200000,
-          "maxTokens": 16384
-        }
-      ]
+      "models": []
     },
     "codex-oss": {
       "api": "codex-app-server",
@@ -112,15 +104,7 @@
         "command": "codex app-server --oss",
         "approvalPolicy": "never"
       },
-      "models": [
-        {
-          "id": "codex-oss",
-          "name": "Codex App Server (OSS/Ollama)",
-          "input": ["text"],
-          "contextWindow": 128000,
-          "maxTokens": 16384
-        }
-      ]
+      "models": []
     }
   },
   "server": {

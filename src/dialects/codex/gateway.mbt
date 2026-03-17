@@ -207,6 +207,55 @@ fn build_turn_only(
 }
 
 ///|
+/// Build the JSON-RPC message sequence for a Codex model/list query.
+/// Includes initialization steps if session is uninitialized.
+pub fn prepare_codex_model_list(session : CodexSession) -> CodexUpstreamRequest {
+  let id = session.next_id
+  match session.phase {
+    Ready => {
+      // Session already initialized, just send model/list
+      let req = build_model_list_request(id, 100, true)
+      {
+        steps: [{ message: req.to_json().stringify(), kind: Request }],
+        next_session: { ..session, next_id: id + 1 },
+      }
+    }
+    _ => {
+      // Need to initialize first: initialize → initialized → model/list
+      let init_req = build_initialize_request(id, "llm_interop", "0.1.0")
+      let init_notif = build_initialized_notification()
+      let model_req = build_model_list_request(id + 1, 100, true)
+      {
+        steps: [
+          { message: init_req.to_json().stringify(), kind: Request },
+          { message: init_notif.to_json().stringify(), kind: Notification },
+          { message: model_req.to_json().stringify(), kind: Request },
+        ],
+        next_session: { ..session, phase: Initializing, next_id: id + 2 },
+      }
+    }
+  }
+}
+
+///|
+/// Parse model/list JSON-RPC response into unified OpenAI /v1/models format.
+pub fn parse_codex_model_list_result(
+  result_json : Json,
+  provider_id : String,
+) -> Array[Json] {
+  let parsed = parse_model_list_response(result_json)
+  let models : Array[Json] = []
+  for m in parsed {
+    let obj : Map[String, Json] = {}
+    obj["id"] = Json::string(m.model)
+    obj["object"] = Json::string("model")
+    obj["owned_by"] = Json::string(provider_id)
+    models.push(Json::object(obj))
+  }
+  models
+}
+
+///|
 /// Update session from a thread/start response (extract thread_id).
 pub fn update_session_from_thread_response(
   session : CodexSession,

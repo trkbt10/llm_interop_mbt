@@ -3,6 +3,53 @@
 /// Based on symphony implementation
 
 // =============================================================================
+// JSON-RPC Response Builders (for app-server frontend)
+// =============================================================================
+
+///|
+/// Build a JSON-RPC 2.0 success response
+pub fn codex_rpc_response(id : Int?, result : Json) -> String {
+  let obj : Map[String, Json] = {}
+  obj["jsonrpc"] = Json::string("2.0")
+  match id {
+    Some(i) => obj["id"] = Json::number(i.to_double())
+    None => ()
+  }
+  obj["result"] = result
+  Json::object(obj).stringify()
+}
+
+///|
+/// Build a JSON-RPC 2.0 error response
+pub fn codex_rpc_error(id : Int?, code : Int, message : String) -> String {
+  let obj : Map[String, Json] = {}
+  obj["jsonrpc"] = Json::string("2.0")
+  match id {
+    Some(i) => obj["id"] = Json::number(i.to_double())
+    None => ()
+  }
+  obj["error"] = { "code": Json::number(code.to_double()), "message": message }
+  Json::object(obj).stringify()
+}
+
+///|
+/// Build a JSON-RPC 2.0 notification (no id)
+pub fn codex_rpc_notification(rpc_method : String, params : Json) -> String {
+  let obj : Map[String, Json] = {}
+  obj["jsonrpc"] = Json::string("2.0")
+  obj["method"] = Json::string(rpc_method)
+  obj["params"] = params
+  Json::object(obj).stringify()
+}
+
+///|
+/// Build a Codex error event string (for inline error in IPC transport)
+pub fn codex_ipc_error_event(message : String) -> String {
+  let event : Json = { "method": "error", "params": { "message": message } }
+  "[" + event.stringify() + "]"
+}
+
+// =============================================================================
 // JSON-RPC Base Types
 // =============================================================================
 

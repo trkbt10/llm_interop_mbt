@@ -94,43 +94,22 @@ fn AppServerState::next_item_id(self : AppServerState) -> String {
 }
 
 // =============================================================================
-// JSON-RPC response helpers
+// JSON-RPC response helpers (delegate to protocol layer)
 // =============================================================================
 
 ///|
 fn send_response(id : Int?, result : Json) -> String {
-  let obj : Map[String, Json] = {}
-  obj["jsonrpc"] = Json::string("2.0")
-  match id {
-    Some(i) => obj["id"] = Json::number(i.to_double())
-    None => ()
-  }
-  obj["result"] = result
-  Json::object(obj).stringify()
+  @codex.codex_rpc_response(id, result)
 }
 
 ///|
 fn send_error(id : Int?, code : Int, message : String) -> String {
-  let obj : Map[String, Json] = {}
-  obj["jsonrpc"] = Json::string("2.0")
-  match id {
-    Some(i) => obj["id"] = Json::number(i.to_double())
-    None => ()
-  }
-  obj["error"] = {
-    "code": Json::number(code.to_double()),
-    "message": message,
-  }
-  Json::object(obj).stringify()
+  @codex.codex_rpc_error(id, code, message)
 }
 
 ///|
 fn send_notification(rpc_method : String, params : Json) -> String {
-  let obj : Map[String, Json] = {}
-  obj["jsonrpc"] = Json::string("2.0")
-  obj["method"] = Json::string(rpc_method)
-  obj["params"] = params
-  Json::object(obj).stringify()
+  @codex.codex_rpc_notification(rpc_method, params)
 }
 
 // =============================================================================
@@ -195,48 +174,44 @@ fn handle_thread_start(
 
 
 ///|
-fn handle_model_list(
+async fn handle_model_list(
   state : AppServerState,
   id : Int?,
   _params : Json?,
-) -> Array[String] {
+  emit : async (String) -> Unit,
+) -> Unit {
   let models : Array[Json] = []
   for _, provider in state.gateway.config.providers {
-    for m in provider.models {
-      let obj : Map[String, Json] = {}
-      obj["id"] = Json::string(m.id)
-      obj["model"] = Json::string(m.id)
-      obj["displayName"] = Json::string(m.name)
-      obj["hidden"] = false.to_json()
-      obj["isDefault"] = false.to_json()
-      let modalities : Array[Json] = []
-      for modality in m.input {
-        match modality {
-          @gw.Text => modalities.push(Json::string("text"))
-          @gw.Image => modalities.push(Json::string("image"))
-        }
+    // Skip Codex app-server providers (we ARE the app-server)
+    if provider.api == @gw.ModelApi::CodexAppServer {
+      continue
+    }
+    // Fetch models dynamically from each HTTP provider
+    let base_url = expand_env(provider.base_url)
+    let api_key = expand_env(provider.api_key)
+    if base_url == "" || api_key == "" {
+      continue
+    }
+    let upstream = @gw.prepare_models_request(provider, base_url, api_key)
+    let (status, response_text) = http_get(upstream)
+    if status != 200 {
+      continue
+    }
+    let remote_models = @gw.parse_models_response(response_text, provider.id)
+    for rm in remote_models {
+      match rm {
+        { "id": String(model_id), .. } =>
+          models.push(
+            @gw.enrich_remote_model_json(model_id, provider.id, provider.models),
+          )
+        _ => models.push(rm)
       }
-      obj["inputModalities"] = Json::array(modalities)
-      if m.compat.supports_reasoning_effort {
-        obj["defaultReasoningEffort"] = Json::string("medium")
-        obj["supportedReasoningEfforts"] = Json::array([
-          {
-            "reasoning_effort": "low",
-            "description": "Fast responses",
-          },
-          { "reasoning_effort": "medium", "description": "Balanced" },
-          {
-            "reasoning_effort": "high",
-            "description": "Thorough reasoning",
-          },
-        ])
-      }
-      models.push(Json::object(obj))
     }
   }
   let result : Json = { "data": Json::array(models) }
-  [send_response(id, result)]
+  emit(send_response(id, result))
 }
+
 
 ///|
 fn handle_turn_interrupt(
@@ -565,6 +540,29 @@ async fn http_post_streaming(
 }
 
 // =============================================================================
+///|
+/// Execute HTTP GET and return (status_code, response_body)
+async fn http_get(req : @gw.UpstreamRequest) -> (Int, String) {
+  let client = @http.Client::new(req.origin) catch {
+    e => return (502, "{\"error\":{\"message\":\"Failed to connect: \{e}\"}}")
+  }
+  let response = client.get(req.path, extra_headers=req.headers) catch {
+    e => {
+      client.close()
+      return (502, "{\"error\":{\"message\":\"Request failed: \{e}\"}}")
+    }
+  }
+  let response_body = @io.Reader::read_all(client) catch {
+    e => {
+      client.close()
+      return (502, "{\"error\":{\"message\":\"Failed to read response: \{e}\"}}")
+    }
+  }
+  let text = response_body.text() catch { _ => "" }
+  client.close()
+  (response.code, text)
+}
+
 // Dispatch (emit-based for streaming support)
 // =============================================================================
 
@@ -619,9 +617,9 @@ async fn dispatch(
       emit_all(emit, handle_turn_interrupt(state, req.id, req.params))
     "turn/steer" =>
       emit_all(emit, handle_turn_steer(state, req.id, req.params))
-    // Model listing
+    // Model listing (async — fetches from all providers)
     "model/list" =>
-      emit_all(emit, handle_model_list(state, req.id, req.params))
+      handle_model_list(state, req.id, req.params, emit)
     // Review
     "review/start" =>
       emit_all(emit, handle_review_start(state, req.id, req.params))
@@ -749,11 +747,7 @@ async fn handle_turn_start_streaming(
   // Stream response
   let (content, input_tokens, output_tokens, total_tokens) = try {
     http_post_streaming(upstream, async fn(delta_text) {
-      let event : Json = {
-        "method": "item/agentMessage/delta",
-        "params": { "itemId": item_id, "delta": delta_text },
-      }
-      emit(event.stringify())
+      emit(@codex.make_agent_message_delta_event(item_id, delta_text))
     })
   } catch {
     e => {

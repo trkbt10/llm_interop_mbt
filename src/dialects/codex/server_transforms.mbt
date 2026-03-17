@@ -196,6 +196,19 @@ pub fn make_item_started_event(item_id : String) -> String {
 }
 
 ///|
+/// Build item/agentMessage/delta event
+pub fn make_agent_message_delta_event(
+  item_id : String,
+  delta : String,
+) -> String {
+  let event : Json = {
+    "method": "item/agentMessage/delta",
+    "params": { "itemId": item_id, "delta": delta },
+  }
+  event.stringify()
+}
+
+///|
 /// Build item/completed event for agentMessage
 pub fn make_item_completed_event(item_id : String, content : String) -> String {
   let event : Json = {

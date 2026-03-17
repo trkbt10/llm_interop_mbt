@@ -139,7 +139,7 @@ fn expand_env(s : String) -> String {
   if s.has_prefix("${") && s.has_suffix("}") && s.length() > 3 {
     let buf = StringBuilder::new()
     for i = 2; i < s.length() - 1; i = i + 1 {
-      buf.write_char(Char::from_int(s[i].to_int()))
+      buf.write_char(Int::unsafe_to_char(s[i].to_int()))
     }
     let var_name = buf.to_string()
     @sys.get_env_var(var_name).unwrap_or("")
@@ -312,15 +312,11 @@ async fn proxy_list_models(gateway : @gw.Gateway) -> @gw.HttpResponse {
   let all_models : Array[Json] = []
   let errors : Array[String] = []
   for _, provider in gateway.config.providers {
-    // Codex app-server uses stdio JSON-RPC, not REST.
-    // Return configured models directly — no HTTP models endpoint.
+    // Codex app-server: query model/list via JSON-RPC subprocess
     if provider.api == @gw.ModelApi::CodexAppServer {
-      for m in provider.models {
-        let obj : Map[String, Json] = {}
-        obj["id"] = Json::string(m.id)
-        obj["object"] = Json::string("model")
-        obj["owned_by"] = Json::string(provider.id)
-        all_models.push(Json::object(obj))
+      let codex_models = fetch_codex_model_list(provider)
+      for m in codex_models {
+        all_models.push(m)
       }
       continue
     }
@@ -451,6 +447,71 @@ async fn get_codex_channel(
 }
 
 ///|
+/// Fetch model list from a Codex app-server subprocess via model/list JSON-RPC.
+/// Uses dialect-layer step sequence from prepare_codex_model_list().
+/// Returns empty array if subprocess is unavailable or fails.
+async fn fetch_codex_model_list(provider : @gw.ProviderConfig) -> Array[Json] {
+  let codex_cfg = match provider.codex {
+    Some(cfg) => cfg
+    None => return []
+  }
+  let cwd = if provider.base_url != "" {
+    expand_env(provider.base_url)
+  } else {
+    "."
+  }
+  let session = @codex.CodexSession::new(cwd)
+  let req = @codex.prepare_codex_model_list(session)
+  let models : Array[Json] = []
+  @async.with_task_group(async fn(group) {
+    let api_key = expand_env(provider.api_key)
+    let channel = get_codex_channel(
+      group, provider.id + "_models", codex_cfg.command, cwd, api_key,
+    ) catch {
+      _ => {
+        group.return_immediately(())
+        return
+      }
+    }
+    // Execute steps from dialect layer
+    for step in req.steps {
+      channel.send(step.message) catch {
+        _ => { group.return_immediately(()); return }
+      }
+      match step.kind {
+        @codex.Request => {
+          let line = channel.recv() catch {
+            _ => { group.return_immediately(()); return }
+          }
+          match line {
+            Some(text) => {
+              let json = @json.parse(text) catch { _ => continue }
+              // Last request response is the model/list result
+              match json {
+                { "result": result, .. } => {
+                  let parsed = @codex.parse_codex_model_list_result(
+                    result, provider.id,
+                  )
+                  for m in parsed {
+                    models.push(m)
+                  }
+                }
+                _ => ()
+              }
+            }
+            None => { group.return_immediately(()); return }
+          }
+        }
+        @codex.Notification => continue
+        _ => continue
+      }
+    }
+    group.return_immediately(())
+  })
+  models
+}
+
+///|
 /// Proxy a completion request to a Codex backend via stdio JSON-RPC.
 async fn proxy_to_codex_backend(
   _gateway : @gw.Gateway,
@@ -533,7 +594,7 @@ async fn codex_stdio_execute(
     channel.send(msg) catch {
       e =>
         return (
-          "[{\"method\":\"error\",\"params\":{\"message\":\"Codex send failed: \{e}\"}}]",
+          @codex.codex_ipc_error_event("Codex send failed: " + e.to_string()),
           current_session,
         )
     }
@@ -546,7 +607,7 @@ async fn codex_stdio_execute(
         let line = channel.recv() catch {
           e =>
             return (
-              "[{\"method\":\"error\",\"params\":{\"message\":\"Codex recv failed: \{e}\"}}]",
+              @codex.codex_ipc_error_event("Codex recv failed: " + e.to_string()),
               current_session,
             )
         }
@@ -562,7 +623,7 @@ async fn codex_stdio_execute(
           }
           None =>
             return (
-              "[{\"method\":\"error\",\"params\":{\"message\":\"Codex EOF during setup\"}}]",
+              @codex.codex_ipc_error_event("Codex EOF during setup"),
               current_session,
             )
         }
@@ -572,7 +633,7 @@ async fn codex_stdio_execute(
         let first_line = channel.recv() catch {
           e =>
             return (
-              "[{\"method\":\"error\",\"params\":{\"message\":\"Codex recv failed: \{e}\"}}]",
+              @codex.codex_ipc_error_event("Codex recv failed: " + e.to_string()),
               current_session,
             )
         }
@@ -591,7 +652,7 @@ async fn codex_stdio_execute(
           }
           None =>
             return (
-              "[{\"method\":\"error\",\"params\":{\"message\":\"Codex EOF on turn/start\"}}]",
+              @codex.codex_ipc_error_event("Codex EOF on turn/start"),
               current_session,
             )
         }
