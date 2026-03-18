@@ -727,18 +727,22 @@ async fn get_claude_mcp_channel(
   for arg in cfg.args {
     cmd.arg(arg)
   }
-  if cfg.tools.length() > 0 {
-    let tools_csv = cfg.tools.iter().fold(
-      init="",
-      fn(acc, t) {
-        if acc == "" {
-          t
-        } else {
-          acc + "," + t
-        }
-      },
-    )
-    cmd.flag("--tools", tools_csv)
+  match cfg.tools {
+    Some(tools) => {
+      let tools_csv = tools.iter().fold(
+        init="",
+        fn(acc, t) {
+          if acc == "" {
+            t
+          } else {
+            acc + "," + t
+          }
+        },
+      )
+      // Some([]) → --tools '' (disable all); Some([...]) → --tools 'X,Y'
+      cmd.flag("--tools", tools_csv)
+    }
+    None => () // No --tools flag → full access
   }
   let full_command = cmd.to_string()
   let child = @subprocess.spawn_shell(
