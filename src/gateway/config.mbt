@@ -184,20 +184,7 @@ fn parse_claude_mcp_config(json : Json) -> @claude_mcp.ClaudeMcpConfig? {
         Some(Number(n, ..)) => n.to_int()
         _ => defaults.timeout_ms
       }
-      let tools : Array[String]? = match obj.get("tools") {
-        Some(Array(arr)) => {
-          let result : Array[String] = []
-          for v in arr {
-            match v {
-              String(s) => result.push(s)
-              _ => ()
-            }
-          }
-          Some(result)
-        }
-        _ => None
-      }
-      Some({ command, args, env, timeout_ms, tools })
+      Some({ command, args, env, timeout_ms })
     }
     _ => None
   }

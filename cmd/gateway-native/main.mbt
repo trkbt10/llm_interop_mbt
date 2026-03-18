@@ -725,24 +725,7 @@ async fn get_claude_mcp_channel(
   // Build full command with shell-safe quoting
   let cmd = @spawn.Command::new(cfg.command)
   for arg in cfg.args {
-    cmd.arg(arg)
-  }
-  match cfg.tools {
-    Some(tools) => {
-      let tools_csv = tools.iter().fold(
-        init="",
-        fn(acc, t) {
-          if acc == "" {
-            t
-          } else {
-            acc + "," + t
-          }
-        },
-      )
-      // Some([]) → --tools '' (disable all); Some([...]) → --tools 'X,Y'
-      cmd.flag("--tools", tools_csv)
-    }
-    None => () // No --tools flag → full access
+    ignore(cmd.arg(arg))
   }
   let full_command = cmd.to_string()
   let child = @subprocess.spawn_shell(
