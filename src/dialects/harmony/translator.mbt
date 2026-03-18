@@ -31,6 +31,7 @@ struct HarmonyToolCallState {
 }
 
 ///|
+/// Creates a new translator with the given response ID and optional model name
 pub fn HarmonyToResponsesTranslator::new(
   response_id~ : String,
   model? : String = "",

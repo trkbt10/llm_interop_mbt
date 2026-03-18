@@ -21,6 +21,7 @@ struct WebSearchTraceAcc {
 }
 
 ///|
+/// Creates a new empty accumulator
 pub fn ResponsesApiAccumulator::new() -> ResponsesApiAccumulator {
   {
     text: StringBuilder::new(),

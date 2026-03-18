@@ -49,6 +49,7 @@ pub(all) struct CodexInitializeParams {
 } derive(Show, Eq)
 
 ///|
+/// Deserialize initialize parameters from JSON.
 pub fn CodexInitializeParams::from_json(json : Json) -> CodexInitializeParams? {
   let name = match json {
     { "clientInfo": { "name": String(n), .. }, .. } => n
@@ -66,6 +67,7 @@ pub fn CodexInitializeParams::from_json(json : Json) -> CodexInitializeParams? {
 }
 
 ///|
+/// Serialize initialize parameters to JSON.
 pub fn CodexInitializeParams::to_json(self : CodexInitializeParams) -> Json {
   {
     "clientInfo": self.client_info.to_json(),
@@ -81,6 +83,7 @@ pub(all) struct CodexClientInfo {
 } derive(Show, Eq)
 
 ///|
+/// Serialize client info to JSON.
 pub fn CodexClientInfo::to_json(self : CodexClientInfo) -> Json {
   { "name": self.name, "version": self.version }
 }
@@ -92,6 +95,7 @@ pub(all) struct CodexCapabilities {
 } derive(Show, Eq)
 
 ///|
+/// Serialize client capabilities to JSON.
 pub fn CodexCapabilities::to_json(self : CodexCapabilities) -> Json {
   { "experimentalApi": self.experimental_api }
 }
@@ -115,6 +119,7 @@ pub(all) struct CodexThreadStartParams {
 } derive(Show, Eq)
 
 ///|
+/// Deserialize thread start parameters from JSON.
 pub fn CodexThreadStartParams::from_json(
   json : Json,
 ) -> CodexThreadStartParams? {
@@ -186,6 +191,7 @@ pub fn CodexThreadStartParams::from_json(
 }
 
 ///|
+/// Serialize thread start parameters to JSON.
 pub fn CodexThreadStartParams::to_json(self : CodexThreadStartParams) -> Json {
   let obj : Map[String, Json] = {}
   obj["model"] = Json::string(self.model)
@@ -214,6 +220,7 @@ pub(all) struct CodexThreadStartResponse {
 } derive(Show, Eq)
 
 ///|
+/// Deserialize thread start response from JSON.
 pub fn CodexThreadStartResponse::from_json(
   json : Json,
 ) -> CodexThreadStartResponse? {
@@ -231,6 +238,7 @@ pub(all) struct CodexThread {
 } derive(Show, Eq)
 
 ///|
+/// Deserialize thread info from JSON.
 pub fn CodexThread::from_json(json : Json) -> CodexThread? {
   match json {
     { "id": String(id), .. } => Some({ id, })
@@ -246,6 +254,7 @@ pub(all) struct CodexSandboxConfig {
 } derive(Show, Eq)
 
 ///|
+/// Serialize sandbox configuration to JSON.
 pub fn CodexSandboxConfig::to_json(self : CodexSandboxConfig) -> Json {
   let obj : Map[String, Json] = {}
   obj["kind"] = Json::string(self.kind)
@@ -257,6 +266,7 @@ pub fn CodexSandboxConfig::to_json(self : CodexSandboxConfig) -> Json {
 }
 
 ///|
+/// Create a sandbox config with sandboxing disabled.
 pub fn CodexSandboxConfig::none() -> CodexSandboxConfig {
   { kind: "none", image: None }
 }
@@ -279,6 +289,7 @@ pub(all) struct CodexTurnStartParams {
 } derive(Show, Eq)
 
 ///|
+/// Deserialize turn start parameters from JSON.
 pub fn CodexTurnStartParams::from_json(json : Json) -> CodexTurnStartParams? {
   let thread_id = match json {
     { "threadId": String(tid), .. } => tid
@@ -354,6 +365,7 @@ pub fn CodexTurnStartParams::from_json(json : Json) -> CodexTurnStartParams? {
 }
 
 ///|
+/// Serialize turn start parameters to JSON.
 pub fn CodexTurnStartParams::to_json(self : CodexTurnStartParams) -> Json {
   let obj : Map[String, Json] = {}
   obj["threadId"] = Json::string(self.thread_id)
@@ -383,6 +395,7 @@ pub(all) struct CodexTurnStartResponse {
 } derive(Show, Eq)
 
 ///|
+/// Deserialize turn start response from JSON.
 pub fn CodexTurnStartResponse::from_json(
   json : Json,
 ) -> CodexTurnStartResponse? {
@@ -399,6 +412,7 @@ pub(all) struct CodexTurn {
 } derive(Show, Eq)
 
 ///|
+/// Deserialize turn info from JSON.
 pub fn CodexTurn::from_json(json : Json) -> CodexTurn? {
   match json {
     { "id": String(id), .. } => Some({ id, })
@@ -415,6 +429,7 @@ pub(all) struct CodexInputItem {
 } derive(Show, Eq)
 
 ///|
+/// Deserialize an input item from JSON.
 pub fn CodexInputItem::from_json(json : Json) -> CodexInputItem? {
   match json {
     { "type": String(kind), "text": String(text), .. } => {
@@ -433,6 +448,7 @@ pub fn CodexInputItem::from_json(json : Json) -> CodexInputItem? {
 }
 
 ///|
+/// Serialize an input item to JSON.
 pub fn CodexInputItem::to_json(self : CodexInputItem) -> Json {
   {
     "type": self.kind,
@@ -442,6 +458,7 @@ pub fn CodexInputItem::to_json(self : CodexInputItem) -> Json {
 }
 
 ///|
+/// Create a text input item from a string.
 pub fn CodexInputItem::text(content : String) -> CodexInputItem {
   { kind: "text", text: content, text_elements: [] }
 }
@@ -462,11 +479,13 @@ pub(all) struct CodexReadOnlyAccess {
 } derive(Show, Eq)
 
 ///|
+/// Serialize read-only access config to JSON.
 pub fn CodexReadOnlyAccess::to_json(self : CodexReadOnlyAccess) -> Json {
   { "type": self.access_type }
 }
 
 ///|
+/// Serialize sandbox policy to JSON.
 pub fn CodexSandboxPolicy::to_json(self : CodexSandboxPolicy) -> Json {
   let obj : Map[String, Json] = {}
   obj["type"] = Json::string(self.sandbox_type)
@@ -484,6 +503,7 @@ pub fn CodexSandboxPolicy::to_json(self : CodexSandboxPolicy) -> Json {
 }
 
 ///|
+/// Create a sandbox policy with no sandboxing.
 pub fn CodexSandboxPolicy::none() -> CodexSandboxPolicy {
   {
     sandbox_type: "none",
@@ -494,6 +514,7 @@ pub fn CodexSandboxPolicy::none() -> CodexSandboxPolicy {
 }
 
 ///|
+/// Create a sandbox policy allowing writes to specified roots.
 pub fn CodexSandboxPolicy::workspace_write(
   writable_roots : Array[String],
 ) -> CodexSandboxPolicy {
@@ -506,6 +527,7 @@ pub fn CodexSandboxPolicy::workspace_write(
 }
 
 ///|
+/// Create a sandbox policy with full filesystem and network access.
 pub fn CodexSandboxPolicy::full_access() -> CodexSandboxPolicy {
   {
     sandbox_type: "fullAccess",
@@ -528,6 +550,7 @@ pub(all) struct CodexDynamicTool {
 } derive(Show, Eq)
 
 ///|
+/// Serialize a dynamic tool definition to JSON.
 pub fn CodexDynamicTool::to_json(self : CodexDynamicTool) -> Json {
   {
     "name": self.name,
@@ -537,6 +560,7 @@ pub fn CodexDynamicTool::to_json(self : CodexDynamicTool) -> Json {
 }
 
 ///|
+/// Convert a unified ToolDefinition into a Codex dynamic tool.
 pub fn CodexDynamicTool::from_tool_definition(
   tool : @types.ToolDefinition,
 ) -> CodexDynamicTool {
@@ -568,6 +592,7 @@ pub(all) enum CodexEventType {
 } derive(Show, Eq)
 
 ///|
+/// Parse a Codex event type string into the enum variant.
 pub fn CodexEventType::from_string(s : String) -> CodexEventType {
   match s {
     "session_configured" => SessionConfigured
@@ -612,6 +637,7 @@ pub(all) struct CodexTokenUsage {
 } derive(Show, Eq)
 
 ///|
+/// Deserialize token usage from JSON, supporting multiple response formats.
 pub fn CodexTokenUsage::from_json(json : Json) -> CodexTokenUsage? {
   // Format 1: thread/tokenUsage/updated (camelCase with nested total)
   match json {
@@ -741,6 +767,7 @@ pub(all) enum CodexTurnStatus {
 } derive(Show, Eq)
 
 ///|
+/// Parse a turn status string into the enum variant.
 pub fn CodexTurnStatus::from_string(s : String) -> CodexTurnStatus {
   match s {
     "inProgress" => InProgress
@@ -764,6 +791,7 @@ pub(all) enum CodexApprovalDecision {
 } derive(Show, Eq)
 
 ///|
+/// Convert an approval decision to its wire-format string.
 pub fn CodexApprovalDecision::to_string(self : CodexApprovalDecision) -> String {
   match self {
     AcceptForSession => "acceptForSession"
@@ -773,6 +801,7 @@ pub fn CodexApprovalDecision::to_string(self : CodexApprovalDecision) -> String 
 }
 
 ///|
+/// Serialize an approval decision to JSON.
 pub fn CodexApprovalDecision::to_json(self : CodexApprovalDecision) -> Json {
   { "decision": self.to_string() }
 }

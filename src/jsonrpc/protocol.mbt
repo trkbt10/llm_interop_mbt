@@ -115,6 +115,7 @@ pub fn build_error_response(id : Int?, code : Int, message : String) -> String {
 // =============================================================================
 
 ///|
+/// Parses an `RpcRequest` from a JSON-RPC 2.0 JSON value.
 pub fn RpcRequest::from_json(json : Json) -> RpcRequest? {
   match json {
     { "method": String(m), .. } => {
@@ -133,6 +134,7 @@ pub fn RpcRequest::from_json(json : Json) -> RpcRequest? {
 }
 
 ///|
+/// Serializes this `RpcRequest` to a JSON-RPC 2.0 JSON value.
 pub fn RpcRequest::to_json(self : RpcRequest) -> Json {
   let obj : Map[String, Json] = {}
   obj["jsonrpc"] = Json::string("2.0")
@@ -149,6 +151,7 @@ pub fn RpcRequest::to_json(self : RpcRequest) -> Json {
 }
 
 ///|
+/// Parses an `RpcResponse` from a JSON-RPC 2.0 JSON value, handling both result and error cases.
 pub fn RpcResponse::from_json(json : Json) -> RpcResponse? {
   match json {
     { "id": Number(id, ..), "result": result, .. } =>

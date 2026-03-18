@@ -19,6 +19,7 @@ pub struct HarmonyAccumulator {
 }
 
 ///|
+/// Creates a new empty accumulator
 pub fn HarmonyAccumulator::new() -> HarmonyAccumulator {
   {
     text: StringBuilder::new(),

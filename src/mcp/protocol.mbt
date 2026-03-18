@@ -21,6 +21,7 @@ pub(all) struct McpToolDefinition {
 } derive(Show, Eq)
 
 ///|
+/// Parses an `McpToolDefinition` from a JSON value returned by tools/list.
 pub fn McpToolDefinition::from_json(json : Json) -> McpToolDefinition? {
   match json {
     { "name": String(name), .. } => {
@@ -53,6 +54,7 @@ pub(all) struct McpContentItem {
 } derive(Show, Eq)
 
 ///|
+/// Parses an `McpContentItem` from a JSON value within a tools/call result.
 pub fn McpContentItem::from_json(json : Json) -> McpContentItem? {
   match json {
     { "type": String(kind), .. } => {

@@ -17,6 +17,7 @@ pub struct AnthropicToResponsesTranslator {
 }
 
 ///|
+/// Creates a new translator with the given response ID
 pub fn AnthropicToResponsesTranslator::new(
   response_id~ : String,
 ) -> AnthropicToResponsesTranslator {

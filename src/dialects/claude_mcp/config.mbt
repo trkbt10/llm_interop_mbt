@@ -10,6 +10,7 @@ pub(all) struct ClaudeMcpConfig {
 } derive(Show, Eq, ToJson, FromJson)
 
 ///|
+/// Returns the default configuration using `claude mcp serve` with a 30s timeout
 pub fn ClaudeMcpConfig::default() -> ClaudeMcpConfig {
   { command: "claude", args: ["mcp", "serve"], env: {}, timeout_ms: 30000 } // 30 seconds
 }

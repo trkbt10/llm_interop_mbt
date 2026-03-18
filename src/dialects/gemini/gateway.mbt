@@ -2,11 +2,13 @@
 /// Gemini gateway provider behavior
 
 ///|
+/// Returns the default base URL for the Gemini API
 pub fn gemini_default_base_url() -> String {
   "https://generativelanguage.googleapis.com/v1beta"
 }
 
 ///|
+/// Builds the generateContent endpoint path including model and API key
 pub fn gemini_completion_path(
   base_path : String,
   model : String,
@@ -16,11 +18,13 @@ pub fn gemini_completion_path(
 }
 
 ///|
+/// Builds the models listing endpoint path with API key
 pub fn gemini_models_path(base_path : String, api_key : String) -> String {
   base_path + "/models?key=" + api_key
 }
 
 ///|
+/// Builds request headers (API key is passed via URL, not headers)
 pub fn gemini_auth_headers() -> Map[String, String] {
   let headers : Map[String, String] = {}
   headers["Content-Type"] = "application/json"
@@ -29,6 +33,8 @@ pub fn gemini_auth_headers() -> Map[String, String] {
 }
 
 ///|
+/// Resolves an incoming HTTP request as a Gemini generateContent call.
+/// Returns `Some((dialect, model, body))` if the request matches, `None` otherwise.
 pub fn gemini_resolve_completion(
   meth : String,
   path : String,

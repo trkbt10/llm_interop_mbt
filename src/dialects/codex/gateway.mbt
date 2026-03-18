@@ -62,6 +62,7 @@ pub(all) enum CodexSessionPhase {
 } derive(Show, Eq)
 
 ///|
+/// Create a new Codex session with the given working directory.
 pub fn CodexSession::new(cwd : String) -> CodexSession {
   {
     phase: Uninitialized,

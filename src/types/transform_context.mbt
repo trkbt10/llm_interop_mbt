@@ -10,6 +10,7 @@ pub(all) struct TransformContext {
 }
 
 ///|
+/// Creates a default TransformContext with zero max_tokens and "max_tokens" field name.
 pub fn TransformContext::default() -> TransformContext {
   { max_tokens: 0, max_tokens_field: "max_tokens" }
 }
@@ -27,6 +28,7 @@ pub(all) struct GenerationParams {
 }
 
 ///|
+/// Creates a GenerationParams with all fields set to null.
 pub fn GenerationParams::empty() -> GenerationParams {
   {
     max_tokens: Json::null(),

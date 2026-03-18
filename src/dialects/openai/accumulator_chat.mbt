@@ -11,6 +11,7 @@ pub struct ChatCompletionsAccumulator {
 }
 
 ///|
+/// Creates a new empty accumulator
 pub fn ChatCompletionsAccumulator::new() -> ChatCompletionsAccumulator {
   { text: StringBuilder::new(), tool_calls: [], finish_reason: "" }
 }

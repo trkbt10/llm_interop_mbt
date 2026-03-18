@@ -27,6 +27,7 @@ pub(all) struct ClientConfig {
 }
 
 ///|
+/// Creates a new `ClientConfig` with the given provider, API key, and model.
 pub fn ClientConfig::new(
   provider : Provider,
   api_key : String,

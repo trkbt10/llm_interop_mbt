@@ -132,6 +132,7 @@ pub(all) struct Gateway {
 }
 
 ///|
+/// Create a new gateway instance with the given configuration and API dialect.
 pub fn Gateway::new(
   config : GatewayConfig,
   dialect : GatewaySurface,

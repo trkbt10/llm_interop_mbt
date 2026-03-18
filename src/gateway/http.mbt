@@ -10,6 +10,7 @@ pub(all) struct HttpResponse {
 } derive(Show)
 
 ///|
+/// Create a JSON response with the given status code and body.
 pub fn HttpResponse::json(status : Int, body : Json) -> HttpResponse {
   let headers : Map[String, String] = {}
   headers["Content-Type"] = "application/json"
@@ -17,11 +18,13 @@ pub fn HttpResponse::json(status : Int, body : Json) -> HttpResponse {
 }
 
 ///|
+/// Create an error JSON response with the given status code and message.
 pub fn HttpResponse::error(status : Int, message : String) -> HttpResponse {
   HttpResponse::json(status, { "error": { "message": message } })
 }
 
 ///|
+/// Create a 200 OK JSON response with the given body.
 pub fn HttpResponse::ok(body : Json) -> HttpResponse {
   HttpResponse::json(200, body)
 }

@@ -11,6 +11,7 @@ pub struct AnthropicMessagesAccumulator {
 }
 
 ///|
+/// Creates a new empty accumulator
 pub fn AnthropicMessagesAccumulator::new() -> AnthropicMessagesAccumulator {
   { text: StringBuilder::new(), tool_calls: [], stop_reason: "" }
 }

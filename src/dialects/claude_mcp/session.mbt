@@ -44,6 +44,7 @@ pub(all) enum ClaudeMcpPhase {
 } derive(Show, Eq)
 
 ///|
+/// Creates a new session in the `Uninitialized` phase
 pub fn ClaudeMcpSession::new() -> ClaudeMcpSession {
   { phase: Uninitialized, next_id: 1, tools: [] }
 }

@@ -164,6 +164,7 @@ pub fn ModelApi::auth_headers(
 // =============================================================================
 
 ///|
+/// Resolve a completion route for the given HTTP method, path, and body.
 pub fn GatewaySurface::resolve_completion(
   self : GatewaySurface,
   meth : String,

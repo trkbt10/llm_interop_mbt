@@ -27,6 +27,7 @@ pub(all) enum ModelApi {
 } derive(Show, Eq)
 
 ///|
+/// Parse a model API format from its string representation.
 pub fn ModelApi::from_string(s : String) -> ModelApi? {
   match s.to_lower() {
     "openai-completions" | "openai" => Some(OpenAICompletions)
@@ -43,6 +44,7 @@ pub fn ModelApi::from_string(s : String) -> ModelApi? {
 }
 
 ///|
+/// Convert a model API format to its canonical string representation.
 pub fn ModelApi::to_string(self : ModelApi) -> String {
   match self {
     OpenAICompletions => "openai-completions"
@@ -67,6 +69,7 @@ pub(all) enum AuthMode {
 } derive(Show, Eq)
 
 ///|
+/// Parse an authentication mode from its string representation.
 pub fn AuthMode::from_string(s : String) -> AuthMode? {
   match s.to_lower() {
     "api-key" | "apikey" | "api_key" => Some(ApiKey)
@@ -101,6 +104,7 @@ pub(all) struct ModelCompatConfig {
 } derive(Show)
 
 ///|
+/// Create a default model compatibility config with all features disabled.
 pub fn ModelCompatConfig::default() -> ModelCompatConfig {
   {
     supports_store: false,
@@ -127,6 +131,7 @@ pub(all) struct TokenCost {
 } derive(Show)
 
 ///|
+/// Create a zero-cost token cost configuration.
 pub fn TokenCost::default() -> TokenCost {
   { input: 0.0, output: 0.0, cache_read: 0.0, cache_write: 0.0 }
 }
@@ -147,6 +152,7 @@ pub(all) struct ModelConfig {
 } derive(Show)
 
 ///|
+/// Create a new model configuration with sensible defaults for the given model ID.
 pub fn ModelConfig::new(id : String) -> ModelConfig {
   {
     id,
@@ -181,6 +187,7 @@ pub(all) struct ProviderConfig {
 } derive(Show)
 
 ///|
+/// Create a new provider configuration with the given ID and default API format.
 pub fn ProviderConfig::new(id : String, api : ModelApi) -> ProviderConfig {
   {
     id,
@@ -222,6 +229,7 @@ pub(all) struct GatewayConfig {
 } derive(Show)
 
 ///|
+/// Create a default gateway configuration in merge mode with port 18080.
 pub fn GatewayConfig::default() -> GatewayConfig {
   { mode: Merge, providers: {}, server: { port: 18080, host: "0.0.0.0" } }
 }
@@ -254,6 +262,7 @@ pub(all) enum GatewaySurface {
 } derive(Show, Eq)
 
 ///|
+/// Parse a gateway surface type from its string representation.
 pub fn GatewaySurface::from_string(s : String) -> GatewaySurface? {
   match s.to_lower() {
     "openai" => Some(OpenAI)
@@ -265,6 +274,7 @@ pub fn GatewaySurface::from_string(s : String) -> GatewaySurface? {
 }
 
 ///|
+/// Convert a gateway surface type to its canonical string representation.
 pub fn GatewaySurface::to_string(self : GatewaySurface) -> String {
   match self {
     OpenAI => "openai"
