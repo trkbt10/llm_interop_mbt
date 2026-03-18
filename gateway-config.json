@@ -97,14 +97,6 @@
         "approvalPolicy": "never"
       },
       "models": []
-    },
-    "codex-oss": {
-      "api": "codex-app-server",
-      "codex": {
-        "command": "codex app-server --oss",
-        "approvalPolicy": "never"
-      },
-      "models": []
     }
   },
   "server": {

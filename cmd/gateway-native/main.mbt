@@ -331,25 +331,41 @@ async fn proxy_list_models(gateway : @gw.Gateway) -> @gw.HttpResponse {
       }
       continue
     }
-    let base_url = expand_env(provider.base_url)
-    let api_key = expand_env(provider.api_key)
-    let upstream = @gw.prepare_models_request(provider, base_url, api_key)
-    let (status, response_text) = http_get(upstream)
-    if status != 200 {
-      errors.push(
-        "Provider \{provider.id} returned HTTP \{status}: \{response_text}",
-      )
-      continue
-    }
-    let models = @gw.parse_models_response(response_text, provider.id)
-    if models.length() == 0 {
-      errors.push(
-        "No models returned from \{provider.id}, response: \{response_text}",
-      )
-      continue
-    }
-    for m in models {
+    // Always include config-declared models
+    let config_models = provider.list_model_json()
+    for m in config_models {
       all_models.push(m)
+    }
+    // Optionally fetch remote models (default: true)
+    if provider.models_from_endpoint {
+      let base_url = expand_env(provider.base_url)
+      let api_key = expand_env(provider.api_key)
+      let upstream = @gw.prepare_models_request(provider, base_url, api_key)
+      let (status, response_text) = http_get(upstream)
+      if status != 200 {
+        errors.push(
+          "Provider \{provider.id} returned HTTP \{status}: \{response_text}",
+        )
+        continue
+      }
+      let models = @gw.parse_models_response(response_text, provider.id)
+      for m in models {
+        // Avoid duplicates with config models
+        let is_dup = config_models.iter().any(fn(cm) {
+          match cm {
+            { "id": String(id), .. } => {
+              match m {
+                { "id": String(mid), .. } => id == mid
+                _ => false
+              }
+            }
+            _ => false
+          }
+        })
+        if !is_dup {
+          all_models.push(m)
+        }
+      }
     }
   }
   if errors.length() > 0 {
@@ -758,21 +774,9 @@ async fn get_claude_mcp_channel(
 /// Tools are exposed as a single virtual model (or from configured models).
 fn fetch_claude_mcp_model_list(provider : @gw.ProviderConfig) -> Array[Json] {
   if provider.models.length() > 0 {
-    let models : Array[Json] = []
-    for m in provider.models {
-      let obj : Map[String, Json] = {}
-      obj["id"] = Json::string(m.id)
-      obj["object"] = Json::string("model")
-      obj["owned_by"] = Json::string(provider.id)
-      models.push(Json::object(obj))
-    }
-    return models
+    return provider.list_model_json()
   }
-  let obj : Map[String, Json] = {}
-  obj["id"] = Json::string("claude-code-tools")
-  obj["object"] = Json::string("model")
-  obj["owned_by"] = Json::string(provider.id)
-  [Json::object(obj)]
+  [@gw.model_to_list_json("claude-code-tools", provider.id)]
 }
 
 ///|
