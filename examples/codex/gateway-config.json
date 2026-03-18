@@ -1,0 +1,25 @@
+{
+  "providers": {
+    "groq": {
+      "baseUrl": "https://api.groq.com/openai/v1",
+      "apiKey": "${GROQ_API_KEY}",
+      "api": "openai-completions",
+      "modelsFromEndpoint": false,
+      "modelPatterns": ["openai/gpt-oss", "gpt-oss"],
+      "models": [
+        {
+          "id": "openai/gpt-oss-20b",
+          "name": "GPT-OSS 20B",
+          "reasoning": false,
+          "input": ["text"],
+          "contextWindow": 16384,
+          "maxTokens": 4096
+        }
+      ]
+    }
+  },
+  "server": {
+    "port": 18080,
+    "host": "0.0.0.0"
+  }
+}
