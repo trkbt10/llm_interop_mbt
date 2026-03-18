@@ -67,7 +67,7 @@ fn parse_provider(
       }
     _ => OpenAICompletions
   }
-  let headers = parse_headers(json)
+  let headers = parse_string_map(json, "headers")
   let auth_header = match json {
     { "authHeader": False, .. } => false
     _ => true
@@ -77,9 +77,10 @@ fn parse_provider(
     { "modelsFromEndpoint": False, .. } => false
     _ => true
   }
-  let model_patterns = parse_model_patterns(json)
+  let model_patterns = parse_string_array(json, "modelPatterns")
   let codex = parse_codex_config(json)
   let claude_mcp = parse_claude_mcp_config(json)
+  let model_aliases = parse_string_map(json, "modelAliases")
   {
     id,
     base_url,
@@ -93,6 +94,7 @@ fn parse_provider(
     model_patterns,
     codex,
     claude_mcp,
+    model_aliases,
   }
 }
 
@@ -102,42 +104,18 @@ fn parse_codex_config(json : Json) -> @codex.CodexConfig? {
   match json {
     { "codex": Object(obj), .. } => {
       let defaults = @codex.CodexConfig::default()
-      let command = match obj.get("command") {
-        Some(String(s)) => s
-        _ => defaults.command
-      }
-      let approval_policy = match obj.get("approvalPolicy") {
-        Some(String(s)) => Some(s)
-        _ => defaults.approval_policy
-      }
-      let thread_sandbox = match obj.get("threadSandbox") {
-        Some(String(s)) => Some(s)
-        _ => defaults.thread_sandbox
-      }
-      let turn_sandbox_policy = match obj.get("turnSandboxPolicy") {
-        Some(String(s)) => Some(s)
-        _ => defaults.turn_sandbox_policy
-      }
-      let turn_timeout_ms = match obj.get("turnTimeoutMs") {
-        Some(Number(n, ..)) => n.to_int()
-        _ => defaults.turn_timeout_ms
-      }
-      let read_timeout_ms = match obj.get("readTimeoutMs") {
-        Some(Number(n, ..)) => n.to_int()
-        _ => defaults.read_timeout_ms
-      }
-      let stall_timeout_ms = match obj.get("stallTimeoutMs") {
-        Some(Number(n, ..)) => n.to_int()
-        _ => defaults.stall_timeout_ms
-      }
       Some({
-        command,
-        approval_policy,
-        thread_sandbox,
-        turn_sandbox_policy,
-        turn_timeout_ms,
-        read_timeout_ms,
-        stall_timeout_ms,
+        command: obj_string(obj, "command", defaults.command),
+        approval_policy: obj_opt_string(obj, "approvalPolicy", defaults.approval_policy),
+        thread_sandbox: obj_opt_string(obj, "threadSandbox", defaults.thread_sandbox),
+        turn_sandbox_policy: obj_opt_string(
+          obj, "turnSandboxPolicy", defaults.turn_sandbox_policy,
+        ),
+        turn_timeout_ms: obj_int(obj, "turnTimeoutMs", defaults.turn_timeout_ms),
+        read_timeout_ms: obj_int(obj, "readTimeoutMs", defaults.read_timeout_ms),
+        stall_timeout_ms: obj_int(
+          obj, "stallTimeoutMs", defaults.stall_timeout_ms,
+        ),
       })
     }
     _ => None
@@ -150,61 +128,169 @@ fn parse_claude_mcp_config(json : Json) -> @claude_mcp.ClaudeMcpConfig? {
   match json {
     { "claudeMcp": Object(obj), .. } => {
       let defaults = @claude_mcp.ClaudeMcpConfig::default()
-      let command = match obj.get("command") {
-        Some(String(s)) => s
-        _ => defaults.command
-      }
-      let args : Array[String] = match obj.get("args") {
-        Some(Array(arr)) => {
-          let result : Array[String] = []
-          for v in arr {
-            match v {
-              String(s) => result.push(s)
-              _ => ()
-            }
-          }
-          result
-        }
-        _ => defaults.args
-      }
-      let env : Map[String, String] = match obj.get("env") {
-        Some(Object(e)) => {
-          let result : Map[String, String] = {}
-          for k, v in e {
-            match v {
-              String(s) => result[k] = s
-              _ => ()
-            }
-          }
-          result
-        }
-        _ => defaults.env
-      }
-      let timeout_ms = match obj.get("timeoutMs") {
-        Some(Number(n, ..)) => n.to_int()
-        _ => defaults.timeout_ms
-      }
-      Some({ command, args, env, timeout_ms })
+      Some({
+        command: obj_string(obj, "command", defaults.command),
+        args: obj_string_array(obj, "args", defaults.args),
+        env: obj_string_map(obj, "env", defaults.env),
+        timeout_ms: obj_int(obj, "timeoutMs", defaults.timeout_ms),
+      })
     }
     _ => None
   }
 }
 
+// =============================================================================
+// JSON field extraction helpers — eliminate repeated match patterns
+// =============================================================================
+
 ///|
-fn parse_headers(json : Json) -> Map[String, String] {
+/// Extract a String→String map from a top-level JSON field
+fn parse_string_map(json : Json, key : String) -> Map[String, String] {
   let result : Map[String, String] = {}
-  match json {
-    { "headers": Object(obj), .. } =>
-      for k, v in obj {
+  let obj : Map[String, Json]? = match (key, json) {
+    ("headers", { "headers": Object(o), .. }) => Some(o)
+    ("modelAliases", { "modelAliases": Object(o), .. }) => Some(o)
+    _ => None
+  }
+  match obj {
+    Some(o) =>
+      for k, v in o {
         match v {
           String(s) => result[k] = s
           _ => ()
         }
       }
-    _ => ()
+    None => ()
   }
   result
 }
+
+///|
+/// Extract a string array from a top-level JSON field
+fn parse_string_array(json : Json, key : String) -> Array[String] {
+  let arr : Array[Json]? = match (key, json) {
+    ("modelPatterns", { "modelPatterns": Array(a), .. }) => Some(a)
+    _ => None
+  }
+  match arr {
+    Some(a) => {
+      let result : Array[String] = []
+      for v in a {
+        match v {
+          String(s) => result.push(s)
+          _ => ()
+        }
+      }
+      result
+    }
+    None => []
+  }
+}
+
+///|
+/// Get string from object field with default
+fn obj_string(
+  obj : Map[String, Json],
+  key : String,
+  default : String,
+) -> String {
+  match obj.get(key) {
+    Some(String(s)) => s
+    _ => default
+  }
+}
+
+///|
+/// Get optional string from object field with default
+fn obj_opt_string(
+  obj : Map[String, Json],
+  key : String,
+  default : String?,
+) -> String? {
+  match obj.get(key) {
+    Some(String(s)) => Some(s)
+    _ => default
+  }
+}
+
+///|
+/// Get int from object field with default
+fn obj_int(obj : Map[String, Json], key : String, default : Int) -> Int {
+  match obj.get(key) {
+    Some(Number(n, ..)) => n.to_int()
+    _ => default
+  }
+}
+
+///|
+/// Get double from object field with default
+fn obj_double(
+  obj : Map[String, Json],
+  key : String,
+  default : Double,
+) -> Double {
+  match obj.get(key) {
+    Some(Number(n, ..)) => n
+    _ => default
+  }
+}
+
+///|
+/// Get bool from object field (defaults to false)
+fn obj_bool(obj : Map[String, Json], key : String) -> Bool {
+  match obj.get(key) {
+    Some(True) => true
+    _ => false
+  }
+}
+
+///|
+/// Get string array from object field with default
+fn obj_string_array(
+  obj : Map[String, Json],
+  key : String,
+  default : Array[String],
+) -> Array[String] {
+  match obj.get(key) {
+    Some(Array(arr)) => {
+      let result : Array[String] = []
+      for v in arr {
+        match v {
+          String(s) => result.push(s)
+          _ => ()
+        }
+      }
+      result
+    }
+    _ => default
+  }
+}
+
+///|
+/// Get string map from object field with default
+fn obj_string_map(
+  obj : Map[String, Json],
+  key : String,
+  default : Map[String, String],
+) -> Map[String, String] {
+  match obj.get(key) {
+    Some(Object(e)) => {
+      let result : Map[String, String] = {}
+      for k, v in e {
+        match v {
+          String(s) => result[k] = s
+          _ => ()
+        }
+      }
+      result
+    }
+    _ => default
+  }
+}
+
+// =============================================================================
+// Model parsing
+// =============================================================================
 
 ///|
 fn parse_models(json : Json) -> Array[ModelConfig] raise GatewayError {
@@ -217,23 +303,6 @@ fn parse_models(json : Json) -> Array[ModelConfig] raise GatewayError {
     _ => ()
   }
   result
-}
-
-///|
-fn parse_model_patterns(json : Json) -> Array[String] {
-  match json {
-    { "modelPatterns": Array(arr), .. } => {
-      let result : Array[String] = []
-      for v in arr {
-        match v {
-          String(s) => result.push(s)
-          _ => ()
-        }
-      }
-      result
-    }
-    _ => []
-  }
 }
 
 ///|
@@ -264,7 +333,7 @@ fn parse_model(json : Json) -> ModelConfig raise GatewayError {
     { "maxTokens": Number(n, ..), .. } => n.to_int()
     _ => 4096
   }
-  let headers = parse_headers(json)
+  let headers = parse_string_map(json, "headers")
   let compat = parse_compat(json)
   {
     id,
@@ -303,25 +372,13 @@ fn parse_input_modalities(json : Json) -> Array[InputModality] {
 ///|
 fn parse_cost(json : Json) -> TokenCost {
   match json {
-    { "cost": Object(obj), .. } => {
-      let input = match obj.get("input") {
-        Some(Number(n, ..)) => n
-        _ => 0.0
+    { "cost": Object(obj), .. } =>
+      {
+        input: obj_double(obj, "input", 0.0),
+        output: obj_double(obj, "output", 0.0),
+        cache_read: obj_double(obj, "cacheRead", 0.0),
+        cache_write: obj_double(obj, "cacheWrite", 0.0),
       }
-      let output = match obj.get("output") {
-        Some(Number(n, ..)) => n
-        _ => 0.0
-      }
-      let cache_read = match obj.get("cacheRead") {
-        Some(Number(n, ..)) => n
-        _ => 0.0
-      }
-      let cache_write = match obj.get("cacheWrite") {
-        Some(Number(n, ..)) => n
-        _ => 0.0
-      }
-      { input, output, cache_read, cache_write }
-    }
     _ => TokenCost::default()
   }
 }
@@ -329,85 +386,40 @@ fn parse_cost(json : Json) -> TokenCost {
 ///|
 fn parse_compat(json : Json) -> ModelCompatConfig {
   match json {
-    { "compat": Object(obj), .. } => {
-      let supports_store = match obj.get("supportsStore") {
-        Some(True) => true
-        _ => false
-      }
-      let supports_developer_role = match obj.get("supportsDeveloperRole") {
-        Some(True) => true
-        _ => false
-      }
-      let supports_reasoning_effort = match obj.get("supportsReasoningEffort") {
-        Some(True) => true
-        _ => false
-      }
-      let supports_usage_in_streaming = match
-        obj.get("supportsUsageInStreaming") {
-        Some(True) => true
-        _ => false
-      }
-      let supports_strict_mode = match obj.get("supportsStrictMode") {
-        Some(True) => true
-        _ => false
-      }
-      let max_tokens_field = match obj.get("maxTokensField") {
-        Some(String(s)) => s
-        _ => "max_tokens"
-      }
-      let thinking_format = match obj.get("thinkingFormat") {
-        Some(String(s)) => s
-        _ => ""
-      }
-      let requires_tool_result_name = match obj.get("requiresToolResultName") {
-        Some(True) => true
-        _ => false
-      }
-      let requires_assistant_after_tool_result = match
-        obj.get("requiresAssistantAfterToolResult") {
-        Some(True) => true
-        _ => false
-      }
-      let requires_thinking_as_text = match obj.get("requiresThinkingAsText") {
-        Some(True) => true
-        _ => false
-      }
-      let requires_mistral_tool_ids = match obj.get("requiresMistralToolIds") {
-        Some(True) => true
-        _ => false
-      }
+    { "compat": Object(obj), .. } =>
       {
-        supports_store,
-        supports_developer_role,
-        supports_reasoning_effort,
-        supports_usage_in_streaming,
-        supports_strict_mode,
-        max_tokens_field,
-        thinking_format,
-        requires_tool_result_name,
-        requires_assistant_after_tool_result,
-        requires_thinking_as_text,
-        requires_mistral_tool_ids,
+        supports_store: obj_bool(obj, "supportsStore"),
+        supports_developer_role: obj_bool(obj, "supportsDeveloperRole"),
+        supports_reasoning_effort: obj_bool(obj, "supportsReasoningEffort"),
+        supports_usage_in_streaming: obj_bool(
+          obj, "supportsUsageInStreaming",
+        ),
+        supports_strict_mode: obj_bool(obj, "supportsStrictMode"),
+        max_tokens_field: obj_string(obj, "maxTokensField", "max_tokens"),
+        thinking_format: obj_string(obj, "thinkingFormat", ""),
+        requires_tool_result_name: obj_bool(obj, "requiresToolResultName"),
+        requires_assistant_after_tool_result: obj_bool(
+          obj, "requiresAssistantAfterToolResult",
+        ),
+        requires_thinking_as_text: obj_bool(obj, "requiresThinkingAsText"),
+        requires_mistral_tool_ids: obj_bool(obj, "requiresMistralToolIds"),
       }
-    }
     _ => ModelCompatConfig::default()
   }
 }
 
+// =============================================================================
+// Server config & serialization
+// =============================================================================
+
 ///|
 fn parse_server(json : Json) -> ServerConfig {
   match json {
-    { "server": Object(obj), .. } => {
-      let port = match obj.get("port") {
-        Some(Number(n, ..)) => n.to_int()
-        _ => default_server_port
+    { "server": Object(obj), .. } =>
+      {
+        port: obj_int(obj, "port", default_server_port),
+        host: obj_string(obj, "host", "0.0.0.0"),
       }
-      let host = match obj.get("host") {
-        Some(String(s)) => s
-        _ => "0.0.0.0"
-      }
-      { port, host }
-    }
     _ => { port: default_server_port, host: "0.0.0.0" }
   }
 }

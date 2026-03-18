@@ -2,6 +2,22 @@
 /// Model listing - config-based and remote response parsing
 
 ///|
+/// Convert a model ID to OpenAI-style model list entry JSON
+pub fn model_to_list_json(model_id : String, provider_id : String) -> Json {
+  let obj : Map[String, Json] = {}
+  obj["id"] = Json::string(model_id)
+  obj["object"] = Json::string("model")
+  obj["owned_by"] = Json::string(provider_id)
+  Json::object(obj)
+}
+
+///|
+/// List configured models for a single provider as model list entries
+pub fn ProviderConfig::list_model_json(self : ProviderConfig) -> Array[Json] {
+  self.models.map(fn(m) { model_to_list_json(m.id, self.id) })
+}
+
+///|
 /// Prepare an upstream request for listing models
 pub fn prepare_models_request(
   provider : ProviderConfig,
@@ -32,13 +48,7 @@ pub fn parse_models_response(
   let models : Array[Json] = []
   for m in data {
     match m {
-      { "id": String(id), .. } => {
-        let obj : Map[String, Json] = {}
-        obj["id"] = Json::string(id)
-        obj["object"] = Json::string("model")
-        obj["owned_by"] = Json::string(provider_id)
-        models.push(Json::object(obj))
-      }
+      { "id": String(id), .. } => models.push(model_to_list_json(id, provider_id))
       _ => ()
     }
   }
@@ -105,13 +115,9 @@ pub fn enrich_remote_model_json(
 /// List models from gateway config (no network)
 pub fn Gateway::list_configured_models(self : Gateway) -> Array[Json] {
   let models : Array[Json] = []
-  for prov_id, prov in self.config.providers {
-    for m in prov.models {
-      let obj : Map[String, Json] = {}
-      obj["id"] = Json::string(m.id)
-      obj["object"] = Json::string("model")
-      obj["owned_by"] = Json::string(prov_id)
-      models.push(Json::object(obj))
+  for _, prov in self.config.providers {
+    for m in prov.list_model_json() {
+      models.push(m)
     }
   }
   models

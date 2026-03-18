@@ -24,12 +24,37 @@ pub fn prepare_upstream(
   let (origin, base_path) = @utils.parse_url(base_url)
   let from = target_dialect
   let to = provider.api.to_dialect()
-  let ctx = build_transform_context(provider, model)
+  // Apply model alias: map incoming model name to backend model name
+  let backend_model = match provider.model_aliases.get(model) {
+    Some(alias) => alias
+    None => model
+  }
+  let ctx = build_transform_context(provider, backend_model)
+  let transformed = transform_request(body, from, to, backend_model, ctx)
+  // Replace model name in transformed body if alias was applied
+  let final_body = if backend_model != model {
+    replace_model_in_body(transformed, backend_model)
+  } else {
+    transformed
+  }
   {
     origin,
-    path: provider.api.completion_path(base_path, model, api_key),
+    path: provider.api.completion_path(base_path, backend_model, api_key),
     headers: provider.api.auth_headers(api_key),
-    body: transform_request(body, from, to, model, ctx),
+    body: final_body,
+  }
+}
+
+///|
+/// Replace the "model" field in a JSON body with the given model name
+fn replace_model_in_body(body : String, model : String) -> String {
+  let json = @json.parse(body) catch { _ => return body }
+  match json {
+    Object(obj) => {
+      obj["model"] = Json::string(model)
+      Json::object(obj).stringify()
+    }
+    _ => body
   }
 }
 
@@ -90,7 +115,7 @@ pub fn Gateway::resolve(
   if path == "/" || path == "/health" {
     return Health
   }
-  if path == "/v1/models" && meth == "GET" {
+  if (path == "/v1/models" || path.has_prefix("/v1/models?")) && meth == "GET" {
     return ListModels
   }
   match self.dialect.resolve_completion(meth, path, body) {

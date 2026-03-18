@@ -177,6 +177,7 @@ pub(all) struct ProviderConfig {
   model_patterns : Array[String] // Prefix patterns for fallback routing (e.g. ["claude-"])
   codex : @codex.CodexConfig? // Codex app-server specific config (subprocess command, timeouts, etc.)
   claude_mcp : @claude_mcp.ClaudeMcpConfig? // `claude mcp serve` config
+  model_aliases : Map[String, String] // Map incoming model name → backend model name (e.g. "claude-sonnet-4-6" → "openai/gpt-oss-20b")
 } derive(Show)
 
 ///|
@@ -194,6 +195,7 @@ pub fn ProviderConfig::new(id : String, api : ModelApi) -> ProviderConfig {
     model_patterns: [],
     codex: None,
     claude_mcp: None,
+    model_aliases: {},
   }
 }
 
