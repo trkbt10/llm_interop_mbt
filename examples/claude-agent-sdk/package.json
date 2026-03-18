@@ -1,0 +1,17 @@
+{
+  "name": "claude-agent-sdk-example",
+  "version": "1.0.0",
+  "description": "Run Claude Code / Agent SDK with any LLM backend via MoonBit Gateway",
+  "scripts": {
+    "agent-sdk": "node src/agent-sdk.mjs",
+    "anthropic-sdk": "node src/anthropic-sdk.mjs",
+    "responses-api": "node src/responses-api.mjs",
+    "start:gateway": "cd ../../cmd/gateway-native && moon run --target native . -- --dialect anthropic --config ../../examples/claude-agent-sdk/gateway-config.json"
+  },
+  "type": "module",
+  "license": "ISC",
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.2.77",
+    "@anthropic-ai/sdk": "^0.79.0"
+  }
+}
