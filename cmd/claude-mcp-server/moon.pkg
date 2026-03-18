@@ -1,25 +1,18 @@
 import {
   "trkbt10/llm_interop/src/gateway" @gw,
-  "trkbt10/llm_interop/src/dialects/codex" @codex,
+  "trkbt10/llm_interop/src/dialects/claude_mcp" @claude_mcp,
   "trkbt10/llm_interop/src/jsonrpc" @jsonrpc,
-  "trkbt10/llm_interop/src/sse" @sse,
-  "trkbt10/subprocess" @subprocess,
-  "trkbt10/subprocess/ipc" @ipc,
+  "trkbt10/llm_interop/src/mcp" @mcp,
   "moonbitlang/core/json",
-  "moonbitlang/core/strconv",
   "moonbitlang/x/fs",
   "moonbitlang/x/sys",
   "moonbitlang/async",
   "moonbitlang/async/http",
   "moonbitlang/async/io",
   "moonbitlang/async/stdio",
-  "moonbitlang/async/socket",
-  "moonbitlang/async/websocket",
 }
 
 options(
   "is-main": true,
-  targets: {
-    "main.mbt": [ "native" ],
-  },
+  targets: { "main.mbt": [ "native" ] },
 )

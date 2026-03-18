@@ -13,6 +13,7 @@ fn create_test_config() -> GatewayConfig {
     auth_header: true,
     models: [ModelConfig::new("gpt-4o"), ModelConfig::new("gpt-4o-mini")],
     model_patterns: ["gpt-", "o1", "o3", "o4"],
+    models_from_endpoint: true,
     codex: None,
     claude_mcp: None,
   }
@@ -26,6 +27,7 @@ fn create_test_config() -> GatewayConfig {
     auth_header: true,
     models: [ModelConfig::new("claude-sonnet-4-20250514")],
     model_patterns: ["claude-"],
+    models_from_endpoint: true,
     codex: None,
     claude_mcp: None,
   }
@@ -39,6 +41,7 @@ fn create_test_config() -> GatewayConfig {
     auth_header: true,
     models: [ModelConfig::new("gemini-pro")],
     model_patterns: ["gemini-"],
+    models_from_endpoint: true,
     codex: None,
     claude_mcp: None,
   }
@@ -212,6 +215,7 @@ test "prepare_upstream: OpenAI provider builds correct request" {
     auth_header: true,
     models: [],
     model_patterns: [],
+    models_from_endpoint: true,
     codex: None,
     claude_mcp: None,
   }
@@ -243,6 +247,7 @@ test "prepare_upstream: Anthropic provider builds correct request" {
     auth_header: true,
     models: [],
     model_patterns: [],
+    models_from_endpoint: true,
     codex: None,
     claude_mcp: None,
   }
@@ -276,6 +281,7 @@ test "prepare_upstream: Gemini provider puts key in URL" {
     auth_header: true,
     models: [],
     model_patterns: [],
+    models_from_endpoint: true,
     codex: None,
     claude_mcp: None,
   }
@@ -308,6 +314,7 @@ test "prepare_upstream: cross-dialect transforms body" {
     auth_header: true,
     models: [],
     model_patterns: [],
+    models_from_endpoint: true,
     codex: None,
     claude_mcp: None,
   }
@@ -348,6 +355,7 @@ test "prepare_models_request: OpenAI provider" {
     auth_header: true,
     models: [],
     model_patterns: [],
+    models_from_endpoint: true,
     codex: None,
     claude_mcp: None,
   }
@@ -370,6 +378,7 @@ test "prepare_models_request: Anthropic provider" {
     auth_header: true,
     models: [],
     model_patterns: [],
+    models_from_endpoint: true,
     codex: None,
     claude_mcp: None,
   }

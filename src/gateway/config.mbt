@@ -74,6 +74,10 @@ fn parse_provider(
     _ => true
   }
   let models = parse_models(json)
+  let models_from_endpoint = match json {
+    { "modelsFromEndpoint": False, .. } => false
+    _ => true
+  }
   let model_patterns = parse_model_patterns(json)
   let codex = parse_codex_config(json)
   let claude_mcp = parse_claude_mcp_config(json)
@@ -86,6 +90,7 @@ fn parse_provider(
     headers,
     auth_header,
     models,
+    models_from_endpoint,
     model_patterns,
     codex,
     claude_mcp,
@@ -446,6 +451,7 @@ fn parse_legacy_backend(json : Json) -> BackendConfig raise GatewayError {
     headers: {},
     auth_header: true,
     models: [ModelConfig::new(model_id)],
+    models_from_endpoint: true,
     model_patterns: [],
     codex: None,
     claude_mcp: None,

@@ -173,6 +173,7 @@ pub(all) struct ProviderConfig {
   headers : Map[String, String]
   auth_header : Bool // Include auth in header
   models : Array[ModelConfig]
+  models_from_endpoint : Bool // true (default): additionally fetch models from backend endpoint; config `models` always included
   model_patterns : Array[String] // Prefix patterns for fallback routing (e.g. ["claude-"])
   codex : @codex.CodexConfig? // Codex app-server specific config (subprocess command, timeouts, etc.)
   claude_mcp : @claude_mcp.ClaudeMcpConfig? // `claude mcp serve` config
@@ -189,6 +190,7 @@ pub fn ProviderConfig::new(id : String, api : ModelApi) -> ProviderConfig {
     headers: {},
     auth_header: true,
     models: [],
+    models_from_endpoint: true,
     model_patterns: [],
     codex: None,
     claude_mcp: None,

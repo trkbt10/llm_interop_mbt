@@ -181,30 +181,35 @@ async fn handle_model_list(
   emit : async (String) -> Unit,
 ) -> Unit {
   let models : Array[Json] = []
+  let seen_ids : Map[String, Bool] = {}
   for _, provider in state.gateway.config.providers {
     // Skip Codex app-server providers (we ARE the app-server)
     if provider.api == @gw.ModelApi::CodexAppServer {
       continue
     }
-    // Fetch models dynamically from each HTTP provider
-    let base_url = expand_env(provider.base_url)
-    let api_key = expand_env(provider.api_key)
-    if base_url == "" || api_key == "" {
-      continue
+    // 1. Config models — always included as baseline
+    for m in provider.models {
+      if not(seen_ids.contains(m.id)) {
+        models.push(@gw.model_config_to_codex_model_json(m, provider.id))
+        seen_ids[m.id] = true
+      }
     }
-    let upstream = @gw.prepare_models_request(provider, base_url, api_key)
-    let (status, response_text) = http_get(upstream)
-    if status != 200 {
-      continue
-    }
-    let remote_models = @gw.parse_models_response(response_text, provider.id)
-    for rm in remote_models {
-      match rm {
-        { "id": String(model_id), .. } =>
-          models.push(
-            @gw.enrich_remote_model_json(model_id, provider.id, provider.models),
-          )
-        _ => models.push(rm)
+    // 2. Endpoint models — additionally fetched when modelsFromEndpoint: true
+    if provider.models_from_endpoint {
+      let endpoint_models = fetch_provider_models(provider)
+      for rm in endpoint_models {
+        match rm {
+          { "id": String(model_id), .. } =>
+            if not(seen_ids.contains(model_id)) {
+              models.push(
+                @gw.enrich_remote_model_json(
+                  model_id, provider.id, provider.models,
+                ),
+              )
+              seen_ids[model_id] = true
+            }
+          _ => ()
+        }
       }
     }
   }
@@ -540,6 +545,159 @@ async fn http_post_streaming(
 }
 
 // =============================================================================
+// Model fetching per provider type
+// =============================================================================
+
+///|
+/// Fetch models from a provider's endpoint.
+/// Returns [] if the provider has no model listing capability or fetch fails.
+async fn fetch_provider_models(provider : @gw.ProviderConfig) -> Array[Json] {
+  match provider.api {
+    // Claude MCP has no model listing endpoint
+    @gw.ModelApi::ClaudeMcpServe => []
+    // Codex: query model/list via stdio subprocess
+    @gw.ModelApi::CodexAppServer => fetch_codex_model_list(provider)
+    // HTTP providers: query /v1/models (or equivalent)
+    _ => {
+      let base_url = expand_env(provider.base_url)
+      let api_key = expand_env(provider.api_key)
+      if base_url == "" || api_key == "" {
+        return []
+      }
+      let upstream = @gw.prepare_models_request(provider, base_url, api_key)
+      let (status, response_text) = http_get(upstream)
+      if status != 200 {
+        return []
+      }
+      @gw.parse_models_response(response_text, provider.id)
+    }
+  }
+}
+
+// =============================================================================
+// Codex JSON-RPC stdio transport for model/list
+// =============================================================================
+
+///|
+/// Per-provider Codex state: session + live subprocess channel
+struct CodexBackendState {
+  mut session : @codex.CodexSession
+  mut channel : @ipc.IpcChannel?
+}
+
+///|
+/// Mutable state for Codex providers, keyed by provider ID
+let codex_backends : Map[String, CodexBackendState] = {}
+
+///|
+/// Spawn or reuse a Codex app-server subprocess for a provider.
+async fn get_codex_channel(
+  group : @async.TaskGroup[Unit],
+  backend_id : String,
+  command : String,
+  cwd : String,
+  api_key : String,
+) -> @ipc.IpcChannel raise @gw.GatewayError {
+  match codex_backends.get(backend_id) {
+    Some(state) =>
+      match state.channel {
+        Some(ch) => return ch
+        None => ()
+      }
+    None => ()
+  }
+  let env : Map[String, String] = {}
+  if api_key != "" {
+    env["OPENAI_API_KEY"] = api_key
+  }
+  let child = @subprocess.spawn_shell(
+    group,
+    command,
+    cwd=cwd,
+    env=env,
+    pipe_stdin=true,
+    pipe_stdout=true,
+    pipe_stderr=true,
+  ) catch {
+    e =>
+      raise @gw.GatewayError::NetworkError(
+        "Failed to spawn codex app-server: " + e.to_string(),
+      )
+  }
+  let channel = @ipc.IpcChannel::from_child(child)
+  match codex_backends.get(backend_id) {
+    Some(state) => state.channel = Some(channel)
+    None => {
+      let session = @codex.CodexSession::new(cwd)
+      codex_backends[backend_id] = { session, channel: Some(channel) }
+    }
+  }
+  channel
+}
+
+///|
+/// Fetch model list from a Codex app-server subprocess via model/list JSON-RPC.
+async fn fetch_codex_model_list(provider : @gw.ProviderConfig) -> Array[Json] {
+  let codex_cfg = match provider.codex {
+    Some(cfg) => cfg
+    None => return []
+  }
+  let cwd = if provider.base_url != "" {
+    expand_env(provider.base_url)
+  } else {
+    "."
+  }
+  let session = @codex.CodexSession::new(cwd)
+  let req = @codex.prepare_codex_model_list(session)
+  let models : Array[Json] = []
+  @async.with_task_group(async fn(group) {
+    let api_key = expand_env(provider.api_key)
+    let channel = get_codex_channel(
+      group, provider.id + "_models", codex_cfg.command, cwd, api_key,
+    ) catch {
+      _ => {
+        group.return_immediately(())
+        return
+      }
+    }
+    for step in req.steps {
+      channel.send(step.message) catch {
+        _ => { group.return_immediately(()); return }
+      }
+      match step.kind {
+        @codex.Request => {
+          let line = channel.recv() catch {
+            _ => { group.return_immediately(()); return }
+          }
+          match line {
+            Some(text) => {
+              let json = @json.parse(text) catch { _ => continue }
+              match json {
+                { "result": result, .. } => {
+                  let parsed = @codex.parse_codex_model_list_result(
+                    result, provider.id,
+                  )
+                  for m in parsed {
+                    models.push(m)
+                  }
+                }
+                _ => ()
+              }
+            }
+            None => { group.return_immediately(()); return }
+          }
+        }
+        @codex.Notification => continue
+        _ => continue
+      }
+    }
+    group.return_immediately(())
+  })
+  models
+}
+
+// =============================================================================
+
 ///|
 /// Execute HTTP GET and return (status_code, response_body)
 async fn http_get(req : @gw.UpstreamRequest) -> (Int, String) {
