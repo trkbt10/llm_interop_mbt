@@ -13,10 +13,10 @@ pub fn responses_input_to_messages(
   for item in input {
     match item {
       // System message
-      { "role": String("system"), "content": String(content), .. } =>
-        messages.push(@types.ModelMessage::System(content))
+      { "role": String("system"), "content": content, .. } =>
+        messages.push(@types.ModelMessage::System(extract_text_content(content)))
       // User message
-      { "role": String("user"), "content": String(content), .. } => {
+      { "role": String("user"), "content": content, .. } => {
         // Flush any pending tool calls as assistant message
         if pending_tool_calls.length() > 0 {
           messages.push(
@@ -27,10 +27,11 @@ pub fn responses_input_to_messages(
           )
           pending_tool_calls = []
         }
+        let content = extract_text_content(content)
         messages.push(@types.ModelMessage::User(content~, name=None))
       }
       // Assistant message (text only)
-      { "role": String("assistant"), "content": String(content), .. } => {
+      { "role": String("assistant"), "content": content, .. } => {
         // Flush any pending tool calls first
         if pending_tool_calls.length() > 0 {
           messages.push(
@@ -41,6 +42,7 @@ pub fn responses_input_to_messages(
           )
           pending_tool_calls = []
         }
+        let content = extract_text_content(content)
         messages.push(@types.ModelMessage::Assistant(content~, tool_calls=None))
       }
       // Function call (Responses API format)
@@ -109,6 +111,35 @@ pub fn responses_input_to_messages(
     )
   }
   messages
+}
+
+///|
+/// Extract text from content that can be either a plain string or
+/// an array of content blocks (e.g. [{"type":"input_text","text":"..."}])
+fn extract_text_content(content : Json) -> String {
+  match content {
+    String(s) => s
+    Array(blocks) => {
+      let buf = StringBuilder::new()
+      for block in blocks {
+        match block {
+          // Responses API content block: {"type":"input_text","text":"..."}
+          { "type": String("input_text"), "text": String(t), .. } =>
+            buf.write_string(t)
+          // Also handle {"type":"text","text":"..."} and {"type":"output_text","text":"..."}
+          { "type": String("text"), "text": String(t), .. } =>
+            buf.write_string(t)
+          { "type": String("output_text"), "text": String(t), .. } =>
+            buf.write_string(t)
+          // Plain string in array
+          String(t) => buf.write_string(t)
+          _ => ()
+        }
+      }
+      buf.to_string()
+    }
+    _ => ""
+  }
 }
 
 ///|

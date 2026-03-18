@@ -11,11 +11,22 @@ pub fn responses_request_to_chat_completions(
     { "model": String(m), .. } => m
     _ => ""
   }
-  let messages = match request {
+  let messages : Array[@types.ModelMessage] = []
+  // Extract instructions as system message
+  match request {
+    { "instructions": String(instructions), .. } =>
+      messages.push(@types.ModelMessage::System(instructions))
+    _ => ()
+  }
+  // Convert input items to messages
+  let input_messages = match request {
     { "input": Array(items), .. } => responses_input_to_messages(items)
     { "input": String(text), .. } =>
       [@types.ModelMessage::User(content=text, name=None)]
     _ => []
+  }
+  for m in input_messages {
+    messages.push(m)
   }
   let msgs_json = @openai.messages_to_openai_json(messages)
   // Build Chat Completions body
@@ -55,7 +66,34 @@ fn convert_responses_tools_to_chat(tools : Array[Json]) -> Array[Json] {
             },
           },
         })
-      _ => result.push(tool)
+      // Responses API function tool: flat {type,name,description,parameters}
+      // → Chat Completions: nested {type:"function",function:{name,description,parameters}}
+      { "type": String("function"), "name": String(name), .. } => {
+        let fn_obj : Map[String, Json] = {}
+        fn_obj["name"] = Json::string(name)
+        match tool {
+          { "description": String(desc), .. } =>
+            fn_obj["description"] = Json::string(desc)
+          _ => ()
+        }
+        match tool {
+          { "parameters": params, .. } => fn_obj["parameters"] = params
+          _ => ()
+        }
+        match tool {
+          { "strict": strict, .. } => fn_obj["strict"] = strict
+          _ => ()
+        }
+        result.push({
+          "type": "function",
+          "function": Json::object(fn_obj),
+        })
+      }
+      // Already in Chat Completions format (has nested "function" key)
+      { "type": String("function"), "function": _, .. } => result.push(tool)
+      // Skip non-function tools (container_exec, code_interpreter, etc.)
+      // that backends don't understand
+      _ => ()
     }
   }
   result
