@@ -9,10 +9,14 @@
 ///|
 test "build_initialize_request: format" {
   let msg = build_initialize_request(1, "test-client", "0.1.0")
-  let json = try { @json.parse(msg) } catch { _ => fail("Failed to parse") }
+  let json = @json.parse(msg) catch { _ => fail("Failed to parse") }
   match json {
-    { "jsonrpc": String("2.0"), "id": Number(id, ..), "method": String("initialize"), .. } =>
-      assert_eq(id.to_int(), 1)
+    {
+      "jsonrpc": String("2.0"),
+      "id": Number(id, ..),
+      "method": String("initialize"),
+      ..
+    } => assert_eq(id.to_int(), 1)
     _ => fail("Invalid format")
   }
 }
@@ -20,9 +24,15 @@ test "build_initialize_request: format" {
 ///|
 test "build_initialize_request: client info" {
   let msg = build_initialize_request(1, "my-app", "2.0.0")
-  let json = try { @json.parse(msg) } catch { _ => fail("Failed to parse") }
+  let json = @json.parse(msg) catch { _ => fail("Failed to parse") }
   match json {
-    { "params": { "clientInfo": { "name": String(n), "version": String(v), .. }, .. }, .. } => {
+    {
+      "params": {
+        "clientInfo": { "name": String(n), "version": String(v), .. },
+        ..
+      },
+      ..
+    } => {
       assert_eq(n, "my-app")
       assert_eq(v, "2.0.0")
     }
@@ -33,7 +43,7 @@ test "build_initialize_request: client info" {
 ///|
 test "build_initialize_request: protocol version" {
   let msg = build_initialize_request(1, "x", "0")
-  let json = try { @json.parse(msg) } catch { _ => fail("Failed to parse") }
+  let json = @json.parse(msg) catch { _ => fail("Failed to parse") }
   match json {
     { "params": { "protocolVersion": String(pv), .. }, .. } =>
       assert_eq(pv, "2025-03-26")
@@ -44,7 +54,7 @@ test "build_initialize_request: protocol version" {
 ///|
 test "build_initialize_request: capabilities present" {
   let msg = build_initialize_request(1, "x", "0")
-  let json = try { @json.parse(msg) } catch { _ => fail("Failed to parse") }
+  let json = @json.parse(msg) catch { _ => fail("Failed to parse") }
   match json {
     { "params": { "capabilities": Object(_), .. }, .. } => ()
     _ => fail("Missing capabilities")
@@ -58,10 +68,13 @@ test "build_initialize_request: capabilities present" {
 ///|
 test "build_initialized_notification: format" {
   let msg = build_initialized_notification()
-  let json = try { @json.parse(msg) } catch { _ => fail("Failed to parse") }
+  let json = @json.parse(msg) catch { _ => fail("Failed to parse") }
   match json {
-    { "jsonrpc": String("2.0"), "method": String("notifications/initialized"), .. } =>
-      ()
+    {
+      "jsonrpc": String("2.0"),
+      "method": String("notifications/initialized"),
+      ..
+    } => ()
     _ => fail("Invalid format")
   }
 }
@@ -69,7 +82,7 @@ test "build_initialized_notification: format" {
 ///|
 test "build_initialized_notification: no id" {
   let msg = build_initialized_notification()
-  let json = try { @json.parse(msg) } catch { _ => fail("Failed to parse") }
+  let json = @json.parse(msg) catch { _ => fail("Failed to parse") }
   match json {
     { "id": _, .. } => fail("Should not have id")
     _ => ()
@@ -83,10 +96,14 @@ test "build_initialized_notification: no id" {
 ///|
 test "build_tools_list_request: format" {
   let msg = build_tools_list_request(5)
-  let json = try { @json.parse(msg) } catch { _ => fail("Failed to parse") }
+  let json = @json.parse(msg) catch { _ => fail("Failed to parse") }
   match json {
-    { "jsonrpc": String("2.0"), "id": Number(id, ..), "method": String("tools/list"), .. } =>
-      assert_eq(id.to_int(), 5)
+    {
+      "jsonrpc": String("2.0"),
+      "id": Number(id, ..),
+      "method": String("tools/list"),
+      ..
+    } => assert_eq(id.to_int(), 5)
     _ => fail("Invalid format")
   }
 }
@@ -94,7 +111,7 @@ test "build_tools_list_request: format" {
 ///|
 test "build_tools_list_request: no params" {
   let msg = build_tools_list_request(1)
-  let json = try { @json.parse(msg) } catch { _ => fail("Failed to parse") }
+  let json = @json.parse(msg) catch { _ => fail("Failed to parse") }
   match json {
     { "params": _, .. } => fail("tools/list should not have params")
     _ => ()
@@ -109,14 +126,25 @@ test "build_tools_list_request: no params" {
 test "build_tools_call_request: basic" {
   let args : Json = { "file_path": "/tmp/test.txt" }
   let msg = build_tools_call_request(3, "Read", args)
-  let json = try { @json.parse(msg) } catch { _ => fail("Failed to parse") }
+  let json = @json.parse(msg) catch { _ => fail("Failed to parse") }
   match json {
-    { "jsonrpc": String("2.0"), "id": Number(id, ..), "method": String("tools/call"), .. } =>
-      assert_eq(id.to_int(), 3)
+    {
+      "jsonrpc": String("2.0"),
+      "id": Number(id, ..),
+      "method": String("tools/call"),
+      ..
+    } => assert_eq(id.to_int(), 3)
     _ => fail("Invalid format")
   }
   match json {
-    { "params": { "name": String(n), "arguments": { "file_path": String(fp), .. }, .. }, .. } => {
+    {
+      "params": {
+        "name": String(n),
+        "arguments": { "file_path": String(fp), .. },
+        ..
+      },
+      ..
+    } => {
       assert_eq(n, "Read")
       assert_eq(fp, "/tmp/test.txt")
     }
@@ -132,10 +160,16 @@ test "build_tools_call_request: complex arguments" {
     "env": { "PATH": "/usr/bin" },
   }
   let msg = build_tools_call_request(1, "Bash", args)
-  let json = try { @json.parse(msg) } catch { _ => fail("Failed to parse") }
+  let json = @json.parse(msg) catch { _ => fail("Failed to parse") }
   match json {
-    { "params": { "name": String("Bash"), "arguments": { "command": String(c), .. }, .. }, .. } =>
-      assert_eq(c, "echo 'hello world'")
+    {
+      "params": {
+        "name": String("Bash"),
+        "arguments": { "command": String(c), .. },
+        ..
+      },
+      ..
+    } => assert_eq(c, "echo 'hello world'")
     _ => fail("Complex arguments not preserved")
   }
 }
@@ -143,10 +177,12 @@ test "build_tools_call_request: complex arguments" {
 ///|
 test "build_tools_call_request: empty arguments" {
   let msg = build_tools_call_request(1, "EmptyTool", Json::object({}))
-  let json = try { @json.parse(msg) } catch { _ => fail("Failed to parse") }
+  let json = @json.parse(msg) catch { _ => fail("Failed to parse") }
   match json {
-    { "params": { "name": String("EmptyTool"), "arguments": Object(obj), .. }, .. } =>
-      assert_eq(obj.size(), 0)
+    {
+      "params": { "name": String("EmptyTool"), "arguments": Object(obj), .. },
+      ..
+    } => assert_eq(obj.size(), 0)
     _ => fail("Empty arguments not preserved")
   }
 }
@@ -160,7 +196,10 @@ test "McpToolDefinition::from_json: full" {
   let json : Json = {
     "name": "Read",
     "description": "Reads a file from the filesystem",
-    "inputSchema": { "type": "object", "properties": { "file_path": { "type": "string" } } },
+    "inputSchema": {
+      "type": "object",
+      "properties": { "file_path": { "type": "string" } },
+    },
   }
   match McpToolDefinition::from_json(json) {
     Some(t) => {
@@ -338,9 +377,7 @@ test "parse_tools_list_response: not an object" {
 ///|
 test "parse_tools_call_result: success single text" {
   let json : Json = {
-    "result": {
-      "content": [{ "type": "text", "text": "file contents" }],
-    },
+    "result": { "content": [{ "type": "text", "text": "file contents" }] },
   }
   match parse_tools_call_result(json) {
     Some(result) => {
@@ -392,9 +429,7 @@ test "parse_tools_call_result: error" {
 
 ///|
 test "parse_tools_call_result: empty content" {
-  let json : Json = {
-    "result": { "content": Json::array([]) },
-  }
+  let json : Json = { "result": { "content": Json::array([]) } }
   match parse_tools_call_result(json) {
     Some(result) => {
       assert_eq(result.is_error, false)
@@ -426,9 +461,7 @@ test "parse_tools_call_result: isError false explicitly" {
 ///|
 test "parse_tools_call_result: isError absent means false" {
   let json : Json = {
-    "result": {
-      "content": [{ "type": "text", "text": "ok" }],
-    },
+    "result": { "content": [{ "type": "text", "text": "ok" }] },
   }
   match parse_tools_call_result(json) {
     Some(result) => assert_eq(result.is_error, false)

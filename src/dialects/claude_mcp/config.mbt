@@ -11,10 +11,5 @@ pub(all) struct ClaudeMcpConfig {
 
 ///|
 pub fn ClaudeMcpConfig::default() -> ClaudeMcpConfig {
-  {
-    command: "claude",
-    args: ["mcp", "serve"],
-    env: {},
-    timeout_ms: 30000, // 30 seconds
-  }
+  { command: "claude", args: ["mcp", "serve"], env: {}, timeout_ms: 30000 } // 30 seconds
 }

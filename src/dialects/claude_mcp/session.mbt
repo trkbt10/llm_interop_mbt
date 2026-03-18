@@ -129,9 +129,7 @@ pub fn prepare_tools_call(
     Uninitialized => {
       let init_msg = @mcp.build_initialize_request(id, "llm_interop", "0.1.0")
       let notif_msg = @mcp.build_initialized_notification()
-      let call_msg = @mcp.build_tools_call_request(
-        id + 1, tool_name, arguments,
-      )
+      let call_msg = @mcp.build_tools_call_request(id + 1, tool_name, arguments)
       {
         steps: [
           { message: init_msg, kind: @jsonrpc.Request },

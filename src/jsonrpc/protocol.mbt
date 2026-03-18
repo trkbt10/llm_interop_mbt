@@ -99,11 +99,7 @@ pub fn build_response(id : Int?, result : Json) -> String {
 
 ///|
 /// Build a JSON-RPC 2.0 error response
-pub fn build_error_response(
-  id : Int?,
-  code : Int,
-  message : String,
-) -> String {
+pub fn build_error_response(id : Int?, code : Int, message : String) -> String {
   let obj : Map[String, Json] = {}
   obj["jsonrpc"] = Json::string("2.0")
   match id {

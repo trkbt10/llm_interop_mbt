@@ -8,7 +8,7 @@
 ///|
 test "build_initialize_result: valid JSON-RPC response" {
   let result = build_initialize_result(1)
-  let json = try { @json.parse(result) } catch { _ => fail("invalid json") }
+  let json = @json.parse(result) catch { _ => fail("invalid json") }
   match json {
     {
       "jsonrpc": String("2.0"),
@@ -32,7 +32,7 @@ test "build_initialize_result: valid JSON-RPC response" {
 ///|
 test "build_initialize_result: different id" {
   let result = build_initialize_result(42)
-  let json = try { @json.parse(result) } catch { _ => fail("invalid json") }
+  let json = @json.parse(result) catch { _ => fail("invalid json") }
   match json {
     { "id": Number(id, ..), .. } => assert_eq(id.to_int(), 42)
     _ => fail("missing id")
@@ -43,14 +43,12 @@ test "build_initialize_result: different id" {
 test "build_initialize_result: matches fixture structure" {
   // Verify our server response has the same structure as the real
   // `claude mcp serve` initialize response in fixtures
-  let fixture = @utils.read_testdata("testdata/claude_mcp/initialize_response.json")
-  let fixture_json = try { @json.parse(fixture) } catch {
-    _ => fail("invalid fixture")
-  }
+  let fixture = @utils.read_testdata(
+    "testdata/claude_mcp/initialize_response.json",
+  )
+  let fixture_json = @json.parse(fixture) catch { _ => fail("invalid fixture") }
   let our_result = build_initialize_result(1)
-  let our_json = try { @json.parse(our_result) } catch {
-    _ => fail("invalid json")
-  }
+  let our_json = @json.parse(our_result) catch { _ => fail("invalid json") }
   // Both must have: jsonrpc, id, result.protocolVersion, result.capabilities.tools, result.serverInfo
   match fixture_json {
     {
@@ -87,7 +85,7 @@ test "build_initialize_result: matches fixture structure" {
 ///|
 test "build_tools_list_result: empty tools" {
   let result = build_tools_list_result(1, [])
-  let json = try { @json.parse(result) } catch { _ => fail("invalid json") }
+  let json = @json.parse(result) catch { _ => fail("invalid json") }
   match json {
     { "result": { "tools": Array(tools), .. }, .. } =>
       assert_eq(tools.length(), 0)
@@ -110,7 +108,7 @@ test "build_tools_list_result: multiple tools" {
     },
   ]
   let result = build_tools_list_result(2, tools)
-  let json = try { @json.parse(result) } catch { _ => fail("invalid json") }
+  let json = @json.parse(result) catch { _ => fail("invalid json") }
   match json {
     { "id": Number(id, ..), "result": { "tools": Array(arr), .. }, .. } => {
       assert_eq(id.to_int(), 2)
@@ -141,7 +139,7 @@ test "build_tools_list_result: roundtrip with parse_tools_list_response" {
     },
   ]
   let response = build_tools_list_result(1, tools)
-  let json = try { @json.parse(response) } catch { _ => fail("invalid json") }
+  let json = @json.parse(response) catch { _ => fail("invalid json") }
   let parsed = @mcp.parse_tools_list_response(json)
   assert_eq(parsed.length(), 1)
   assert_eq(parsed[0].name, "gpt-4o")
@@ -151,10 +149,10 @@ test "build_tools_list_result: roundtrip with parse_tools_list_response" {
 ///|
 test "build_tools_list_result: matches fixture structure" {
   // Verify each tool has same shape as real `claude mcp serve` tools/list
-  let fixture = @utils.read_testdata("testdata/claude_mcp/tools_list_response.json")
-  let fixture_json = try { @json.parse(fixture) } catch {
-    _ => fail("invalid fixture")
-  }
+  let fixture = @utils.read_testdata(
+    "testdata/claude_mcp/tools_list_response.json",
+  )
+  let fixture_json = @json.parse(fixture) catch { _ => fail("invalid fixture") }
   // Parse fixture tools
   let fixture_tools = @mcp.parse_tools_list_response(fixture_json)
   assert_true(fixture_tools.length() > 0)
@@ -168,13 +166,9 @@ test "build_tools_list_result: matches fixture structure" {
     }
   }
   // Build our tools and verify same structure
-  let our_tools = [
-    model_to_mcp_tool("gpt-4o", "GPT-4o", "openai"),
-  ]
+  let our_tools = [model_to_mcp_tool("gpt-4o", "GPT-4o", "openai")]
   let our_response = build_tools_list_result(2, our_tools)
-  let our_json = try { @json.parse(our_response) } catch {
-    _ => fail("invalid json")
-  }
+  let our_json = @json.parse(our_response) catch { _ => fail("invalid json") }
   let our_parsed = @mcp.parse_tools_list_response(our_json)
   assert_eq(our_parsed.length(), 1)
   // Our tools must also have name, description, inputSchema with type/properties/required
@@ -192,13 +186,9 @@ test "build_tools_list_result: matches fixture structure" {
 ///|
 test "build_tools_call_result: success" {
   let result = build_tools_call_result(3, "Hello!", false)
-  let json = try { @json.parse(result) } catch { _ => fail("invalid json") }
+  let json = @json.parse(result) catch { _ => fail("invalid json") }
   match json {
-    {
-      "id": Number(id, ..),
-      "result": { "content": Array(items), .. },
-      ..
-    } => {
+    { "id": Number(id, ..), "result": { "content": Array(items), .. }, .. } => {
       assert_eq(id.to_int(), 3)
       assert_eq(items.length(), 1)
       match items[0] {
@@ -218,7 +208,7 @@ test "build_tools_call_result: success" {
 ///|
 test "build_tools_call_result: error" {
   let result = build_tools_call_result(4, "Something went wrong", true)
-  let json = try { @json.parse(result) } catch { _ => fail("invalid json") }
+  let json = @json.parse(result) catch { _ => fail("invalid json") }
   match json {
     { "result": { "isError": True, "content": Array(items), .. }, .. } =>
       match items[0] {
@@ -232,7 +222,7 @@ test "build_tools_call_result: error" {
 ///|
 test "build_tools_call_result: roundtrip with parse_tools_call_result" {
   let response = build_tools_call_result(1, "test content", false)
-  let json = try { @json.parse(response) } catch { _ => fail("invalid json") }
+  let json = @json.parse(response) catch { _ => fail("invalid json") }
   let parsed = @mcp.parse_tools_call_result(json)
   match parsed {
     Some(r) => {
@@ -247,10 +237,10 @@ test "build_tools_call_result: roundtrip with parse_tools_call_result" {
 ///|
 test "build_tools_call_result: matches fixture success structure" {
   // Compare with real `claude mcp serve` tools/call response fixture
-  let fixture = @utils.read_testdata("testdata/claude_mcp/tools_call_read_response.json")
-  let fixture_json = try { @json.parse(fixture) } catch {
-    _ => fail("invalid fixture")
-  }
+  let fixture = @utils.read_testdata(
+    "testdata/claude_mcp/tools_call_read_response.json",
+  )
+  let fixture_json = @json.parse(fixture) catch { _ => fail("invalid fixture") }
   let fixture_result = @mcp.parse_tools_call_result(fixture_json)
   match fixture_result {
     Some(r) => {
@@ -261,10 +251,10 @@ test "build_tools_call_result: matches fixture success structure" {
     None => fail("failed to parse fixture")
   }
   // Our response should parse identically
-  let our_response = build_tools_call_result(3, "Hello, world!\nThis is a test file.", false)
-  let our_json = try { @json.parse(our_response) } catch {
-    _ => fail("invalid json")
-  }
+  let our_response = build_tools_call_result(
+    3, "Hello, world!\nThis is a test file.", false,
+  )
+  let our_json = @json.parse(our_response) catch { _ => fail("invalid json") }
   let our_result = @mcp.parse_tools_call_result(our_json)
   match our_result {
     Some(r) => {
@@ -279,10 +269,10 @@ test "build_tools_call_result: matches fixture success structure" {
 
 ///|
 test "build_tools_call_result: matches fixture error structure" {
-  let fixture = @utils.read_testdata("testdata/claude_mcp/tools_call_error_response.json")
-  let fixture_json = try { @json.parse(fixture) } catch {
-    _ => fail("invalid fixture")
-  }
+  let fixture = @utils.read_testdata(
+    "testdata/claude_mcp/tools_call_error_response.json",
+  )
+  let fixture_json = @json.parse(fixture) catch { _ => fail("invalid fixture") }
   let fixture_result = @mcp.parse_tools_call_result(fixture_json)
   match fixture_result {
     Some(r) => {
@@ -292,10 +282,10 @@ test "build_tools_call_result: matches fixture error structure" {
     None => fail("failed to parse fixture")
   }
   // Our error response should parse the same way
-  let our_response = build_tools_call_result(4, "Error: ENOENT: file not found", true)
-  let our_json = try { @json.parse(our_response) } catch {
-    _ => fail("invalid json")
-  }
+  let our_response = build_tools_call_result(
+    4, "Error: ENOENT: file not found", true,
+  )
+  let our_json = @json.parse(our_response) catch { _ => fail("invalid json") }
   let our_result = @mcp.parse_tools_call_result(our_json)
   match our_result {
     Some(r) => {
@@ -313,9 +303,14 @@ test "build_tools_call_result: matches fixture error structure" {
 ///|
 test "build_ping_result" {
   let result = build_ping_result(5)
-  let json = try { @json.parse(result) } catch { _ => fail("invalid json") }
+  let json = @json.parse(result) catch { _ => fail("invalid json") }
   match json {
-    { "jsonrpc": String("2.0"), "id": Number(id, ..), "result": Object(obj), .. } => {
+    {
+      "jsonrpc": String("2.0"),
+      "id": Number(id, ..),
+      "result": Object(obj),
+      ..
+    } => {
       assert_eq(id.to_int(), 5)
       assert_eq(obj.length(), 0)
     }
@@ -436,7 +431,7 @@ test "model_to_mcp_tool: creates tool definition" {
 ///|
 test "build_chat_request: prompt only" {
   let body = build_chat_request("gpt-4o", "Hello", "", 4096)
-  let json = try { @json.parse(body) } catch { _ => fail("invalid json") }
+  let json = @json.parse(body) catch { _ => fail("invalid json") }
   match json {
     {
       "model": String("gpt-4o"),
@@ -459,7 +454,7 @@ test "build_chat_request: prompt only" {
 ///|
 test "build_chat_request: with system prompt" {
   let body = build_chat_request("claude-sonnet", "Hi", "Be helpful", 1024)
-  let json = try { @json.parse(body) } catch { _ => fail("invalid json") }
+  let json = @json.parse(body) catch { _ => fail("invalid json") }
   match json {
     { "messages": Array(msgs), "max_tokens": Number(mt, ..), .. } => {
       assert_eq(msgs.length(), 2) // system + user
@@ -480,7 +475,7 @@ test "build_chat_request: with system prompt" {
 ///|
 test "build_chat_request: stream is always false" {
   let body = build_chat_request("gpt-4o", "test", "", 100)
-  let json = try { @json.parse(body) } catch { _ => fail("invalid json") }
+  let json = @json.parse(body) catch { _ => fail("invalid json") }
   match json {
     { "stream": False, .. } => ()
     _ => fail("expected stream: false")
@@ -543,7 +538,7 @@ test "IO flow: initialize → tools/list → tools/call roundtrip" {
   // Simulate the MCP session lifecycle our server handles.
   // Step 1: Client sends initialize — verify response is parseable
   let init_response = build_initialize_result(1)
-  let init_json = try { @json.parse(init_response) } catch {
+  let init_json = @json.parse(init_response) catch {
     _ => fail("invalid init response")
   }
   match @jsonrpc.RpcResponse::from_json(init_json) {
@@ -560,7 +555,7 @@ test "IO flow: initialize → tools/list → tools/call roundtrip" {
     model_to_mcp_tool("gemini-2.0-flash", "Gemini Flash", "google"),
   ]
   let list_response = build_tools_list_result(2, tools)
-  let list_json = try { @json.parse(list_response) } catch {
+  let list_json = @json.parse(list_response) catch {
     _ => fail("invalid list response")
   }
   let parsed_tools = @mcp.parse_tools_list_response(list_json)
@@ -570,7 +565,7 @@ test "IO flow: initialize → tools/list → tools/call roundtrip" {
   assert_eq(parsed_tools[2].name, "gemini-2.0-flash")
   // Step 3: Client sends tools/call — verify result is parseable
   let call_result = build_tools_call_result(3, "The answer is 42.", false)
-  let call_json = try { @json.parse(call_result) } catch {
+  let call_json = @json.parse(call_result) catch {
     _ => fail("invalid call result")
   }
   let parsed_result = @mcp.parse_tools_call_result(call_json)
@@ -591,13 +586,9 @@ test "IO flow: client-side parser can consume server-side responses" {
   // This proves wire compatibility.
 
   // tools/list roundtrip: our server → client parser
-  let tools = [
-    model_to_mcp_tool("gpt-4o", "GPT-4o", "openai"),
-  ]
+  let tools = [model_to_mcp_tool("gpt-4o", "GPT-4o", "openai")]
   let server_response = build_tools_list_result(2, tools)
-  let json = try { @json.parse(server_response) } catch {
-    _ => fail("invalid json")
-  }
+  let json = @json.parse(server_response) catch { _ => fail("invalid json") }
   let client_parsed = @mcp.parse_tools_list_response(json)
   assert_eq(client_parsed.length(), 1)
   assert_eq(client_parsed[0].name, "gpt-4o")
@@ -609,26 +600,17 @@ test "IO flow: client-side parser can consume server-side responses" {
 
   // tools/call roundtrip: our server → client parser
   let call_response = build_tools_call_result(3, "Hello from gateway", false)
-  let call_json = try { @json.parse(call_response) } catch {
-    _ => fail("invalid json")
-  }
+  let call_json = @json.parse(call_response) catch { _ => fail("invalid json") }
   let call_result = @mcp.parse_tools_call_result(call_json)
   match call_result {
     Some(r) => {
       assert_eq(r.is_error, false)
       // Client-side tools_result_to_chat should be able to convert this
       let chat = tools_result_to_chat(call_response)
-      let chat_json = try { @json.parse(chat) } catch {
-        _ => fail("invalid chat json")
-      }
+      let chat_json = @json.parse(chat) catch { _ => fail("invalid chat json") }
       match chat_json {
-        {
-          "choices": [
-            { "message": { "content": String(c), .. }, .. },
-            ..,
-          ],
-          ..
-        } => assert_eq(c, "Hello from gateway")
+        { "choices": [{ "message": { "content": String(c), .. }, .. }, ..], .. } =>
+          assert_eq(c, "Hello from gateway")
         _ => fail("tools_result_to_chat failed: " + chat)
       }
     }
@@ -642,15 +624,10 @@ test "IO flow: build_chat_request is valid OpenAI for all providers" {
   // and the gateway transform_request converts it to Anthropic/Gemini/etc.
   // Verify the request body is valid for the OpenAI transform entry point.
   let body = build_chat_request("gpt-4o", "Hello", "Be helpful", 2048)
-  let json = try { @json.parse(body) } catch { _ => fail("invalid json") }
+  let json = @json.parse(body) catch { _ => fail("invalid json") }
   // Must have model, messages, max_tokens — the minimum for OpenAI
   match json {
-    {
-      "model": String(_),
-      "messages": Array(msgs),
-      "max_tokens": Number(_),
-      ..
-    } => {
+    { "model": String(_), "messages": Array(msgs), "max_tokens": Number(_), .. } => {
       assert_true(msgs.length() > 0)
       // First message should be system
       match msgs[0] {
@@ -662,7 +639,7 @@ test "IO flow: build_chat_request is valid OpenAI for all providers" {
   }
   // Without system
   let body2 = build_chat_request("claude-sonnet", "Hello", "", 1024)
-  let json2 = try { @json.parse(body2) } catch { _ => fail("invalid json") }
+  let json2 = @json.parse(body2) catch { _ => fail("invalid json") }
   match json2 {
     { "messages": Array(msgs), .. } => {
       assert_eq(msgs.length(), 1)

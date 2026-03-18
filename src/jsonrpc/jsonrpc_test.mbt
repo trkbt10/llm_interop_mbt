@@ -8,7 +8,7 @@
 ///|
 test "build_request: basic with params" {
   let msg = build_request(1, "initialize", Some({ "key": "value" }))
-  let json = try { @json.parse(msg) } catch { _ => fail("Failed to parse") }
+  let json = @json.parse(msg) catch { _ => fail("Failed to parse") }
   match json {
     { "jsonrpc": String("2.0"), "id": Number(id, ..), "method": String(m), .. } => {
       assert_eq(id.to_int(), 1)
@@ -25,10 +25,14 @@ test "build_request: basic with params" {
 ///|
 test "build_request: without params" {
   let msg = build_request(2, "test/method", None)
-  let json = try { @json.parse(msg) } catch { _ => fail("Failed to parse") }
+  let json = @json.parse(msg) catch { _ => fail("Failed to parse") }
   match json {
-    { "jsonrpc": String("2.0"), "id": Number(id, ..), "method": String("test/method"), .. } =>
-      assert_eq(id.to_int(), 2)
+    {
+      "jsonrpc": String("2.0"),
+      "id": Number(id, ..),
+      "method": String("test/method"),
+      ..
+    } => assert_eq(id.to_int(), 2)
     _ => fail("Invalid request format")
   }
   // Should NOT have params key when None
@@ -41,7 +45,7 @@ test "build_request: without params" {
 ///|
 test "build_request: id zero" {
   let msg = build_request(0, "test", None)
-  let json = try { @json.parse(msg) } catch { _ => fail("Failed to parse") }
+  let json = @json.parse(msg) catch { _ => fail("Failed to parse") }
   match json {
     { "id": Number(id, ..), .. } => assert_eq(id.to_int(), 0)
     _ => fail("id=0 should be present")
@@ -51,7 +55,7 @@ test "build_request: id zero" {
 ///|
 test "build_request: large id" {
   let msg = build_request(999999, "test", None)
-  let json = try { @json.parse(msg) } catch { _ => fail("Failed to parse") }
+  let json = @json.parse(msg) catch { _ => fail("Failed to parse") }
   match json {
     { "id": Number(id, ..), .. } => assert_eq(id.to_int(), 999999)
     _ => fail("large id not preserved")
@@ -60,14 +64,17 @@ test "build_request: large id" {
 
 ///|
 test "build_request: nested params" {
-  let params : Json = {
-    "level1": { "level2": { "level3": "deep" } },
-  }
+  let params : Json = { "level1": { "level2": { "level3": "deep" } } }
   let msg = build_request(1, "deep/method", Some(params))
-  let json = try { @json.parse(msg) } catch { _ => fail("Failed to parse") }
+  let json = @json.parse(msg) catch { _ => fail("Failed to parse") }
   match json {
-    { "params": { "level1": { "level2": { "level3": String("deep"), .. }, .. }, .. }, .. } =>
-      ()
+    {
+      "params": {
+        "level1": { "level2": { "level3": String("deep"), .. }, .. },
+        ..
+      },
+      ..
+    } => ()
     _ => fail("Nested params not preserved")
   }
 }
@@ -75,7 +82,7 @@ test "build_request: nested params" {
 ///|
 test "build_request: empty string method" {
   let msg = build_request(1, "", None)
-  let json = try { @json.parse(msg) } catch { _ => fail("Failed to parse") }
+  let json = @json.parse(msg) catch { _ => fail("Failed to parse") }
   match json {
     { "method": String(m), .. } => assert_eq(m, "")
     _ => fail("Empty method not preserved")
@@ -85,7 +92,7 @@ test "build_request: empty string method" {
 ///|
 test "build_request: method with slashes" {
   let msg = build_request(1, "tools/call", None)
-  let json = try { @json.parse(msg) } catch { _ => fail("Failed to parse") }
+  let json = @json.parse(msg) catch { _ => fail("Failed to parse") }
   match json {
     { "method": String("tools/call"), .. } => ()
     _ => fail("Slashed method not preserved")
@@ -94,12 +101,13 @@ test "build_request: method with slashes" {
 
 ///|
 test "build_request: params with array" {
-  let params : Json = { "items": Json::array([Json::string("a"), Json::string("b")]) }
+  let params : Json = {
+    "items": Json::array([Json::string("a"), Json::string("b")]),
+  }
   let msg = build_request(1, "test", Some(params))
-  let json = try { @json.parse(msg) } catch { _ => fail("Failed to parse") }
+  let json = @json.parse(msg) catch { _ => fail("Failed to parse") }
   match json {
-    { "params": { "items": Array(arr), .. }, .. } =>
-      assert_eq(arr.length(), 2)
+    { "params": { "items": Array(arr), .. }, .. } => assert_eq(arr.length(), 2)
     _ => fail("Array params not preserved")
   }
 }
@@ -111,7 +119,7 @@ test "build_request: params with array" {
 ///|
 test "build_notification: no params" {
   let msg = build_notification("notifications/initialized", None)
-  let json = try { @json.parse(msg) } catch { _ => fail("Failed to parse") }
+  let json = @json.parse(msg) catch { _ => fail("Failed to parse") }
   match json {
     { "jsonrpc": String("2.0"), "method": String(m), .. } =>
       assert_eq(m, "notifications/initialized")
@@ -126,7 +134,7 @@ test "build_notification: no params" {
 ///|
 test "build_notification: with params" {
   let msg = build_notification("event/update", Some({ "data": "test" }))
-  let json = try { @json.parse(msg) } catch { _ => fail("Failed to parse") }
+  let json = @json.parse(msg) catch { _ => fail("Failed to parse") }
   match json {
     { "params": { "data": String("test"), .. }, .. } => ()
     _ => fail("Missing params in notification")
@@ -140,7 +148,7 @@ test "build_notification: with params" {
 ///|
 test "build_notification: no params key when None" {
   let msg = build_notification("ping", None)
-  let json = try { @json.parse(msg) } catch { _ => fail("Failed to parse") }
+  let json = @json.parse(msg) catch { _ => fail("Failed to parse") }
   match json {
     { "params": _, .. } => fail("params should not be present when None")
     _ => ()
@@ -154,10 +162,14 @@ test "build_notification: no params key when None" {
 ///|
 test "build_response: with id" {
   let msg = build_response(Some(1), { "status": "ok" })
-  let json = try { @json.parse(msg) } catch { _ => fail("Failed to parse") }
+  let json = @json.parse(msg) catch { _ => fail("Failed to parse") }
   match json {
-    { "jsonrpc": String("2.0"), "id": Number(id, ..), "result": { "status": String("ok"), .. }, .. } =>
-      assert_eq(id.to_int(), 1)
+    {
+      "jsonrpc": String("2.0"),
+      "id": Number(id, ..),
+      "result": { "status": String("ok"), .. },
+      ..
+    } => assert_eq(id.to_int(), 1)
     _ => fail("Invalid response format")
   }
 }
@@ -165,7 +177,7 @@ test "build_response: with id" {
 ///|
 test "build_response: without id" {
   let msg = build_response(None, { "data": "test" })
-  let json = try { @json.parse(msg) } catch { _ => fail("Failed to parse") }
+  let json = @json.parse(msg) catch { _ => fail("Failed to parse") }
   match json {
     { "jsonrpc": String("2.0"), "result": { "data": String("test"), .. }, .. } =>
       ()
@@ -180,7 +192,7 @@ test "build_response: without id" {
 ///|
 test "build_response: null result" {
   let msg = build_response(Some(1), Json::null())
-  let json = try { @json.parse(msg) } catch { _ => fail("Failed to parse") }
+  let json = @json.parse(msg) catch { _ => fail("Failed to parse") }
   match json {
     { "result": Null, .. } => ()
     _ => fail("Null result not preserved")
@@ -189,8 +201,11 @@ test "build_response: null result" {
 
 ///|
 test "build_response: array result" {
-  let msg = build_response(Some(1), Json::array([Json::number(1.0), Json::number(2.0)]))
-  let json = try { @json.parse(msg) } catch { _ => fail("Failed to parse") }
+  let msg = build_response(
+    Some(1),
+    Json::array([Json::number(1.0), Json::number(2.0)]),
+  )
+  let json = @json.parse(msg) catch { _ => fail("Failed to parse") }
   match json {
     { "result": Array(arr), .. } => assert_eq(arr.length(), 2)
     _ => fail("Array result not preserved")
@@ -204,9 +219,14 @@ test "build_response: array result" {
 ///|
 test "build_error_response: standard error" {
   let msg = build_error_response(Some(1), -32600, "Invalid Request")
-  let json = try { @json.parse(msg) } catch { _ => fail("Failed to parse") }
+  let json = @json.parse(msg) catch { _ => fail("Failed to parse") }
   match json {
-    { "jsonrpc": String("2.0"), "id": Number(id, ..), "error": { "code": Number(code, ..), "message": String(m), .. }, .. } => {
+    {
+      "jsonrpc": String("2.0"),
+      "id": Number(id, ..),
+      "error": { "code": Number(code, ..), "message": String(m), .. },
+      ..
+    } => {
       assert_eq(id.to_int(), 1)
       assert_eq(code.to_int(), -32600)
       assert_eq(m, "Invalid Request")
@@ -218,10 +238,16 @@ test "build_error_response: standard error" {
 ///|
 test "build_error_response: without id" {
   let msg = build_error_response(None, -32700, "Parse error")
-  let json = try { @json.parse(msg) } catch { _ => fail("Failed to parse") }
+  let json = @json.parse(msg) catch { _ => fail("Failed to parse") }
   match json {
-    { "error": { "code": Number(code, ..), "message": String("Parse error"), .. }, .. } =>
-      assert_eq(code.to_int(), -32700)
+    {
+      "error": {
+        "code": Number(code, ..),
+        "message": String("Parse error"),
+        ..
+      },
+      ..
+    } => assert_eq(code.to_int(), -32700)
     _ => fail("Invalid error response")
   }
   match json {
@@ -233,7 +259,7 @@ test "build_error_response: without id" {
 ///|
 test "build_error_response: method not found" {
   let msg = build_error_response(Some(5), -32601, "Method not found")
-  let json = try { @json.parse(msg) } catch { _ => fail("Failed to parse") }
+  let json = @json.parse(msg) catch { _ => fail("Failed to parse") }
   match json {
     { "error": { "code": Number(code, ..), .. }, .. } =>
       assert_eq(code.to_int(), -32601)
@@ -317,8 +343,12 @@ test "RpcRequest::to_json: includes jsonrpc 2.0" {
   let req : RpcRequest = { id: Some(5), rpc_method: "test", params: None }
   let json = req.to_json()
   match json {
-    { "jsonrpc": String("2.0"), "id": Number(id, ..), "method": String("test"), .. } =>
-      assert_eq(id.to_int(), 5)
+    {
+      "jsonrpc": String("2.0"),
+      "id": Number(id, ..),
+      "method": String("test"),
+      ..
+    } => assert_eq(id.to_int(), 5)
     _ => fail("to_json should include jsonrpc:2.0")
   }
 }
@@ -454,7 +484,10 @@ test "RpcStepKind: equality" {
 
 ///|
 test "RpcStep: construction" {
-  let step : @jsonrpc.RpcStep = { message: "{\"jsonrpc\":\"2.0\"}", kind: @jsonrpc.Request }
+  let step : @jsonrpc.RpcStep = {
+    message: "{\"jsonrpc\":\"2.0\"}",
+    kind: @jsonrpc.Request,
+  }
   assert_eq(step.kind, @jsonrpc.Request)
   assert_true(step.message.length() > 0)
 }
@@ -466,7 +499,7 @@ test "RpcStep: construction" {
 ///|
 test "build_request: unicode in method" {
   let msg = build_request(1, "テスト/メソッド", None)
-  let json = try { @json.parse(msg) } catch { _ => fail("Failed to parse") }
+  let json = @json.parse(msg) catch { _ => fail("Failed to parse") }
   match json {
     { "method": String(m), .. } => assert_eq(m, "テスト/メソッド")
     _ => fail("Unicode method not preserved")
@@ -475,9 +508,12 @@ test "build_request: unicode in method" {
 
 ///|
 test "build_request: special chars in params" {
-  let params : Json = { "path": "/tmp/file with spaces.txt", "content": "line1\nline2\ttab" }
+  let params : Json = {
+    "path": "/tmp/file with spaces.txt",
+    "content": "line1\nline2\ttab",
+  }
   let msg = build_request(1, "test", Some(params))
-  let json = try { @json.parse(msg) } catch { _ => fail("Failed to parse") }
+  let json = @json.parse(msg) catch { _ => fail("Failed to parse") }
   match json {
     { "params": { "path": String(p), .. }, .. } =>
       assert_eq(p, "/tmp/file with spaces.txt")
@@ -487,8 +523,12 @@ test "build_request: special chars in params" {
 
 ///|
 test "build_error_response: unicode in message" {
-  let msg = build_error_response(Some(1), -32000, "エラーが発生しました")
-  let json = try { @json.parse(msg) } catch { _ => fail("Failed to parse") }
+  let msg = build_error_response(
+    Some(1),
+    -32000,
+    "エラーが発生しました",
+  )
+  let json = @json.parse(msg) catch { _ => fail("Failed to parse") }
   match json {
     { "error": { "message": String(m), .. }, .. } =>
       assert_eq(m, "エラーが発生しました")
