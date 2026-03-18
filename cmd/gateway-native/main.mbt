@@ -158,34 +158,55 @@ async fn handle_request(
   meth : String,
   path : String,
   body : String,
-) -> @gw.HttpResponse {
+  conn : @http.ServerConnection,
+) -> @gw.HandleResult {
   match gateway.resolve(meth, path, body) {
     @gw.RouteResult::Health =>
-      @gw.HttpResponse::ok({
-        "status": "ok",
-        "dialect": gateway.dialect.to_string(),
-      })
-    @gw.RouteResult::ListModels => proxy_list_models(gateway)
+      @gw.HandleResult::Response(
+        @gw.HttpResponse::ok({
+          "status": "ok",
+          "dialect": gateway.dialect.to_string(),
+        }),
+      )
+    @gw.RouteResult::ListModels =>
+      @gw.HandleResult::Response(proxy_list_models(gateway))
     @gw.RouteResult::Completion(dialect~, body~) => {
       let model = match @utils.extract_json_field(body, "model") {
         Some(m) => m
-        None => return @gw.HttpResponse::error(400, "model field is required")
+        None =>
+          return @gw.HandleResult::Response(
+            @gw.HttpResponse::error(400, "model field is required"),
+          )
       }
-      proxy_to_backend(gateway, body, dialect, model)
+      @gw.HandleResult::Response(
+        proxy_to_backend(gateway, body, dialect, model),
+      )
     }
     @gw.RouteResult::ResponsesApi(body~) => {
       let model = match @utils.extract_json_field(body, "model") {
         Some(m) => m
-        None => return @gw.HttpResponse::error(400, "model field is required")
+        None =>
+          return @gw.HandleResult::Response(
+            @gw.HttpResponse::error(400, "model field is required"),
+          )
       }
-      proxy_responses_api(gateway, body, model)
+      proxy_responses_api(gateway, body, model, conn)
     }
     @gw.RouteResult::CompletionWithModel(dialect~, model~, body~) =>
-      proxy_to_backend(gateway, @utils.inject_json_field(body, "model", model), dialect, model)
+      @gw.HandleResult::Response(
+        proxy_to_backend(
+          gateway,
+          @utils.inject_json_field(body, "model", model),
+          dialect,
+          model,
+        ),
+      )
     @gw.RouteResult::NotFound(path~, dialect~) =>
-      @gw.HttpResponse::error(
-        404,
-        "Not found: " + path + " (dialect: " + dialect + ")",
+      @gw.HandleResult::Response(
+        @gw.HttpResponse::error(
+          404,
+          "Not found: " + path + " (dialect: " + dialect + ")",
+        ),
       )
   }
 }
@@ -197,7 +218,7 @@ async fn send_to_backend(
   model : String,
   body : String,
   dialect : @gw.GatewaySurface,
-) -> (@gw.ProviderConfig, Int, String) raise {
+) -> (@gw.ProviderConfig, Int, String) {
   let provider = match gateway.select_backend(model) {
     Some(p) => p
     None => raise @gw.GatewayError::BackendNotFound(model)
@@ -224,21 +245,29 @@ async fn proxy_to_backend(
     Some(p) => p
     None =>
       return @gw.HttpResponse::error(
-        503, "No backend available for model: " + model,
+        503,
+        "No backend available for model: " + model,
       )
   }
   if provider.api.to_dialect() == @gw.GatewaySurface::Codex {
-    return proxy_to_codex_backend(gateway, body, target_dialect, model, provider)
+    return proxy_to_codex_backend(
+      gateway, body, target_dialect, model, provider,
+    )
   }
   if provider.api == @gw.ModelApi::ClaudeMcpServe {
-    return proxy_to_claude_mcp_backend(gateway, body, target_dialect, model, provider)
+    return proxy_to_claude_mcp_backend(
+      gateway, body, target_dialect, model, provider,
+    )
   }
   // Standard HTTP path
-  let (provider, status, response_text) = try {
-    send_to_backend(gateway, model, body, target_dialect)
-  } catch {
+  let (provider, status, response_text) = send_to_backend(
+    gateway, model, body, target_dialect,
+  ) catch {
     @gw.GatewayError::BackendNotFound(m) =>
-      return @gw.HttpResponse::error(503, "No backend available for model: " + m)
+      return @gw.HttpResponse::error(
+        503,
+        "No backend available for model: " + m,
+      )
     e => return @gw.HttpResponse::error(502, e.to_string())
   }
   let final_body = @gw.transform_response(
@@ -259,49 +288,244 @@ async fn proxy_responses_api(
   gateway : @gw.Gateway,
   body : String,
   model : String,
-) -> @gw.HttpResponse {
-  let request_json = try { @json.parse(body) } catch { _ => Json::object({}) }
-  let chat_body = @harmony.responses_request_to_chat_completions(request_json, stream=false).stringify()
-  let (_provider, status, response_text) = try {
-    send_to_backend(gateway, model, chat_body, @gw.GatewaySurface::OpenAI)
-  } catch {
+  conn : @http.ServerConnection,
+) -> @gw.HandleResult {
+  let request_json = @json.parse(body) catch { _ => Json::object({}) }
+  // Detect streaming request
+  let is_stream = match request_json {
+    { "stream": True, .. } => true
+    _ => false
+  }
+  if is_stream {
+    return proxy_responses_api_stream(gateway, request_json, model, conn)
+  }
+  let chat_body = @harmony.responses_request_to_chat_completions(
+    request_json,
+    stream=false,
+  ).stringify()
+  let (_provider, status, response_text) = send_to_backend(
+    gateway,
+    model,
+    chat_body,
+    @gw.GatewaySurface::OpenAI,
+  ) catch {
     @gw.GatewayError::BackendNotFound(m) =>
-      return @gw.HttpResponse::error(503, "No backend available for model: " + m)
-    e => return @gw.HttpResponse::error(502, e.to_string())
+      return @gw.HandleResult::Response(
+        @gw.HttpResponse::error(503, "No backend available for model: " + m),
+      )
+    e =>
+      return @gw.HandleResult::Response(
+        @gw.HttpResponse::error(502, e.to_string()),
+      )
   }
   let headers : Map[String, String] = {}
   headers["Content-Type"] = "application/json"
   if status >= 400 {
-    return { status, headers, body: response_text }
+    return @gw.HandleResult::Response({ status, headers, body: response_text })
   }
-  let response_json = try { @json.parse(response_text) } catch { _ => Json::object({}) }
+  let response_json = @json.parse(response_text) catch { _ => Json::object({}) }
   let model_response = @openai.parse_openai_chat_response(response_json)
   let response_id : String = match response_json {
     { "id": String(id), .. } => id
     _ => "resp_" + model
   }
   let result = @harmony.model_response_to_responses_json(
-    model_response, response_id~, model~,
+    model_response,
+    response_id~,
+    model~,
   )
-  { status, headers, body: result.stringify() }
+  @gw.HandleResult::Response({ status, headers, body: result.stringify() })
+}
+
+///|
+/// Stream a Responses API request: sends SSE events to client as they arrive.
+///   Backend SSE → parse chunks → translate → format SSE → conn.write + flush
+async fn proxy_responses_api_stream(
+  gateway : @gw.Gateway,
+  request_json : Json,
+  model : String,
+  conn : @http.ServerConnection,
+) -> @gw.HandleResult {
+  let chat_body = @harmony.responses_request_to_chat_completions(
+    request_json,
+    stream=true,
+  ).stringify()
+  // Select backend and prepare upstream request
+  let provider = match gateway.select_backend(model) {
+    Some(p) => p
+    None => {
+      send_error_response(conn, 503, "No backend available for model: " + model)
+      return @gw.HandleResult::Streamed
+    }
+  }
+  let base_url = expand_env(provider.base_url)
+  let api_key = expand_env(provider.api_key)
+  let upstream = @gw.prepare_upstream(
+    provider,
+    chat_body,
+    @gw.GatewaySurface::OpenAI,
+    model,
+    base_url,
+    api_key,
+  )
+  // Open streaming HTTP connection to backend using low-level API
+  // (client.post() works but we need the client as a Reader after headers)
+  let client = @http.Client::new(upstream.origin) catch {
+    e => {
+      send_error_response(conn, 502, "Failed to connect: " + e.to_string())
+      return @gw.HandleResult::Streamed
+    }
+  }
+  client.request(
+    @http.RequestMethod::Post,
+    upstream.path,
+    extra_headers=upstream.headers,
+  ) catch {
+    e => {
+      client.close()
+      send_error_response(conn, 502, "Request failed: " + e.to_string())
+      return @gw.HandleResult::Streamed
+    }
+  }
+  client.write(upstream.body) catch {
+    e => {
+      client.close()
+      send_error_response(conn, 502, "Request write failed: " + e.to_string())
+      return @gw.HandleResult::Streamed
+    }
+  }
+  let response = client.end_request() catch {
+    e => {
+      client.close()
+      send_error_response(conn, 502, "Request failed: " + e.to_string())
+      return @gw.HandleResult::Streamed
+    }
+  }
+  // Pre-stream error check: if backend returns non-200, pass through error body as-is
+  if response.code >= 400 {
+    let error_body = @io.Reader::read_all(client) catch { _ => b"" }
+    let error_text = error_body.text() catch { _ => "" }
+    client.close()
+    let err_headers : Map[String, String] = {}
+    err_headers["Content-Type"] = "application/json"
+    @gw.set_cors_headers(err_headers)
+    conn.send_response(response.code, "Error", extra_headers=err_headers)
+    conn.write(error_text)
+    conn.end_response()
+    return @gw.HandleResult::Streamed
+  }
+  // Check if backend actually returned SSE or a synchronous JSON response.
+  // Some backends ignore stream=true and return a complete JSON response.
+  let content_type = response.headers.get("content-type").unwrap_or("")
+  let is_sse = content_type.contains("text/event-stream")
+  // Send SSE response headers to client
+  let sse_headers : Map[String, String] = {}
+  sse_headers["Content-Type"] = "text/event-stream"
+  sse_headers["Cache-Control"] = "no-cache"
+  sse_headers["Connection"] = "keep-alive"
+  @gw.set_cors_headers(sse_headers)
+  conn.send_response(200, "OK", extra_headers=sse_headers)
+  // Create translator for Chat Completions SSE → Responses API SSE
+  let response_id = "resp_" + model
+  let translator = @harmony.HarmonyToResponsesTranslator::new(response_id~)
+  if is_sse {
+    // Real streaming: read backend SSE event-by-event.
+    // SSE events are delimited by "\n\n". Using read_until("\n\n") reads
+    // exactly one complete event block, correctly handling multi-line
+    // data blocks and avoiding false splits on \n within content.
+    let mut eof = false
+    while not(eof) {
+      let block = @io.Reader::read_until(client, "\n\n") catch {
+        _ => {
+          eof = true
+          continue
+        }
+      }
+      match block {
+        None => eof = true
+        Some(text) => {
+          let trimmed = text.trim().to_string()
+          if trimmed.length() == 0 ||
+            trimmed == "[DONE]" ||
+            trimmed == "data: [DONE]" {
+            continue
+          }
+          // Parse the SSE event block (may contain event: + data: lines)
+          let parsed = @sse.parse_sse_chunk(trimmed + "\n\n")
+          for event in parsed.events {
+            let translated = translator.translate(event)
+            for pair in translated {
+              let (event_type, data) = pair
+              conn.write(@sse.format_sse_event(event_type, data))
+              conn.flush()
+            }
+          }
+        }
+      }
+    }
+  } else {
+    // Synthetic streaming: backend returned a complete JSON response.
+    // Read it fully, synthesize Chat Completions SSE events, translate.
+    let full_body = @io.Reader::read_all(client) catch { _ => b"" }
+    let body_text = full_body.text() catch { _ => "" }
+    let response_json = @json.parse(body_text) catch { _ => Json::object({}) }
+    let synthetic_events = @harmony.chat_completion_to_synthetic_events(
+      response_json,
+    )
+    for event in synthetic_events {
+      let translated = translator.translate(event)
+      for pair in translated {
+        let (event_type, data) = pair
+        conn.write(@sse.format_sse_event(event_type, data))
+        conn.flush()
+      }
+    }
+  }
+  // Send stream termination
+  conn.write(@sse.format_sse_done())
+  conn.flush()
+  conn.end_response()
+  client.close()
+  @gw.HandleResult::Streamed
+}
+
+///|
+/// Helper: send a JSON error response (used before SSE headers are sent)
+async fn send_error_response(
+  conn : @http.ServerConnection,
+  status : Int,
+  message : String,
+) -> Unit {
+  let headers : Map[String, String] = {}
+  headers["Content-Type"] = "application/json"
+  @gw.set_cors_headers(headers)
+  conn.send_response(status, "Error", extra_headers=headers)
+  let body : Json = { "error": { "message": message } }
+  conn.write(body.stringify())
+  conn.end_response()
+}
+
+///|
+fn error_json(message : String) -> String {
+  @gw.HttpResponse::error(502, message).body
 }
 
 ///|
 /// Execute HTTP POST and return (status_code, response_body)
 async fn http_post(req : @gw.UpstreamRequest) -> (Int, String) {
   let client = @http.Client::new(req.origin) catch {
-    e => return (502, "{\"error\":{\"message\":\"Failed to connect: \{e}\"}}")
+    e => return (502, error_json("Failed to connect: " + e.to_string()))
   }
   let response = client.post(req.path, req.body, extra_headers=req.headers) catch {
     e => {
       client.close()
-      return (502, "{\"error\":{\"message\":\"Request failed: \{e}\"}}")
+      return (502, error_json("Request failed: " + e.to_string()))
     }
   }
   let response_body = @io.Reader::read_all(client) catch {
     e => {
       client.close()
-      return (502, "{\"error\":{\"message\":\"Failed to read response: \{e}\"}}")
+      return (502, error_json("Failed to read response: " + e.to_string()))
     }
   }
   let text = response_body.text() catch { _ => "" }
@@ -351,17 +575,18 @@ async fn proxy_list_models(gateway : @gw.Gateway) -> @gw.HttpResponse {
       let models = @gw.parse_models_response(response_text, provider.id)
       for m in models {
         // Avoid duplicates with config models
-        let is_dup = config_models.iter().any(fn(cm) {
-          match cm {
-            { "id": String(id), .. } => {
-              match m {
-                { "id": String(mid), .. } => id == mid
-                _ => false
-              }
+        let is_dup = config_models
+          .iter()
+          .any(fn(cm) {
+            match cm {
+              { "id": String(id), .. } =>
+                match m {
+                  { "id": String(mid), .. } => id == mid
+                  _ => false
+                }
+              _ => false
             }
-            _ => false
-          }
-        })
+          })
         if !is_dup {
           all_models.push(m)
         }
@@ -369,16 +594,9 @@ async fn proxy_list_models(gateway : @gw.Gateway) -> @gw.HttpResponse {
     }
   }
   if errors.length() > 0 {
-    let error_msg = errors.iter().fold(
-      init="",
-      fn(acc, e) {
-        if acc == "" {
-          e
-        } else {
-          acc + "; " + e
-        }
-      },
-    )
+    let error_msg = errors
+      .iter()
+      .fold(init="", fn(acc, e) { if acc == "" { e } else { acc + "; " + e } })
     return @gw.HttpResponse::error(502, error_msg)
   }
   let headers : Map[String, String] = {}
@@ -391,18 +609,18 @@ async fn proxy_list_models(gateway : @gw.Gateway) -> @gw.HttpResponse {
 /// Execute HTTP GET and return (status_code, response_body)
 async fn http_get(req : @gw.UpstreamRequest) -> (Int, String) {
   let client = @http.Client::new(req.origin) catch {
-    e => return (502, "{\"error\":{\"message\":\"Failed to connect: \{e}\"}}")
+    e => return (502, error_json("Failed to connect: " + e.to_string()))
   }
   let response = client.get(req.path, extra_headers=req.headers) catch {
     e => {
       client.close()
-      return (502, "{\"error\":{\"message\":\"Request failed: \{e}\"}}")
+      return (502, error_json("Request failed: " + e.to_string()))
     }
   }
   let response_body = @io.Reader::read_all(client) catch {
     e => {
       client.close()
-      return (502, "{\"error\":{\"message\":\"Failed to read response: \{e}\"}}")
+      return (502, error_json("Failed to read response: " + e.to_string()))
     }
   }
   let text = response_body.text() catch { _ => "" }
@@ -451,8 +669,8 @@ async fn get_codex_channel(
   let child = @subprocess.spawn_shell(
     group,
     command,
-    cwd=cwd,
-    env=env,
+    cwd~,
+    env~,
     pipe_stdin=true,
     pipe_stdout=true,
     pipe_stderr=true,
@@ -493,7 +711,11 @@ async fn fetch_codex_model_list(provider : @gw.ProviderConfig) -> Array[Json] {
   @async.with_task_group(async fn(group) {
     let api_key = expand_env(provider.api_key)
     let channel = get_codex_channel(
-      group, provider.id + "_models", codex_cfg.command, cwd, api_key,
+      group,
+      provider.id + "_models",
+      codex_cfg.command,
+      cwd,
+      api_key,
     ) catch {
       _ => {
         group.return_immediately(())
@@ -503,12 +725,18 @@ async fn fetch_codex_model_list(provider : @gw.ProviderConfig) -> Array[Json] {
     // Execute steps from dialect layer
     for step in req.steps {
       channel.send(step.message) catch {
-        _ => { group.return_immediately(()); return }
+        _ => {
+          group.return_immediately(())
+          return
+        }
       }
       match step.kind {
         @codex.Request => {
           let line = channel.recv() catch {
-            _ => { group.return_immediately(()); return }
+            _ => {
+              group.return_immediately(())
+              return
+            }
           }
           match line {
             Some(text) => {
@@ -517,7 +745,8 @@ async fn fetch_codex_model_list(provider : @gw.ProviderConfig) -> Array[Json] {
               match json {
                 { "result": result, .. } => {
                   let parsed = @codex.parse_codex_model_list_result(
-                    result, provider.id,
+                    result,
+                    provider.id,
                   )
                   for m in parsed {
                     models.push(m)
@@ -526,7 +755,10 @@ async fn fetch_codex_model_list(provider : @gw.ProviderConfig) -> Array[Json] {
                 _ => ()
               }
             }
-            None => { group.return_immediately(()); return }
+            None => {
+              group.return_immediately(())
+              return
+            }
           }
         }
         @codex.Notification => continue
@@ -562,9 +794,7 @@ async fn proxy_to_codex_backend(
   )
   @async.with_task_group(async fn(group) {
     let api_key = expand_env(provider.api_key)
-    let channel = get_codex_channel(
-      group, provider.id, command, cwd, api_key,
-    ) catch {
+    let channel = get_codex_channel(group, provider.id, command, cwd, api_key) catch {
       e => {
         result = @gw.HttpResponse::error(502, e.to_string())
         group.return_immediately(())
@@ -581,11 +811,15 @@ async fn proxy_to_codex_backend(
     )
     let req = @codex.prepare_codex_upstream(codex_body, state.session)
     let (events_json, new_session) = codex_stdio_execute(
-      channel, req.steps, req.next_session,
+      channel,
+      req.steps,
+      req.next_session,
     )
     state.session = new_session
     let final_body = @gw.transform_response(
-      events_json, @gw.GatewaySurface::Codex, target_dialect,
+      events_json,
+      @gw.GatewaySurface::Codex,
+      target_dialect,
     )
     let headers : Map[String, String] = {}
     headers["Content-Type"] = "application/json"
@@ -610,7 +844,8 @@ async fn codex_stdio_execute(
       TurnStart =>
         if current_session.thread_id != "" {
           @codex.patch_turn_start_thread_id(
-            step.message, current_session.thread_id,
+            step.message,
+            current_session.thread_id,
           )
         } else {
           step.message
@@ -634,7 +869,9 @@ async fn codex_stdio_execute(
         let line = channel.recv() catch {
           e =>
             return (
-              @codex.codex_ipc_error_event("Codex recv failed: " + e.to_string()),
+              @codex.codex_ipc_error_event(
+                "Codex recv failed: " + e.to_string(),
+              ),
               current_session,
             )
         }
@@ -660,7 +897,9 @@ async fn codex_stdio_execute(
         let first_line = channel.recv() catch {
           e =>
             return (
-              @codex.codex_ipc_error_event("Codex recv failed: " + e.to_string()),
+              @codex.codex_ipc_error_event(
+                "Codex recv failed: " + e.to_string(),
+              ),
               current_session,
             )
         }
@@ -669,11 +908,7 @@ async fn codex_stdio_execute(
             let json = @json.parse(text) catch { _ => Json::null() }
             // Check for error response
             match json {
-              { "error": _, .. } =>
-                return (
-                  "[" + text + "]",
-                  current_session,
-                )
+              { "error": _, .. } => return ("[" + text + "]", current_session)
               _ => ()
             }
           }
@@ -693,8 +928,7 @@ async fn codex_stdio_execute(
               events.push(json)
               // Check if this is turn/completed
               match json {
-                { "method": String("turn/completed"), .. } =>
-                  turn_done = true
+                { "method": String("turn/completed"), .. } => turn_done = true
                 _ => ()
               }
             }
@@ -808,7 +1042,11 @@ async fn proxy_to_claude_mcp_backend(
     // then extract prompt via claude_mcp dialect transform
     let openai_body = if target_dialect != @gw.GatewaySurface::OpenAI {
       @gw.transform_for_provider(
-        provider, body, target_dialect, @gw.GatewaySurface::OpenAI, model,
+        provider,
+        body,
+        target_dialect,
+        @gw.GatewaySurface::OpenAI,
+        model,
       )
     } else {
       body
@@ -826,17 +1064,23 @@ async fn proxy_to_claude_mcp_backend(
     let arguments : Json = { "command": prompt }
     // Prepare tools/call steps (includes MCP init if needed)
     let req = @claude_mcp.prepare_tools_call(
-      state.session, tool_name, arguments,
+      state.session,
+      tool_name,
+      arguments,
     )
     let (response_text, new_session) = claude_mcp_stdio_execute(
-      channel, req.steps, req.next_session,
+      channel,
+      req.steps,
+      req.next_session,
     )
     state.session = new_session
     // Transform result to OpenAI, then to target surface if needed
     let openai_response = @claude_mcp.tools_result_to_chat(response_text)
     let final_body = if target_dialect != @gw.GatewaySurface::OpenAI {
       @gw.transform_response(
-        openai_response, @gw.GatewaySurface::OpenAI, target_dialect,
+        openai_response,
+        @gw.GatewaySurface::OpenAI,
+        target_dialect,
       )
     } else {
       openai_response
@@ -935,7 +1179,7 @@ async fn run_server(gateway : @gw.Gateway, host : String, port : Int) -> Unit {
     let body_data = @io.Reader::read_all(body_reader) catch {
       _ => {
         conn.send_response(400, "Bad Request")
-        conn.write("{\"error\":{\"message\":\"Failed to read body\"}}")
+        conn.write(error_json("Failed to read body"))
         conn.end_response()
         return
       }
@@ -951,22 +1195,25 @@ async fn run_server(gateway : @gw.Gateway, host : String, port : Int) -> Unit {
     }
     if meth == "OPTIONS" {
       let headers : Map[String, String] = {}
-      headers["Access-Control-Allow-Origin"] = "*"
-      headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
-      headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+      @gw.set_cors_headers(headers)
       conn.send_response(204, "No Content", extra_headers=headers)
       conn.end_response()
       return
     }
-    let response = handle_request(gateway, meth, req.path, body_text)
-    let response_with_cors = @gw.add_cors_headers(response)
-    conn.send_response(
-      response_with_cors.status,
-      "OK",
-      extra_headers=response_with_cors.headers,
-    )
-    conn.write(response_with_cors.body)
-    conn.end_response()
+    let result = handle_request(gateway, meth, req.path, body_text, conn)
+    match result {
+      @gw.HandleResult::Response(response) => {
+        let response_with_cors = @gw.add_cors_headers(response)
+        conn.send_response(
+          response_with_cors.status,
+          "OK",
+          extra_headers=response_with_cors.headers,
+        )
+        conn.write(response_with_cors.body)
+        conn.end_response()
+      }
+      @gw.HandleResult::Streamed => () // already handled
+    }
   })
 }
 
@@ -975,7 +1222,7 @@ fn validate_config(config : @gw.GatewayConfig) -> Unit raise @gw.GatewayError {
   for provider_id, provider in config.providers {
     // Codex app-server and `claude mcp serve` don't require API key
     if provider.api == @gw.ModelApi::CodexAppServer ||
-       provider.api == @gw.ModelApi::ClaudeMcpServe {
+      provider.api == @gw.ModelApi::ClaudeMcpServe {
       continue
     }
     let api_key = expand_env(provider.api_key)

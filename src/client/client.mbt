@@ -138,15 +138,6 @@ pub(all) struct StreamEvent {
 }
 
 ///|
-/// Select the appropriate SSE chunk parser for a provider
-fn get_chunk_parser(provider : Provider) -> (String) -> @sse.ParsedChunk {
-  match provider {
-    Anthropic => @sse.parse_anthropic_sse_chunk
-    OpenAI | OpenAICompatible(_) => @sse.parse_openai_sse_chunk
-  }
-}
-
-///|
 /// Send a chat request with streaming
 pub async fn chat_stream(
   config : ClientConfig,
@@ -194,7 +185,6 @@ pub async fn chat_stream(
     let body_str = bytes_to_string(body_bytes)
     raise ClientError::ApiError(code=response.code, message=body_str)
   }
-  let parse_chunk = get_chunk_parser(config.provider)
   let buffer = StringBuilder::new()
   let all_events : Array[@sse.SseEvent] = []
   while true {
@@ -204,7 +194,7 @@ pub async fn chat_stream(
       Some(bytes) => {
         let text = bytes_to_string(bytes)
         buffer.write_string(text)
-        let result = parse_chunk(buffer.to_string())
+        let result = @sse.parse_sse_chunk(buffer.to_string())
         for e in result.events {
           on_event({ event: e.event, data: e.data })
           all_events.push(e)
@@ -216,7 +206,7 @@ pub async fn chat_stream(
   }
   let remaining = buffer.to_string()
   if remaining.length() > 0 {
-    let result = parse_chunk(remaining + "\n")
+    let result = @sse.parse_sse_chunk(remaining + "\n")
     for e in result.events {
       on_event({ event: e.event, data: e.data })
       all_events.push(e)

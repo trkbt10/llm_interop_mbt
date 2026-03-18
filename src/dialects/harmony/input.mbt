@@ -14,7 +14,9 @@ pub fn responses_input_to_messages(
     match item {
       // System message
       { "role": String("system"), "content": content, .. } =>
-        messages.push(@types.ModelMessage::System(extract_text_content(content)))
+        messages.push(
+          @types.ModelMessage::System(extract_text_content(content)),
+        )
       // User message
       { "role": String("user"), "content": content, .. } => {
         // Flush any pending tool calls as assistant message

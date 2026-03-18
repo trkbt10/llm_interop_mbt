@@ -1,0 +1,29 @@
+{
+  "model": "openai/gpt-oss-20b",
+  "instructions": "Be concise",
+  "stream": true,
+  "input": [
+    { "role": "user", "content": "What time is it now?" },
+    {
+      "type": "function_call",
+      "call_id": "fc_06be3e05-a8ca-4627-8a98-42a8476bd29a",
+      "name": "datetime",
+      "arguments": "{}",
+      "status": "completed"
+    },
+    {
+      "type": "function_call_output",
+      "call_id": "fc_06be3e05-a8ca-4627-8a98-42a8476bd29a",
+      "output": "2026-03-18T16:25:00+09:00"
+    },
+    { "role": "user", "content": "And what day of the week is that?" }
+  ],
+  "tools": [
+    {
+      "type": "function",
+      "name": "datetime",
+      "description": "Get current datetime",
+      "parameters": { "type": "object", "properties": {} }
+    }
+  ]
+}

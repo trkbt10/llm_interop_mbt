@@ -1,0 +1,16 @@
+{
+  "model": "openai/gpt-oss-20b",
+  "instructions": "Be concise",
+  "stream": true,
+  "input": [
+    { "role": "user", "content": "What time is it now?" }
+  ],
+  "tools": [
+    {
+      "type": "function",
+      "name": "datetime",
+      "description": "Get current datetime",
+      "parameters": { "type": "object", "properties": {} }
+    }
+  ]
+}

@@ -1,32 +1,16 @@
 ///|
-/// SSE parser functions
+/// SSE parser for complete (non-chunked) JSONL content
 
 ///|
-/// Parse Chat Completions format JSONL
-/// Format: Each line is JSON (no event: header). Ends with [DONE].
-pub fn parse_chat_completions_jsonl(content : String) -> Array[SseEvent] raise {
+/// Parse JSONL content into SSE events.
+/// Each line is parsed as JSON. If the JSON has "event" and "data" fields,
+/// they are extracted; otherwise the entire JSON becomes the data with event="".
+/// Blank lines and [DONE] markers are skipped.
+pub fn parse_jsonl(content : String) -> Array[SseEvent] raise {
   let events : Array[SseEvent] = []
-  let lines = @utils.split_lines(content)
-  for line in lines {
+  for line in @utils.split_lines(content) {
     let trimmed = line.trim().to_string()
     if trimmed.length() == 0 || trimmed == "[DONE]" {
-      continue
-    }
-    let json = @json.parse(trimmed)
-    events.push({ event: "", data: json })
-  }
-  events
-}
-
-///|
-/// Parse Responses API / Anthropic Messages format JSONL
-/// Format: Each line is {"event":"...","data":{...}}
-pub fn parse_event_stream_jsonl(content : String) -> Array[SseEvent] raise {
-  let events : Array[SseEvent] = []
-  let lines = @utils.split_lines(content)
-  for line in lines {
-    let trimmed = line.trim().to_string()
-    if trimmed.length() == 0 {
       continue
     }
     let json = @json.parse(trimmed)

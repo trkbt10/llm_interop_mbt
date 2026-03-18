@@ -26,7 +26,7 @@ pub fn prepare_upstream(
   let to = provider.api.to_dialect()
   // Apply model alias: map incoming model name to backend model name
   let backend_model = match provider.model_aliases.get(model) {
-    Some(alias) => alias
+    Some(mapped) => mapped
     None => model
   }
   let ctx = build_transform_context(provider, backend_model)

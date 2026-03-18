@@ -182,7 +182,7 @@ test "build_tools_call_request: empty arguments" {
     {
       "params": { "name": String("EmptyTool"), "arguments": Object(obj), .. },
       ..
-    } => assert_eq(obj.size(), 0)
+    } => assert_eq(obj.length(), 0)
     _ => fail("Empty arguments not preserved")
   }
 }
@@ -235,7 +235,7 @@ test "McpToolDefinition::from_json: missing inputSchema" {
       assert_eq(t.name, "Test")
       // inputSchema should default to empty object
       match t.input_schema {
-        Object(obj) => assert_eq(obj.size(), 0)
+        Object(obj) => assert_eq(obj.length(), 0)
         _ => fail("Default inputSchema should be empty object")
       }
     }

@@ -27,10 +27,25 @@ pub fn HttpResponse::ok(body : Json) -> HttpResponse {
 }
 
 ///|
-/// Add CORS headers
+/// Result of handling an HTTP request
+pub(all) enum HandleResult {
+  /// Non-streaming: caller writes response to connection
+  Response(HttpResponse)
+  /// Streaming: handler already wrote SSE events to connection
+  Streamed
+}
+
+///|
+/// Set CORS headers on a header map
+pub fn set_cors_headers(headers : Map[String, String]) -> Unit {
+  headers["Access-Control-Allow-Origin"] = "*"
+  headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
+  headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+}
+
+///|
+/// Add CORS headers to an HttpResponse
 pub fn add_cors_headers(resp : HttpResponse) -> HttpResponse {
-  resp.headers["Access-Control-Allow-Origin"] = "*"
-  resp.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
-  resp.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+  set_cors_headers(resp.headers)
   resp
 }

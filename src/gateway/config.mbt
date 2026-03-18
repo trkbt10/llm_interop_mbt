@@ -106,15 +106,27 @@ fn parse_codex_config(json : Json) -> @codex.CodexConfig? {
       let defaults = @codex.CodexConfig::default()
       Some({
         command: obj_string(obj, "command", defaults.command),
-        approval_policy: obj_opt_string(obj, "approvalPolicy", defaults.approval_policy),
-        thread_sandbox: obj_opt_string(obj, "threadSandbox", defaults.thread_sandbox),
+        approval_policy: obj_opt_string(
+          obj,
+          "approvalPolicy",
+          defaults.approval_policy,
+        ),
+        thread_sandbox: obj_opt_string(
+          obj,
+          "threadSandbox",
+          defaults.thread_sandbox,
+        ),
         turn_sandbox_policy: obj_opt_string(
-          obj, "turnSandboxPolicy", defaults.turn_sandbox_policy,
+          obj,
+          "turnSandboxPolicy",
+          defaults.turn_sandbox_policy,
         ),
         turn_timeout_ms: obj_int(obj, "turnTimeoutMs", defaults.turn_timeout_ms),
         read_timeout_ms: obj_int(obj, "readTimeoutMs", defaults.read_timeout_ms),
         stall_timeout_ms: obj_int(
-          obj, "stallTimeoutMs", defaults.stall_timeout_ms,
+          obj,
+          "stallTimeoutMs",
+          defaults.stall_timeout_ms,
         ),
       })
     }
@@ -391,9 +403,7 @@ fn parse_compat(json : Json) -> ModelCompatConfig {
         supports_store: obj_bool(obj, "supportsStore"),
         supports_developer_role: obj_bool(obj, "supportsDeveloperRole"),
         supports_reasoning_effort: obj_bool(obj, "supportsReasoningEffort"),
-        supports_usage_in_streaming: obj_bool(
-          obj, "supportsUsageInStreaming",
-        ),
+        supports_usage_in_streaming: obj_bool(obj, "supportsUsageInStreaming"),
         supports_strict_mode: obj_bool(obj, "supportsStrictMode"),
         max_tokens_field: obj_string(obj, "maxTokensField", "max_tokens"),
         thinking_format: obj_string(obj, "thinkingFormat", ""),

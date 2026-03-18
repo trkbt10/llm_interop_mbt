@@ -48,6 +48,114 @@ pub fn responses_request_to_chat_completions(
 }
 
 ///|
+/// Convert a complete (non-streaming) Chat Completions response into synthetic
+/// SSE events that HarmonyToResponsesTranslator can process.
+///
+/// This enables streaming Responses API output even when the backend only
+/// supports synchronous Chat Completions. The translator sees the same event
+/// shapes it would see from a real SSE stream.
+pub fn chat_completion_to_synthetic_events(
+  response_json : Json,
+) -> Array[@sse.SseEvent] {
+  let events : Array[@sse.SseEvent] = []
+  match response_json {
+    { "choices": Array(choices), .. } =>
+      if choices.length() > 0 {
+        let choice = choices[0]
+        // 1) Init event: role assignment with empty content
+        events.push({
+          event: "",
+          data: {
+            "choices": Json::array([
+              {
+                "index": 0,
+                "delta": { "role": "assistant", "content": "" },
+                "finish_reason": Json::null(),
+              },
+            ]),
+          },
+        })
+        let message = match choice {
+          { "message": msg, .. } => msg
+          _ => Json::null()
+        }
+        let finish_reason = match choice {
+          { "finish_reason": fr, .. } => fr
+          _ => Json::string("stop")
+        }
+        // 2) Content delta (if present)
+        match message {
+          { "content": String(content), .. } =>
+            if content.length() > 0 {
+              events.push({
+                event: "",
+                data: {
+                  "choices": Json::array([
+                    {
+                      "index": 0,
+                      "delta": { "content": content },
+                      "finish_reason": Json::null(),
+                    },
+                  ]),
+                },
+              })
+            }
+          _ => ()
+        }
+        // 3) Tool call deltas (if present)
+        match message {
+          { "tool_calls": Array(tool_calls), .. } =>
+            if tool_calls.length() > 0 {
+              let tc_deltas : Array[Json] = []
+              for i, tc in tool_calls {
+                let tc_obj : Map[String, Json] = {}
+                tc_obj["index"] = Json::number(i.to_double())
+                match tc {
+                  { "id": id, .. } => tc_obj["id"] = id
+                  _ => ()
+                }
+                tc_obj["type"] = Json::string("function")
+                match tc {
+                  { "function": func, .. } => tc_obj["function"] = func
+                  _ => ()
+                }
+                tc_deltas.push(Json::object(tc_obj))
+              }
+              events.push({
+                event: "",
+                data: {
+                  "choices": Json::array([
+                    {
+                      "index": 0,
+                      "delta": { "tool_calls": Json::array(tc_deltas) },
+                      "finish_reason": Json::null(),
+                    },
+                  ]),
+                },
+              })
+            }
+          _ => ()
+        }
+        // 4) Finish event
+        events.push({
+          event: "",
+          data: {
+            "choices": Json::array([
+              {
+                "index": 0,
+                "delta": Json::object({}),
+                "finish_reason": finish_reason,
+              },
+            ]),
+          },
+        })
+      }
+    _ => ()
+  }
+  events
+}
+
+///|
 fn convert_responses_tools_to_chat(tools : Array[Json]) -> Array[Json] {
   let result : Array[Json] = []
   for tool in tools {
@@ -84,10 +192,7 @@ fn convert_responses_tools_to_chat(tools : Array[Json]) -> Array[Json] {
           { "strict": strict, .. } => fn_obj["strict"] = strict
           _ => ()
         }
-        result.push({
-          "type": "function",
-          "function": Json::object(fn_obj),
-        })
+        result.push({ "type": "function", "function": Json::object(fn_obj) })
       }
       // Already in Chat Completions format (has nested "function" key)
       { "type": String("function"), "function": _, .. } => result.push(tool)

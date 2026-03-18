@@ -463,5 +463,5 @@ test "ClaudeMcpConfig::default" {
   assert_eq(cfg.command, "claude")
   assert_eq(cfg.args, ["mcp", "serve"])
   assert_eq(cfg.timeout_ms, 30000)
-  assert_eq(cfg.env.size(), 0)
+  assert_eq(cfg.env.length(), 0)
 }

@@ -21,7 +21,7 @@ fn translate_harmony_fixture(
   response_id : String,
 ) -> Array[@sse.SseEvent] raise {
   let content = read_harmony_fixture(path)
-  let events = @sse.parse_chat_completions_jsonl(content)
+  let events = @sse.parse_jsonl(content)
   let translator = HarmonyToResponsesTranslator::new(response_id~)
   let translated : Array[@sse.SseEvent] = []
   for event in events {
@@ -450,7 +450,7 @@ test "HarmonyToResponsesTranslator: tool call streaming" {
 ///|
 test "HarmonyToResponsesTranslator: fixture text stream round-trips to Responses API" {
   let translated = translate_harmony_fixture(
-    "testdata/groq/harmony/text_stream.jsonl", test_response_id,
+    "testdata/groq/harmony/stream/text.jsonl", test_response_id,
   ) catch {
     err => {
       fail("Failed to translate fixture: " + err.to_string())
@@ -467,7 +467,7 @@ test "HarmonyToResponsesTranslator: fixture text stream round-trips to Responses
 ///|
 test "HarmonyToResponsesTranslator: fixture multi tool stream keeps chunk routing" {
   let translated = translate_harmony_fixture(
-    "testdata/groq/harmony/multi_toolcall_stream.jsonl", test_response_id,
+    "testdata/groq/harmony/stream/multi_toolcall.jsonl", test_response_id,
   ) catch {
     err => {
       fail("Failed to translate fixture: " + err.to_string())
@@ -587,4 +587,327 @@ test "responses_request_to_chat_completions: maps web search tool to function to
       }
     _ => fail("Expected tools in request")
   }
+}
+
+// =============================================================================
+// E2E: Responses API request → Harmony conversion → Groq response → ModelResponse
+//
+// Fixture triplets per turn:
+//   *_request.json  — Responses API input (what client sends)
+//   *_stream.txt    — Groq streaming SSE response (backend output)
+//   *_sync.json     — Groq synchronous JSON response (backend output)
+//
+// Tests verify the full chain:
+//   1. request fixture → responses_request_to_chat_completions → valid Chat Completions
+//   2. response fixture (stream) → translator pipeline → ModelResponse
+//   3. response fixture (sync) → synthetic pipeline → ModelResponse
+//   4. stream == sync equivalence
+// =============================================================================
+
+///|
+fn strip_sse_to_jsonl(raw : String) -> String {
+  let buf = StringBuilder::new()
+  for line in @utils.split_lines(raw) {
+    let trimmed = line.trim().to_string()
+    if trimmed.has_prefix("data: ") {
+      let content = StringBuilder::new()
+      let mut idx = 0
+      for c in trimmed {
+        if idx >= 6 {
+          content.write_char(c)
+        }
+        idx = idx + 1
+      }
+      let c = content.to_string()
+      if c != "[DONE]" {
+        buf.write_string(c + "\n")
+      }
+    }
+  }
+  buf.to_string()
+}
+
+///|
+fn streaming_fixture_to_model_response(
+  path : String,
+  response_id : String,
+) -> @types.ModelResponse raise {
+  let raw = @utils.read_testdata(path)
+  let events = @sse.parse_jsonl(strip_sse_to_jsonl(raw))
+  let translator = HarmonyToResponsesTranslator::new(response_id~)
+  let acc = @openai.ResponsesApiAccumulator::new()
+  for event in events {
+    for pair in translator.translate(event) {
+      let wire = @sse.format_sse_event(pair.0, pair.1)
+      for e in @sse.parse_sse_chunk(wire).events {
+        acc.feed(e)
+      }
+    }
+  }
+  acc.finish()
+}
+
+///|
+fn sync_fixture_to_model_response(
+  path : String,
+  response_id : String,
+) -> @types.ModelResponse raise {
+  let raw = @utils.read_testdata(path)
+  let json = @json.parse(raw)
+  let events = chat_completion_to_synthetic_events(json)
+  let translator = HarmonyToResponsesTranslator::new(response_id~)
+  let acc = @openai.ResponsesApiAccumulator::new()
+  for event in events {
+    for pair in translator.translate(event) {
+      let wire = @sse.format_sse_event(pair.0, pair.1)
+      for e in @sse.parse_sse_chunk(wire).events {
+        acc.feed(e)
+      }
+    }
+  }
+  acc.finish()
+}
+
+// --- Input: Responses API request → Harmony Chat Completions conversion ---
+
+///|
+test "e2e/input/turn1: request fixture → harmony conversion has tools and stream" {
+  let raw = @utils.read_testdata(
+    "testdata/groq/harmony/multiturn_toolcall/turn1_request.json",
+  ) catch {
+    e => {
+      fail(e.to_string())
+      return
+    }
+  }
+  let request = @json.parse(raw) catch {
+    e => {
+      fail(e.to_string())
+      return
+    }
+  }
+  let chat = responses_request_to_chat_completions(request, stream=true)
+  // Must have stream=true
+  match chat {
+    { "stream": True, .. } => ()
+    _ => fail("Expected stream=true")
+  }
+  // Must have tools with nested function format
+  match chat {
+    { "tools": Array(tools), .. } => {
+      assert_eq(tools.length(), 1)
+      match tools[0] {
+        {
+          "type": String("function"),
+          "function": { "name": String(n), .. },
+          ..
+        } => assert_eq(n, "datetime")
+        _ => fail("Expected nested function tool format")
+      }
+    }
+    _ => fail("Expected tools")
+  }
+  // Must have system message from instructions + user message
+  match chat {
+    { "messages": Array(msgs), .. } => {
+      assert_eq(msgs.length(), 2)
+      match msgs[0] {
+        { "role": String("system"), "content": String(c), .. } =>
+          assert_eq(c, "Be concise")
+        _ => fail("Expected system message")
+      }
+    }
+    _ => fail("Expected messages")
+  }
+}
+
+///|
+test "e2e/input/turn2: request fixture → harmony conversion has multiturn with tool result" {
+  let raw = @utils.read_testdata(
+    "testdata/groq/harmony/multiturn_toolcall/turn2_request.json",
+  ) catch {
+    e => {
+      fail(e.to_string())
+      return
+    }
+  }
+  let request = @json.parse(raw) catch {
+    e => {
+      fail(e.to_string())
+      return
+    }
+  }
+  let chat = responses_request_to_chat_completions(request, stream=true)
+  match chat {
+    { "messages": Array(msgs), .. } => {
+      // system, user, assistant(tool_calls), tool(result), user
+      assert_eq(msgs.length(), 5)
+      // assistant message must have tool_calls
+      match msgs[2] {
+        { "role": String("assistant"), "tool_calls": Array(tc), .. } =>
+          assert_eq(tc.length(), 1)
+        _ => fail("Expected assistant with tool_calls")
+      }
+      // tool result message
+      match msgs[3] {
+        { "role": String("tool"), "content": String(c), .. } =>
+          assert_true(c.contains("2026-03-18"))
+        _ => fail("Expected tool message")
+      }
+      // follow-up user message
+      match msgs[4] {
+        { "role": String("user"), "content": String(c), .. } =>
+          assert_true(c.contains("day of the week"))
+        _ => fail("Expected user follow-up")
+      }
+    }
+    _ => fail("Expected messages")
+  }
+}
+
+// --- Output: Groq response → pipeline → ModelResponse ---
+
+///|
+test "e2e/output/turn1/stream: tool call name" {
+  match
+    streaming_fixture_to_model_response(
+      "testdata/groq/harmony/multiturn_toolcall/turn1_stream.txt", "r",
+    ) {
+    @types.ModelResponse::ToolCalls(calls) => {
+      assert_eq(calls.length(), 1)
+      assert_eq(calls[0].name, "datetime")
+    }
+    _ => fail("Expected ToolCalls")
+  }
+}
+
+///|
+test "e2e/output/turn1/sync: tool call name" {
+  match
+    sync_fixture_to_model_response(
+      "testdata/groq/harmony/multiturn_toolcall/turn1_sync.json", "r",
+    ) {
+    @types.ModelResponse::ToolCalls(calls) => {
+      assert_eq(calls.length(), 1)
+      assert_eq(calls[0].name, "datetime")
+    }
+    _ => fail("Expected ToolCalls")
+  }
+}
+
+///|
+test "e2e/output/turn1/equiv: stream == sync" {
+  let s = streaming_fixture_to_model_response(
+    "testdata/groq/harmony/multiturn_toolcall/turn1_stream.txt", "r",
+  )
+  let n = sync_fixture_to_model_response(
+    "testdata/groq/harmony/multiturn_toolcall/turn1_sync.json", "r",
+  )
+  match (s, n) {
+    (@types.ModelResponse::ToolCalls(a), @types.ModelResponse::ToolCalls(b)) => {
+      assert_eq(a[0].name, b[0].name)
+      assert_eq(a[0].arguments.stringify(), b[0].arguments.stringify())
+    }
+    _ => fail("Both should be ToolCalls")
+  }
+}
+
+///|
+test "e2e/output/turn2/stream: text references Wednesday" {
+  match
+    streaming_fixture_to_model_response(
+      "testdata/groq/harmony/multiturn_toolcall/turn2_stream.txt", "r",
+    ) {
+    @types.ModelResponse::Text(text) => assert_true(text.contains("Wednesday"))
+    _ => fail("Expected Text")
+  }
+}
+
+///|
+test "e2e/output/turn2/sync: text references Wednesday" {
+  match
+    sync_fixture_to_model_response(
+      "testdata/groq/harmony/multiturn_toolcall/turn2_sync.json", "r",
+    ) {
+    @types.ModelResponse::Text(text) => assert_true(text.contains("Wednesday"))
+    _ => fail("Expected Text")
+  }
+}
+
+///|
+test "e2e/output/turn2/equiv: stream == sync" {
+  let s = streaming_fixture_to_model_response(
+    "testdata/groq/harmony/multiturn_toolcall/turn2_stream.txt", "r",
+  )
+  let n = sync_fixture_to_model_response(
+    "testdata/groq/harmony/multiturn_toolcall/turn2_sync.json", "r",
+  )
+  match (s, n) {
+    (@types.ModelResponse::Text(a), @types.ModelResponse::Text(b)) => {
+      assert_true(a.contains("Wednesday"))
+      assert_true(b.contains("Wednesday"))
+    }
+    _ => fail("Both should be Text")
+  }
+}
+
+// --- Lifecycle ---
+
+///|
+test "e2e/lifecycle/turn1/stream: created → function_call → completed" {
+  let raw = @utils.read_testdata(
+    "testdata/groq/harmony/multiturn_toolcall/turn1_stream.txt",
+  ) catch {
+    e => {
+      fail(e.to_string())
+      return
+    }
+  }
+  let events = @sse.parse_jsonl(strip_sse_to_jsonl(raw)) catch {
+    e => {
+      fail(e.to_string())
+      return
+    }
+  }
+  let translator = HarmonyToResponsesTranslator::new(response_id="r")
+  let types : Array[String] = []
+  for event in events {
+    for pair in translator.translate(event) {
+      types.push(pair.0)
+    }
+  }
+  assert_eq(types[0], "response.created")
+  assert_eq(types[1], "response.in_progress")
+  assert_eq(types[types.length() - 1], "response.completed")
+  assert_true(types.contains("response.output_item.added"))
+  assert_true(types.contains("response.function_call_arguments.done"))
+}
+
+///|
+test "e2e/lifecycle/turn2/stream: created → text_delta → completed" {
+  let raw = @utils.read_testdata(
+    "testdata/groq/harmony/multiturn_toolcall/turn2_stream.txt",
+  ) catch {
+    e => {
+      fail(e.to_string())
+      return
+    }
+  }
+  let events = @sse.parse_jsonl(strip_sse_to_jsonl(raw)) catch {
+    e => {
+      fail(e.to_string())
+      return
+    }
+  }
+  let translator = HarmonyToResponsesTranslator::new(response_id="r")
+  let types : Array[String] = []
+  for event in events {
+    for pair in translator.translate(event) {
+      types.push(pair.0)
+    }
+  }
+  assert_eq(types[0], "response.created")
+  assert_eq(types[types.length() - 1], "response.completed")
+  assert_true(types.contains("response.output_text.delta"))
+  assert_true(types.contains("response.output_text.done"))
 }

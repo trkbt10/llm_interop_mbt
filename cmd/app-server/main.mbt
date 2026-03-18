@@ -511,7 +511,7 @@ async fn http_post_streaming(
   let mut total_tokens = 0
   while @io.Reader::read_until(client, "\n") is Some(line) {
     let to_parse = remaining + line + "\n"
-    let parsed = @sse.parse_openai_sse_chunk(to_parse)
+    let parsed = @sse.parse_sse_chunk(to_parse)
     remaining = parsed.remaining
     for event in parsed.events {
       // Extract content delta

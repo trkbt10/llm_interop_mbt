@@ -48,7 +48,8 @@ pub fn parse_models_response(
   let models : Array[Json] = []
   for m in data {
     match m {
-      { "id": String(id), .. } => models.push(model_to_list_json(id, provider_id))
+      { "id": String(id), .. } =>
+        models.push(model_to_list_json(id, provider_id))
       _ => ()
     }
   }

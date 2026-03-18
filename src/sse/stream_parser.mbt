@@ -1,5 +1,5 @@
 ///|
-/// Chunk-based SSE stream parsers
+/// Chunk-based SSE stream parser
 /// Handles incomplete lines across chunk boundaries
 
 ///|
@@ -10,40 +10,10 @@ pub(all) struct ParsedChunk {
 }
 
 ///|
-/// Parse SSE chunk in OpenAI "data: json" format
-pub fn parse_openai_sse_chunk(content : String) -> ParsedChunk {
-  let events : Array[SseEvent] = []
-  let lines = @utils.split_lines(content)
-  let remaining = StringBuilder::new()
-  let mut i = 0
-  while i < lines.length() {
-    let line = lines[i]
-    let trimmed = line.trim().to_string()
-    if i == lines.length() - 1 &&
-      trimmed.length() > 0 &&
-      not(content.has_suffix("\n")) {
-      remaining.write_string(line)
-      break
-    }
-    if trimmed.length() == 0 || trimmed == "[DONE]" {
-      i = i + 1
-      continue
-    }
-    if trimmed.has_prefix("data:") {
-      let data_str = safe_substring(trimmed, 5)
-      if data_str != "[DONE]" {
-        let data = @json.parse(data_str) catch { _ => Json::null() }
-        events.push({ event: "", data })
-      }
-    }
-    i = i + 1
-  }
-  { events, remaining: remaining.to_string() }
-}
-
-///|
-/// Parse SSE chunk in Anthropic "event: type\ndata: json" format
-pub fn parse_anthropic_sse_chunk(content : String) -> ParsedChunk {
+/// Parse an SSE chunk, handling both "event: type\ndata: json" and
+/// bare "data: json" formats. Incomplete trailing lines are returned
+/// in `remaining` for the caller to prepend to the next chunk.
+pub fn parse_sse_chunk(content : String) -> ParsedChunk {
   let events : Array[SseEvent] = []
   let lines = @utils.split_lines(content)
   let remaining = StringBuilder::new()
@@ -68,14 +38,18 @@ pub fn parse_anthropic_sse_chunk(content : String) -> ParsedChunk {
         let data_line = lines[i].trim().to_string()
         if data_line.has_prefix("data:") {
           let data_str = safe_substring(data_line, 5)
-          let data = @json.parse(data_str) catch { _ => Json::null() }
-          events.push({ event: event_type, data })
+          if data_str != "[DONE]" {
+            let data = @json.parse(data_str) catch { _ => Json::null() }
+            events.push({ event: event_type, data })
+          }
         }
       }
     } else if trimmed.has_prefix("data:") {
       let data_str = safe_substring(trimmed, 5)
-      let data = @json.parse(data_str) catch { _ => Json::null() }
-      events.push({ event: "", data })
+      if data_str != "[DONE]" {
+        let data = @json.parse(data_str) catch { _ => Json::null() }
+        events.push({ event: "", data })
+      }
     }
     i = i + 1
   }

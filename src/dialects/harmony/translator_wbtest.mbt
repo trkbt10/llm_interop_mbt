@@ -19,17 +19,18 @@ test "translator: response.created has response.id" {
   let created = events[0]
   assert_eq(created.0, "response.created")
   match created.1 {
-    { "type": String("response.created"), "response": { "id": String(id), .. }, .. } =>
-      assert_eq(id, "resp_test_123")
+    {
+      "type": String("response.created"),
+      "response": { "id": String(id), .. },
+      ..
+    } => assert_eq(id, "resp_test_123")
     _ => fail("response.created missing response.id")
   }
 }
 
 ///|
 test "translator: output_text.delta has required fields" {
-  let translator = HarmonyToResponsesTranslator::new(
-    response_id="resp_001",
-  )
+  let translator = HarmonyToResponsesTranslator::new(response_id="resp_001")
   // Init
   ignore(
     translator.translate({
@@ -45,15 +46,13 @@ test "translator: output_text.delta has required fields" {
   let events = translator.translate({
     event: "",
     data: {
-      "choices": Json::array([
-        { "index": 0, "delta": { "content": "Hello" } },
-      ]),
+      "choices": Json::array([{ "index": 0, "delta": { "content": "Hello" } }]),
     },
   })
   // Find delta event (after output_item.added and content_part.added)
-  let delta = events.iter().find_first(fn(e) {
-    e.0 == "response.output_text.delta"
-  })
+  let delta = events
+    .iter()
+    .find_first(fn(e) { e.0 == "response.output_text.delta" })
   match delta {
     Some((_, data)) =>
       match data {
@@ -76,9 +75,7 @@ test "translator: output_text.delta has required fields" {
 
 ///|
 test "translator: function_call output_item.added has correct structure" {
-  let translator = HarmonyToResponsesTranslator::new(
-    response_id="resp_001",
-  )
+  let translator = HarmonyToResponsesTranslator::new(response_id="resp_001")
   // Init
   ignore(
     translator.translate({
@@ -102,10 +99,7 @@ test "translator: function_call output_item.added has correct structure" {
               {
                 "id": "call_abc",
                 "type": "function",
-                "function": {
-                  "name": "shell",
-                  "arguments": "{\"cmd\":\"ls\"}",
-                },
+                "function": { "name": "shell", "arguments": "{\"cmd\":\"ls\"}" },
               },
             ]),
           },
@@ -114,9 +108,9 @@ test "translator: function_call output_item.added has correct structure" {
     },
   })
   // output_item.added for function_call
-  let added = events.iter().find_first(fn(e) {
-    e.0 == "response.output_item.added"
-  })
+  let added = events
+    .iter()
+    .find_first(fn(e) { e.0 == "response.output_item.added" })
   match added {
     Some((_, data)) =>
       match data {
@@ -143,9 +137,7 @@ test "translator: function_call output_item.added has correct structure" {
 
 ///|
 test "translator: response.completed emitted on stop" {
-  let translator = HarmonyToResponsesTranslator::new(
-    response_id="resp_001",
-  )
+  let translator = HarmonyToResponsesTranslator::new(response_id="resp_001")
   ignore(
     translator.translate({
       event: "",
@@ -164,17 +156,15 @@ test "translator: response.completed emitted on stop" {
       ]),
     },
   })
-  let completed = events.iter().find_first(fn(e) {
-    e.0 == "response.completed"
-  })
-  assert_true(not(completed.is_empty()))
+  let completed = events
+    .iter()
+    .find_first(fn(e) { e.0 == "response.completed" })
+  assert_true(not(completed is None))
 }
 
 ///|
 test "translator: response.completed emitted on tool_calls finish" {
-  let translator = HarmonyToResponsesTranslator::new(
-    response_id="resp_001",
-  )
+  let translator = HarmonyToResponsesTranslator::new(response_id="resp_001")
   ignore(
     translator.translate({
       event: "",
@@ -214,17 +204,15 @@ test "translator: response.completed emitted on tool_calls finish" {
       ]),
     },
   })
-  let completed = events.iter().find_first(fn(e) {
-    e.0 == "response.completed"
-  })
-  assert_true(not(completed.is_empty()))
+  let completed = events
+    .iter()
+    .find_first(fn(e) { e.0 == "response.completed" })
+  assert_true(not(completed is None))
 }
 
 ///|
 test "translator: multiple content deltas accumulate" {
-  let translator = HarmonyToResponsesTranslator::new(
-    response_id="resp_001",
-  )
+  let translator = HarmonyToResponsesTranslator::new(response_id="resp_001")
   ignore(
     translator.translate({
       event: "",
@@ -249,9 +237,7 @@ test "translator: multiple content deltas accumulate" {
     translator.translate({
       event: "",
       data: {
-        "choices": Json::array([
-          { "index": 0, "delta": { "content": "world" } },
-        ]),
+        "choices": Json::array([{ "index": 0, "delta": { "content": "world" } }]),
       },
     }),
   )
@@ -264,9 +250,9 @@ test "translator: multiple content deltas accumulate" {
     },
   })
   // output_text.done should have the full accumulated text
-  let done = events.iter().find_first(fn(e) {
-    e.0 == "response.output_text.done"
-  })
+  let done = events
+    .iter()
+    .find_first(fn(e) { e.0 == "response.output_text.done" })
   match done {
     Some((_, data)) =>
       match data {
@@ -279,9 +265,7 @@ test "translator: multiple content deltas accumulate" {
 
 ///|
 test "translator: text stream round-trip via accumulator" {
-  let translator = HarmonyToResponsesTranslator::new(
-    response_id="resp_rt",
-  )
+  let translator = HarmonyToResponsesTranslator::new(response_id="resp_rt")
   let all_events : Array[@sse.SseEvent] = []
   // Simulate: init → content "Four" → stop
   let chunks : Array[@sse.SseEvent] = [
@@ -296,9 +280,7 @@ test "translator: text stream round-trip via accumulator" {
     {
       event: "",
       data: {
-        "choices": Json::array([
-          { "index": 0, "delta": { "content": "Four" } },
-        ]),
+        "choices": Json::array([{ "index": 0, "delta": { "content": "Four" } }]),
       },
     },
     {
@@ -329,9 +311,7 @@ test "translator: text stream round-trip via accumulator" {
 
 ///|
 test "translator: tool call stream round-trip via accumulator" {
-  let translator = HarmonyToResponsesTranslator::new(
-    response_id="resp_tc",
-  )
+  let translator = HarmonyToResponsesTranslator::new(response_id="resp_tc")
   let all_events : Array[@sse.SseEvent] = []
   let chunks : Array[@sse.SseEvent] = [
     {

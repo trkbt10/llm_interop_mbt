@@ -68,7 +68,7 @@ test "accumulate_harmony handles tool calls" {
 ///|
 test "accumulate_harmony fixture multi tool stream keeps arguments by index" {
   let jsonl = read_sse_fixture(
-    "testdata/groq/harmony/multi_toolcall_stream.jsonl",
+    "testdata/groq/harmony/stream/multi_toolcall.jsonl",
   ) catch {
     err => {
       fail("Failed to read fixture: " + err.to_string())

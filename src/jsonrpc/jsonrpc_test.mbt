@@ -448,7 +448,7 @@ test "RpcResponse::from_json: result without id" {
 
 ///|
 test "RpcResponse::from_json: null result" {
-  let json : Json = { "id": 1, "result": Null }
+  let json : Json = { "id": 1, "result": Json::null() }
   match RpcResponse::from_json(json) {
     Some(r) => {
       assert_eq(r.id, Some(1))

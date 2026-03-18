@@ -26,7 +26,8 @@ pub fn anthropic_resolve_completion(
   path : String,
   body : String,
 ) -> (String, String, String)? {
-  if (path == "/v1/messages" || path.has_prefix("/v1/messages?")) && meth == "POST" {
+  if (path == "/v1/messages" || path.has_prefix("/v1/messages?")) &&
+    meth == "POST" {
     return Some(("anthropic", "", body))
   }
   None
