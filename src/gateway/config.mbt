@@ -10,9 +10,8 @@ let default_server_port : Int = 18080
 pub fn parse_config(json : Json) -> GatewayConfig raise GatewayError {
   let mode = parse_mode(json)
   let providers = parse_providers(json)
-  let backends = parse_legacy_backends(json)
   let server = parse_server(json)
-  { mode, providers, backends, server }
+  { mode, providers, server }
 }
 
 ///|
@@ -396,70 +395,6 @@ fn parse_compat(json : Json) -> ModelCompatConfig {
 }
 
 ///|
-/// Parse legacy backends format for backwards compatibility
-fn parse_legacy_backends(
-  json : Json,
-) -> Array[BackendConfig] raise GatewayError {
-  match json {
-    { "backends": Array(arr), .. } => {
-      let result : Array[BackendConfig] = []
-      for b in arr {
-        result.push(parse_legacy_backend(b))
-      }
-      result
-    }
-    _ => []
-  }
-}
-
-///|
-fn parse_legacy_backend(json : Json) -> BackendConfig raise GatewayError {
-  let id = match json {
-    { "id": String(s), .. } => s
-    _ => raise GatewayError::ConfigError("backend.id is required")
-  }
-  let api = match json {
-    { "provider": { "type": String(s), .. }, .. } =>
-      match ModelApi::from_string(s) {
-        Some(a) => a
-        None => raise GatewayError::ConfigError("Unknown provider type: " + s)
-      }
-    _ => raise GatewayError::ConfigError("backend.provider.type is required")
-  }
-  let model_id = match json {
-    { "provider": { "model": String(m), .. }, .. } => m
-    _ => ""
-  }
-  let base_url = match json {
-    { "provider": { "baseURL": String(u), .. }, .. } => u
-    _ => api.default_base_url()
-  }
-  let api_key = match json {
-    { "provider": { "apiKey": String(k), .. }, .. } => k
-    _ => ""
-  }
-  let weight = match json {
-    { "weight": Number(n, ..), .. } => n.to_int()
-    _ => 1
-  }
-  let provider : ProviderConfig = {
-    id,
-    base_url,
-    api_key,
-    auth: ApiKey,
-    api,
-    headers: {},
-    auth_header: true,
-    models: [ModelConfig::new(model_id)],
-    models_from_endpoint: true,
-    model_patterns: [],
-    codex: None,
-    claude_mcp: None,
-  }
-  { id, provider, weight }
-}
-
-///|
 fn parse_server(json : Json) -> ServerConfig {
   match json {
     { "server": Object(obj), .. } => {
@@ -489,11 +424,6 @@ pub fn config_to_json(config : GatewayConfig) -> Json {
     }
     obj["providers"] = Json::object(providers)
   }
-  // Legacy backends
-  if not(config.backends.is_empty()) {
-    let backends_json = config.backends.map(fn(b) { backend_to_json(b) })
-    obj["backends"] = Json::array(backends_json)
-  }
   // Server
   let server : Map[String, Json] = {}
   server["port"] = Json::number(config.server.port.to_double())
@@ -520,20 +450,5 @@ fn model_to_json(m : ModelConfig) -> Json {
   obj["name"] = Json::string(m.name)
   obj["contextWindow"] = Json::number(m.context_window.to_double())
   obj["maxTokens"] = Json::number(m.max_tokens.to_double())
-  Json::object(obj)
-}
-
-///|
-fn backend_to_json(b : BackendConfig) -> Json {
-  let obj : Map[String, Json] = {}
-  obj["id"] = Json::string(b.id)
-  obj["weight"] = Json::number(b.weight.to_double())
-  let prov : Map[String, Json] = {}
-  prov["type"] = Json::string(b.provider.api.to_string())
-  prov["baseURL"] = Json::string(b.provider.base_url)
-  if not(b.provider.models.is_empty()) {
-    prov["model"] = Json::string(b.provider.models[0].id)
-  }
-  obj["provider"] = Json::object(prov)
   Json::object(obj)
 }

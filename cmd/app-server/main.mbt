@@ -874,8 +874,8 @@ async fn handle_turn_start_streaming(
   let request_body = Json::object(req_obj).stringify()
   // Select backend
   let model = thread.model
-  let backend = match state.gateway.select_backend(model) {
-    Some(b) => b
+  let provider = match state.gateway.select_backend(model) {
+    Some(p) => p
     None => {
       emit(@codex.make_turn_started_event(turn_id))
       emit(
@@ -889,10 +889,10 @@ async fn handle_turn_start_streaming(
     }
   }
   // Prepare upstream request
-  let base_url = expand_env(backend.provider.base_url)
-  let api_key = expand_env(backend.provider.api_key)
+  let base_url = expand_env(provider.base_url)
+  let api_key = expand_env(provider.api_key)
   let upstream = @gw.prepare_upstream(
-    backend.provider,
+    provider,
     request_body,
     @gw.GatewaySurface::OpenAI,
     model,

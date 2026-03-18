@@ -52,7 +52,6 @@ fn create_test_config() -> GatewayConfig {
       "anthropic": anthropic_provider,
       "gemini": gemini_provider,
     },
-    backends: [],
     server: { port: 18080, host: "0.0.0.0" },
   }
 }
@@ -167,7 +166,7 @@ test "resolve: unknown path returns NotFound" {
 test "select_backend finds model in provider" {
   let gw = Gateway::new(create_test_config(), OpenAI)
   match gw.select_backend("gpt-4o") {
-    Some(b) => assert_eq(b.provider.id, "openai")
+    Some(p) => assert_eq(p.id, "openai")
     None => fail("expected to find backend for gpt-4o")
   }
 }
@@ -176,7 +175,7 @@ test "select_backend finds model in provider" {
 test "select_backend finds anthropic model" {
   let gw = Gateway::new(create_test_config(), OpenAI)
   match gw.select_backend("claude-sonnet-4-20250514") {
-    Some(b) => assert_eq(b.provider.id, "anthropic")
+    Some(p) => assert_eq(p.id, "anthropic")
     None => fail("expected to find backend for claude model")
   }
 }
@@ -185,7 +184,7 @@ test "select_backend finds anthropic model" {
 test "select_backend prefix routing for unknown claude model" {
   let gw = Gateway::new(create_test_config(), OpenAI)
   match gw.select_backend("claude-3-opus-20240229") {
-    Some(b) => assert_eq(b.provider.id, "anthropic")
+    Some(p) => assert_eq(p.id, "anthropic")
     None => fail("expected prefix routing to anthropic")
   }
 }

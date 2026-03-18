@@ -115,24 +115,16 @@ pub fn Gateway::new(
 }
 
 ///|
-/// Select backend based on model name
+/// Select provider based on model name
 pub fn Gateway::select_backend(
   self : Gateway,
   model : String,
-) -> BackendConfig? {
-  // First try exact match in backends
-  for backend in self.config.backends {
-    for m in backend.provider.models {
-      if m.id == model {
-        return Some(backend)
-      }
-    }
-  }
+) -> ProviderConfig? {
   // Try exact match in providers
   for _, prov in self.config.providers {
     for m in prov.models {
       if m.id == model {
-        return Some({ id: prov.id, provider: prov, weight: 1 })
+        return Some(prov)
       }
     }
   }
@@ -140,7 +132,7 @@ pub fn Gateway::select_backend(
   for _, prov in self.config.providers {
     for pattern in prov.model_patterns {
       if model.has_prefix(pattern) {
-        return Some({ id: prov.id, provider: prov, weight: 1 })
+        return Some(prov)
       }
     }
   }

@@ -198,14 +198,6 @@ pub fn ProviderConfig::new(id : String, api : ModelApi) -> ProviderConfig {
 }
 
 ///|
-/// Legacy backend configuration (for backwards compatibility)
-pub(all) struct BackendConfig {
-  id : String
-  provider : ProviderConfig
-  weight : Int
-} derive(Show)
-
-///|
 /// Server configuration
 pub(all) struct ServerConfig {
   port : Int
@@ -224,18 +216,12 @@ pub(all) enum ConfigMode {
 pub(all) struct GatewayConfig {
   mode : ConfigMode
   providers : Map[String, ProviderConfig]
-  backends : Array[BackendConfig] // Legacy format support
   server : ServerConfig
 } derive(Show)
 
 ///|
 pub fn GatewayConfig::default() -> GatewayConfig {
-  {
-    mode: Merge,
-    providers: {},
-    backends: [],
-    server: { port: 18080, host: "0.0.0.0" },
-  }
+  { mode: Merge, providers: {}, server: { port: 18080, host: "0.0.0.0" } }
 }
 
 ///|

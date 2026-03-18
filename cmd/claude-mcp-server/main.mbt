@@ -87,9 +87,7 @@ fn build_tools_from_config(
 // =============================================================================
 
 ///|
-async fn http_post(
-  req : @gw.UpstreamRequest,
-) -> (Int, String) {
+async fn http_post(req : @gw.UpstreamRequest) -> (Int, String) {
   let client = @http.Client::new(req.origin) catch {
     e => return (502, "{\"error\":{\"message\":\"Failed to connect: \{e}\"}}")
   }
@@ -135,28 +133,35 @@ async fn handle_tools_call(
     Some(p) => p
     None =>
       return @jsonrpc.build_error_response(
-        Some(id), -32602, "Invalid tools/call params",
+        Some(id),
+        -32602,
+        "Invalid tools/call params",
       )
   }
   let tool_name = call_params.name
   let args = @claude_mcp.extract_prompt_args(call_params.arguments)
   // 2. Select backend
-  let backend = match state.gateway.select_backend(tool_name) {
-    Some(b) => b
+  let provider = match state.gateway.select_backend(tool_name) {
+    Some(p) => p
     None =>
       return @claude_mcp.build_tools_call_result(
-        id, "No backend found for model: " + tool_name, true,
+        id,
+        "No backend found for model: " + tool_name,
+        true,
       )
   }
   // 3. Build chat request (OpenAI format — gateway transforms to target dialect)
   let request_body = @claude_mcp.build_chat_request(
-    tool_name, args.prompt, args.system, args.max_tokens,
+    tool_name,
+    args.prompt,
+    args.system,
+    args.max_tokens,
   )
   // 4. Prepare upstream
-  let base_url = expand_env(backend.provider.base_url)
-  let api_key = expand_env(backend.provider.api_key)
+  let base_url = expand_env(provider.base_url)
+  let api_key = expand_env(provider.api_key)
   let upstream = @gw.prepare_upstream(
-    backend.provider,
+    provider,
     request_body,
     @gw.GatewaySurface::OpenAI,
     tool_name,
@@ -173,9 +178,11 @@ async fn handle_tools_call(
     )
   }
   // 6. Transform response to OpenAI format if needed
-  let from_surface = backend.provider.api.to_dialect()
+  let from_surface = provider.api.to_dialect()
   let normalized = @gw.transform_response(
-    response_body, from_surface, @gw.GatewaySurface::OpenAI,
+    response_body,
+    from_surface,
+    @gw.GatewaySurface::OpenAI,
   )
   // 7. Extract content
   let content = @claude_mcp.extract_assistant_content(normalized)
@@ -231,7 +238,9 @@ async fn dispatch(
     _ =>
       emit(
         @jsonrpc.build_error_response(
-          req.id, -32601, "Method not found: " + req.rpc_method,
+          req.id,
+          -32601,
+          "Method not found: " + req.rpc_method,
         ),
       )
   }
@@ -292,9 +301,7 @@ async fn run() -> Unit {
   let tools = build_tools_from_config(config)
   let gateway = @gw.Gateway::new(config, @gw.GatewaySurface::OpenAI)
   let state = McpServerState::new(gateway, tools)
-  @stdio.stderr.write(
-    "claude-mcp-server: \{tools.length()} tools available\n",
-  )
+  @stdio.stderr.write("claude-mcp-server: \{tools.length()} tools available\n")
   // stdio JSONL loop
   while @stdio.stdin.read_until("\n") is Some(line) {
     let trimmed = line.trim_end(chars="\n\r").to_string()

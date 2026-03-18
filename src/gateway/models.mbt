@@ -105,15 +105,6 @@ pub fn enrich_remote_model_json(
 /// List models from gateway config (no network)
 pub fn Gateway::list_configured_models(self : Gateway) -> Array[Json] {
   let models : Array[Json] = []
-  for backend in self.config.backends {
-    for m in backend.provider.models {
-      let obj : Map[String, Json] = {}
-      obj["id"] = Json::string(m.id)
-      obj["object"] = Json::string("model")
-      obj["owned_by"] = Json::string(backend.provider.id)
-      models.push(Json::object(obj))
-    }
-  }
   for prov_id, prov in self.config.providers {
     for m in prov.models {
       let obj : Map[String, Json] = {}

@@ -197,18 +197,18 @@ async fn send_to_backend(
   model : String,
   body : String,
   dialect : @gw.GatewaySurface,
-) -> (@gw.BackendConfig, Int, String) raise {
-  let backend = match gateway.select_backend(model) {
-    Some(b) => b
+) -> (@gw.ProviderConfig, Int, String) raise {
+  let provider = match gateway.select_backend(model) {
+    Some(p) => p
     None => raise @gw.GatewayError::BackendNotFound(model)
   }
-  let base_url = expand_env(backend.provider.base_url)
-  let api_key = expand_env(backend.provider.api_key)
+  let base_url = expand_env(provider.base_url)
+  let api_key = expand_env(provider.api_key)
   let upstream = @gw.prepare_upstream(
-    backend.provider, body, dialect, model, base_url, api_key,
+    provider, body, dialect, model, base_url, api_key,
   )
   let (status, response_text) = http_post(upstream)
-  (backend, status, response_text)
+  (provider, status, response_text)
 }
 
 ///|
@@ -220,21 +220,21 @@ async fn proxy_to_backend(
   model : String,
 ) -> @gw.HttpResponse {
   // Check if this model routes to a Codex backend
-  let backend = match gateway.select_backend(model) {
-    Some(b) => b
+  let provider = match gateway.select_backend(model) {
+    Some(p) => p
     None =>
       return @gw.HttpResponse::error(
         503, "No backend available for model: " + model,
       )
   }
-  if backend.provider.api.to_dialect() == @gw.GatewaySurface::Codex {
-    return proxy_to_codex_backend(gateway, body, target_dialect, model, backend)
+  if provider.api.to_dialect() == @gw.GatewaySurface::Codex {
+    return proxy_to_codex_backend(gateway, body, target_dialect, model, provider)
   }
-  if backend.provider.api == @gw.ModelApi::ClaudeMcpServe {
-    return proxy_to_claude_mcp_backend(gateway, body, target_dialect, model, backend)
+  if provider.api == @gw.ModelApi::ClaudeMcpServe {
+    return proxy_to_claude_mcp_backend(gateway, body, target_dialect, model, provider)
   }
   // Standard HTTP path
-  let (backend, status, response_text) = try {
+  let (provider, status, response_text) = try {
     send_to_backend(gateway, model, body, target_dialect)
   } catch {
     @gw.GatewayError::BackendNotFound(m) =>
@@ -243,7 +243,7 @@ async fn proxy_to_backend(
   }
   let final_body = @gw.transform_response(
     response_text,
-    backend.provider.api.to_dialect(),
+    provider.api.to_dialect(),
     target_dialect,
   )
   let headers : Map[String, String] = {}
@@ -262,7 +262,7 @@ async fn proxy_responses_api(
 ) -> @gw.HttpResponse {
   let request_json = try { @json.parse(body) } catch { _ => Json::object({}) }
   let chat_body = @harmony.responses_request_to_chat_completions(request_json, stream=false).stringify()
-  let (_backend, status, response_text) = try {
+  let (_provider, status, response_text) = try {
     send_to_backend(gateway, model, chat_body, @gw.GatewaySurface::OpenAI)
   } catch {
     @gw.GatewayError::BackendNotFound(m) =>
@@ -529,14 +529,14 @@ async fn proxy_to_codex_backend(
   body : String,
   target_dialect : @gw.GatewaySurface,
   model : String,
-  backend : @gw.BackendConfig,
+  provider : @gw.ProviderConfig,
 ) -> @gw.HttpResponse {
-  let codex_cfg = match backend.provider.codex {
+  let codex_cfg = match provider.codex {
     Some(cfg) => cfg
     None => @codex.CodexConfig::default()
   }
-  let cwd = if backend.provider.base_url != "" {
-    expand_env(backend.provider.base_url)
+  let cwd = if provider.base_url != "" {
+    expand_env(provider.base_url)
   } else {
     "."
   }
@@ -545,9 +545,9 @@ async fn proxy_to_codex_backend(
     502, "Codex transport failed",
   )
   @async.with_task_group(async fn(group) {
-    let api_key = expand_env(backend.provider.api_key)
+    let api_key = expand_env(provider.api_key)
     let channel = get_codex_channel(
-      group, backend.id, command, cwd, api_key,
+      group, provider.id, command, cwd, api_key,
     ) catch {
       e => {
         result = @gw.HttpResponse::error(502, e.to_string())
@@ -555,9 +555,9 @@ async fn proxy_to_codex_backend(
         return
       }
     }
-    let state = codex_backends[backend.id]
+    let state = codex_backends[provider.id]
     let codex_body = @gw.transform_for_provider(
-      backend.provider,
+      provider,
       body,
       target_dialect,
       @gw.GatewaySurface::Codex,
@@ -790,9 +790,9 @@ async fn proxy_to_claude_mcp_backend(
   body : String,
   target_dialect : @gw.GatewaySurface,
   model : String,
-  backend : @gw.BackendConfig,
+  provider : @gw.ProviderConfig,
 ) -> @gw.HttpResponse {
-  let cfg = match backend.provider.claude_mcp {
+  let cfg = match provider.claude_mcp {
     Some(c) => c
     None => @claude_mcp.ClaudeMcpConfig::default()
   }
@@ -801,7 +801,7 @@ async fn proxy_to_claude_mcp_backend(
   )
   @async.with_task_group(async fn(group) {
     let channel = get_claude_mcp_channel(
-      group, backend.id, cfg.command, cfg.args, cfg.env,
+      group, provider.id, cfg.command, cfg.args, cfg.env,
     ) catch {
       e => {
         result = @gw.HttpResponse::error(502, e.to_string())
@@ -809,12 +809,12 @@ async fn proxy_to_claude_mcp_backend(
         return
       }
     }
-    let state = claude_mcp_backends[backend.id]
+    let state = claude_mcp_backends[provider.id]
     // Transform request to OpenAI pivot first (if coming from another surface),
     // then extract prompt via claude_mcp dialect transform
     let openai_body = if target_dialect != @gw.GatewaySurface::OpenAI {
       @gw.transform_for_provider(
-        backend.provider, body, target_dialect, @gw.GatewaySurface::OpenAI, model,
+        provider, body, target_dialect, @gw.GatewaySurface::OpenAI, model,
       )
     } else {
       body
