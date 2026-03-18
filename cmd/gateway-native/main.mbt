@@ -712,9 +712,7 @@ let claude_mcp_backends : Map[String, ClaudeMcpBackendState] = {}
 async fn get_claude_mcp_channel(
   group : @async.TaskGroup[Unit],
   backend_id : String,
-  command : String,
-  args : Array[String],
-  env : Map[String, String],
+  cfg : @claude_mcp.ClaudeMcpConfig,
 ) -> @ipc.IpcChannel raise @gw.GatewayError {
   match claude_mcp_backends.get(backend_id) {
     Some(state) =>
@@ -724,23 +722,30 @@ async fn get_claude_mcp_channel(
       }
     None => ()
   }
-  // Build full command: command + args
-  let full_command = if args.length() > 0 {
-    let buf = StringBuilder::new()
-    buf.write_string(command)
-    for arg in args {
-      buf.write_string(" ")
-      buf.write_string(arg)
-    }
-    buf.to_string()
-  } else {
-    command
+  // Build full command with shell-safe quoting
+  let cmd = @spawn.Command::new(cfg.command)
+  for arg in cfg.args {
+    cmd.arg(arg)
   }
+  if cfg.tools.length() > 0 {
+    let tools_csv = cfg.tools.iter().fold(
+      init="",
+      fn(acc, t) {
+        if acc == "" {
+          t
+        } else {
+          acc + "," + t
+        }
+      },
+    )
+    cmd.flag("--tools", tools_csv)
+  }
+  let full_command = cmd.to_string()
   let child = @subprocess.spawn_shell(
     group,
     full_command,
     cwd=".",
-    env=env,
+    env=cfg.env,
     pipe_stdin=true,
     pipe_stdout=true,
     pipe_stderr=true,
@@ -800,9 +805,7 @@ async fn proxy_to_claude_mcp_backend(
     502, "`claude mcp serve` transport failed",
   )
   @async.with_task_group(async fn(group) {
-    let channel = get_claude_mcp_channel(
-      group, provider.id, cfg.command, cfg.args, cfg.env,
-    ) catch {
+    let channel = get_claude_mcp_channel(group, provider.id, cfg) catch {
       e => {
         result = @gw.HttpResponse::error(502, e.to_string())
         group.return_immediately(())
