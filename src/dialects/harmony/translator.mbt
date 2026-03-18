@@ -6,6 +6,7 @@
 /// Accumulative: holds state while generating translation events
 pub struct HarmonyToResponsesTranslator {
   response_id : String
+  model : String
   mut next_output_index : Int
   mut has_emitted_created : Bool
   mut has_emitted_in_progress : Bool
@@ -15,6 +16,8 @@ pub struct HarmonyToResponsesTranslator {
   mut has_open_message : Bool
   tool_calls : Array[HarmonyToolCallState]
   reasoning_buffer : StringBuilder
+  /// Accumulated completed output items for response.completed
+  completed_output : Array[Json]
 }
 
 ///|
@@ -30,9 +33,11 @@ struct HarmonyToolCallState {
 ///|
 pub fn HarmonyToResponsesTranslator::new(
   response_id~ : String,
+  model? : String = "",
 ) -> HarmonyToResponsesTranslator {
   {
     response_id,
+    model,
     next_output_index: 0,
     has_emitted_created: false,
     has_emitted_in_progress: false,
@@ -42,6 +47,7 @@ pub fn HarmonyToResponsesTranslator::new(
     has_open_message: false,
     tool_calls: [],
     reasoning_buffer: StringBuilder::new(),
+    completed_output: [],
   }
 }
 
@@ -108,16 +114,12 @@ pub fn HarmonyToResponsesTranslator::translate(
           { "finish_reason": String("stop"), .. } => {
             self.close_open_tool_calls(events)
             self.close_current_message(events)
-            events.push(
-              ("response.completed", { "type": "response.completed" }),
-            )
+            events.push(("response.completed", self.build_completed_event()))
           }
           { "finish_reason": String("tool_calls"), .. } => {
             self.close_current_message(events)
             self.close_open_tool_calls(events)
-            events.push(
-              ("response.completed", { "type": "response.completed" }),
-            )
+            events.push(("response.completed", self.build_completed_event()))
           }
           _ => ()
         }
@@ -316,24 +318,24 @@ fn HarmonyToResponsesTranslator::close_current_message(
       },
     ),
   )
+  let message_item : Json = {
+    "id": self.current_message_item_id,
+    "type": "message",
+    "status": "completed",
+    "role": "assistant",
+    "content": [{ "type": "output_text", "text": text, "annotations": [] }],
+  }
   events.push(
     (
       "response.output_item.done",
       {
         "type": "response.output_item.done",
         "output_index": self.current_message_output_index,
-        "item": {
-          "id": self.current_message_item_id,
-          "type": "message",
-          "status": "completed",
-          "role": "assistant",
-          "content": [
-            { "type": "output_text", "text": text, "annotations": [] },
-          ],
-        },
+        "item": message_item,
       },
     ),
   )
+  self.completed_output.push(message_item)
   self.current_message_output_index = -1
   self.current_message_item_id = ""
   self.current_message_text = ""
@@ -361,23 +363,25 @@ fn HarmonyToResponsesTranslator::close_open_tool_calls(
         },
       ),
     )
+    let tc_item : Json = {
+      "id": self.tool_calls[i].call_id,
+      "type": "function_call",
+      "status": "completed",
+      "arguments": arguments,
+      "call_id": self.tool_calls[i].call_id,
+      "name": self.tool_calls[i].name,
+    }
     events.push(
       (
         "response.output_item.done",
         {
           "type": "response.output_item.done",
           "output_index": self.tool_calls[i].output_index,
-          "item": {
-            "id": self.tool_calls[i].call_id,
-            "type": "function_call",
-            "status": "completed",
-            "arguments": arguments,
-            "call_id": self.tool_calls[i].call_id,
-            "name": self.tool_calls[i].name,
-          },
+          "item": tc_item,
         },
       ),
     )
+    self.completed_output.push(tc_item)
     self.tool_calls[i].completed = true
   }
 }
@@ -442,6 +446,20 @@ fn harmony_tool_call_name(tc : Json) -> String {
     { "function": { "name": String(name), .. }, .. } => name
     _ => ""
   }
+}
+
+///|
+fn HarmonyToResponsesTranslator::build_completed_event(
+  self : HarmonyToResponsesTranslator,
+) -> Json {
+  let response : Map[String, Json] = {}
+  response["id"] = Json::string(self.response_id)
+  response["status"] = Json::string("completed")
+  response["output"] = Json::array(self.completed_output.copy())
+  if self.model.length() > 0 {
+    response["model"] = Json::string(self.model)
+  }
+  { "type": "response.completed", "response": Json::object(response) }
 }
 
 ///|

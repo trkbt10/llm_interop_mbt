@@ -1,18 +1,17 @@
 {
   "providers": {
-    "groq": {
-      "baseUrl": "https://api.groq.com/openai/v1",
-      "apiKey": "${GROQ_API_KEY}",
+    "ollama": {
+      "baseUrl": "http://localhost:11434/v1",
       "api": "openai-completions",
       "modelsFromEndpoint": false,
-      "modelPatterns": ["openai/gpt-oss", "gpt-oss"],
+      "modelPatterns": ["llama"],
       "models": [
         {
-          "id": "openai/gpt-oss-20b",
-          "name": "GPT-OSS 20B",
+          "id": "llama3",
+          "name": "Llama 3",
           "reasoning": false,
           "input": ["text"],
-          "contextWindow": 16384,
+          "contextWindow": 8192,
           "maxTokens": 4096
         }
       ]

@@ -312,6 +312,38 @@ test "instructions + input_text content blocks + tools combined" {
 }
 
 ///|
+test "temperature, top_p, max_output_tokens pass through" {
+  let request : Json = {
+    "model": "gpt-oss-20b",
+    "input": [{ "role": "user", "content": "hi" }],
+    "temperature": 0.7,
+    "top_p": 0.9,
+    "max_output_tokens": 4096,
+  }
+  let result = responses_request_to_chat_completions(request, stream=false)
+  inspect(
+    result.stringify(),
+    content=(
+      #|{"model":"gpt-oss-20b","messages":[{"role":"user","content":"hi"}],"stream":false,"temperature":0.7,"top_p":0.9,"max_tokens":4096}
+    ),
+  )
+}
+
+///|
+test "optional parameters omitted when not in request" {
+  let request : Json = {
+    "model": "gpt-oss-20b",
+    "input": [{ "role": "user", "content": "hi" }],
+  }
+  let result = responses_request_to_chat_completions(request, stream=false)
+  // Should not contain temperature, top_p, or max_tokens
+  let s = result.stringify()
+  assert_eq(s.contains("temperature"), false)
+  assert_eq(s.contains("top_p"), false)
+  assert_eq(s.contains("max_tokens"), false)
+}
+
+///|
 test "snapshot: harmony conversion for toolcall multiturn turn1" {
   let request : Json = {
     "model": "openai/gpt-oss-20b",

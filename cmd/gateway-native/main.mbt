@@ -427,7 +427,10 @@ async fn proxy_responses_api_stream(
   conn.send_response(200, "OK", extra_headers=sse_headers)
   // Create translator for Chat Completions SSE → Responses API SSE
   let response_id = "resp_" + model
-  let translator = @harmony.HarmonyToResponsesTranslator::new(response_id~)
+  let translator = @harmony.HarmonyToResponsesTranslator::new(
+    response_id~,
+    model~,
+  )
   if is_sse {
     // Real streaming: read backend SSE event-by-event.
     // SSE events are delimited by "\n\n". Using read_until("\n\n") reads
