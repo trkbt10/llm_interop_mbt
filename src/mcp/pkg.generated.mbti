@@ -1,0 +1,49 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "trkbt10/llm_interop/src/mcp"
+
+// Values
+pub fn build_initialize_request(Int, String, String) -> String
+
+pub fn build_initialized_notification() -> String
+
+pub fn build_tools_call_request(Int, String, Json) -> String
+
+pub fn build_tools_list_request(Int) -> String
+
+pub fn extract_text_content(McpToolCallResult) -> String
+
+pub fn parse_tools_call_result(Json) -> McpToolCallResult?
+
+pub fn parse_tools_list_response(Json) -> Array[McpToolDefinition]
+
+// Errors
+
+// Types and methods
+pub(all) struct McpContentItem {
+  kind : String
+  text : String
+}
+pub fn McpContentItem::from_json(Json) -> Self?
+pub impl Eq for McpContentItem
+pub impl Show for McpContentItem
+
+pub(all) struct McpToolCallResult {
+  content : Array[McpContentItem]
+  is_error : Bool
+}
+pub impl Eq for McpToolCallResult
+pub impl Show for McpToolCallResult
+
+pub(all) struct McpToolDefinition {
+  name : String
+  description : String
+  input_schema : Json
+}
+pub fn McpToolDefinition::from_json(Json) -> Self?
+pub impl Eq for McpToolDefinition
+pub impl Show for McpToolDefinition
+
+// Type aliases
+
+// Traits
+

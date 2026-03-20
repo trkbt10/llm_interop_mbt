@@ -3,10 +3,10 @@ import {
 }
 
 import {
-  "trkbt10/llm_interop/src/types",
-  "trkbt10/llm_interop/src/utils" @utils,
-  "trkbt10/llm_interop/src/interop/util" @util,
-  "trkbt10/llm_interop/src/dialects/anthropic" @anthropic,
-  "trkbt10/llm_interop/src/dialects/openai" @openai,
-  "trkbt10/llm_interop/src/dialects/gemini" @gemini,
+  "trkbt10/llm_interop/types",
+  "trkbt10/llm_interop/utils" @utils,
+  "trkbt10/llm_interop/interop/util" @util,
+  "trkbt10/llm_interop/dialects/anthropic" @anthropic,
+  "trkbt10/llm_interop/dialects/openai" @openai,
+  "trkbt10/llm_interop/dialects/gemini" @gemini,
 } for "test"

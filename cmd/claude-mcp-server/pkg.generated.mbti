@@ -1,0 +1,16 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "trkbt10/llm_interop/cmd/claude-mcp-server"
+
+// Values
+
+// Errors
+
+// Types and methods
+type CliOptions
+
+type McpServerState
+
+// Type aliases
+
+// Traits
+

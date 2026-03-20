@@ -1,0 +1,21 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "trkbt10/llm_interop/src/spawn"
+
+// Values
+pub fn shell_quote(String) -> String
+
+// Errors
+
+// Types and methods
+pub(all) struct Command {
+  parts : Array[String]
+}
+pub fn Command::arg(Self, String) -> Self
+pub fn Command::flag(Self, String, String) -> Self
+pub fn Command::new(String) -> Self
+pub fn Command::to_string(Self) -> String
+
+// Type aliases
+
+// Traits
+

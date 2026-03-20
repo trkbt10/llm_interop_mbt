@@ -1,4 +1,4 @@
 import {
   "moonbitlang/core/json",
-  "trkbt10/llm_interop/src/jsonrpc" @jsonrpc,
+  "trkbt10/llm_interop/jsonrpc" @jsonrpc,
 }

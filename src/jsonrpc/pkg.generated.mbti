@@ -1,0 +1,64 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "trkbt10/llm_interop/src/jsonrpc"
+
+import {
+  "moonbitlang/core/json",
+}
+
+// Values
+pub fn build_error_response(Int?, Int, String) -> String
+
+pub fn build_notification(String, Json?) -> String
+
+pub fn build_request(Int, String, Json?) -> String
+
+pub fn build_response(Int?, Json) -> String
+
+// Errors
+
+// Types and methods
+pub(all) struct RpcError {
+  code : Int
+  message : String
+}
+pub impl Eq for RpcError
+pub impl Show for RpcError
+pub impl ToJson for RpcError
+pub impl @json.FromJson for RpcError
+
+pub(all) struct RpcRequest {
+  id : Int?
+  rpc_method : String
+  params : Json?
+}
+pub fn RpcRequest::from_json(Json) -> Self?
+pub fn RpcRequest::to_json(Self) -> Json
+pub impl Eq for RpcRequest
+pub impl Show for RpcRequest
+
+pub(all) struct RpcResponse {
+  id : Int?
+  result : Json?
+  error : RpcError?
+}
+pub fn RpcResponse::from_json(Json) -> Self?
+pub impl Eq for RpcResponse
+pub impl Show for RpcResponse
+
+pub(all) struct RpcStep {
+  message : String
+  kind : RpcStepKind
+}
+pub impl Show for RpcStep
+
+pub(all) enum RpcStepKind {
+  Request
+  Notification
+}
+pub impl Eq for RpcStepKind
+pub impl Show for RpcStepKind
+
+// Type aliases
+
+// Traits
+

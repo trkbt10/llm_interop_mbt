@@ -1,10 +1,10 @@
 import {
   "moonbitlang/core/json",
-  "trkbt10/llm_interop/src/mcp" @mcp,
-  "trkbt10/llm_interop/src/jsonrpc" @jsonrpc,
-  "trkbt10/llm_interop/src/types",
+  "trkbt10/llm_interop/mcp" @mcp,
+  "trkbt10/llm_interop/jsonrpc" @jsonrpc,
+  "trkbt10/llm_interop/types",
 }
 
 import {
-  "trkbt10/llm_interop/src/utils" @utils,
+  "trkbt10/llm_interop/utils" @utils,
 } for "test"
