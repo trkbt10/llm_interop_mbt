@@ -13,13 +13,13 @@
 
 ///|
 /// `claude mcp serve` has no HTTP endpoint; transport is stdio
-pub fn claude_mcp_default_base_url() -> String {
+pub fn default_base_url() -> String {
   ""
 }
 
 ///|
 /// No auth headers — `claude mcp serve` uses stdio, not HTTP
-pub fn claude_mcp_auth_headers(_api_key : String) -> Map[String, String] {
+pub fn auth_headers(_api_key : String) -> Map[String, String] {
   {}
 }
 

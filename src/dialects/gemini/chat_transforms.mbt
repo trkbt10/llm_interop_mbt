@@ -6,7 +6,7 @@
 
 ///|
 /// Transform Gemini GenerateContent request to OpenAI Chat Completions format
-pub fn gemini_request_to_chat(
+pub fn request_to_chat(
   body : String,
   model : String,
   ctx : @types.TransformContext,
@@ -132,7 +132,7 @@ fn transform_openai_content_to_gemini(content : Json) -> Array[Json] {
 
 ///|
 /// Transform Gemini GenerateContent response to OpenAI Chat Completions format
-pub fn gemini_response_to_chat(body : String) -> String {
+pub fn response_to_chat(body : String) -> String {
   let json = @json.parse(body) catch { _ => return body }
   // Collect all text from all candidates and parts
   let choices : Array[Json] = []

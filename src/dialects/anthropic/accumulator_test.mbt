@@ -14,7 +14,7 @@ test "AnthropicMessagesAccumulator text stream" {
     #| {"event":"content_block_stop","data":{"type":"content_block_stop","index":0}}
     #| {"event":"message_delta","data":{"type":"message_delta","delta":{"stop_reason":"end_turn"}}}
     #| {"event":"message_stop","data":{"type":"message_stop"}}
-  let result = accumulate_anthropic_messages(jsonl)
+  let result = accumulate_messages(jsonl)
   match result {
     @types.ModelResponse::Text(content) =>
       inspect(content, content="Hello Claude")
@@ -31,7 +31,7 @@ test "AnthropicMessagesAccumulator tool call stream" {
     #| {"event":"content_block_stop","data":{"type":"content_block_stop","index":0}}
     #| {"event":"message_delta","data":{"type":"message_delta","delta":{"stop_reason":"tool_use"}}}
     #| {"event":"message_stop","data":{"type":"message_stop"}}
-  let result = accumulate_anthropic_messages(jsonl)
+  let result = accumulate_messages(jsonl)
   match result {
     @types.ModelResponse::ToolCalls(calls) => {
       inspect(calls.length(), content="1")

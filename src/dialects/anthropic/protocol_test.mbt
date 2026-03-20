@@ -9,9 +9,9 @@ let test_model_anthropic : String = "claude-3-opus-20240229"
 // =============================================================================
 
 ///|
-test "message_to_anthropic_json converts System message" {
+test "message_to_json converts System message" {
   let msg = @types.ModelMessage::System("You are Claude")
-  let json = message_to_anthropic_json(msg)
+  let json = message_to_json(msg)
   match json {
     { "role": "system", "content": "You are Claude", .. } => ()
     _ => fail("Unexpected JSON format")
@@ -19,14 +19,14 @@ test "message_to_anthropic_json converts System message" {
 }
 
 ///|
-test "message_to_anthropic_json converts Assistant with tool_use" {
+test "message_to_json converts Assistant with tool_use" {
   let calls = [
     @types.ToolCallRequest::new(id="toolu_123", name="search", arguments={
       "query": "MoonBit",
     }),
   ]
   let msg = @types.ModelMessage::Assistant(content="", tool_calls=Some(calls))
-  let json = message_to_anthropic_json(msg)
+  let json = message_to_json(msg)
   match json {
     { "role": "assistant", "content": Array(content), .. } => {
       inspect(content.length(), content="1")
@@ -44,13 +44,13 @@ test "message_to_anthropic_json converts Assistant with tool_use" {
 // =============================================================================
 
 ///|
-test "tool_to_anthropic_json creates correct format" {
+test "tool_to_json creates correct format" {
   let tool = @types.ToolDefinition::new(
     name="calculator",
     description="Calculate math",
     parameters={ "type": "object", "properties": {} },
   )
-  let json = tool_to_anthropic_json(tool)
+  let json = tool_to_json(tool)
   match json {
     {
       "name": "calculator",
@@ -67,13 +67,13 @@ test "tool_to_anthropic_json creates correct format" {
 // =============================================================================
 
 ///|
-test "build_anthropic_body creates valid body" {
+test "build_body creates valid body" {
   let messages = [
     @types.ModelMessage::System("You are Claude"),
     @types.ModelMessage::User(content="Hello", name=None),
   ]
   let tools : Array[@types.ToolDefinition] = []
-  let body = build_anthropic_body(
+  let body = build_body(
     test_model_anthropic,
     messages,
     tools,
@@ -101,12 +101,12 @@ test "build_anthropic_body creates valid body" {
 // =============================================================================
 
 ///|
-test "parse_anthropic_response parses text response" {
+test "parse_response parses text response" {
   let json : Json = {
     "content": Json::array([{ "type": "text", "text": "Hello from Claude!" }]),
     "stop_reason": "end_turn",
   }
-  let response = parse_anthropic_response(json)
+  let response = parse_response(json)
   match response {
     @types.ModelResponse::Text(content) =>
       inspect(content, content="Hello from Claude!")
@@ -115,7 +115,7 @@ test "parse_anthropic_response parses text response" {
 }
 
 ///|
-test "parse_anthropic_response parses tool_use response" {
+test "parse_response parses tool_use response" {
   let json : Json = {
     "content": Json::array([
       {
@@ -127,7 +127,7 @@ test "parse_anthropic_response parses tool_use response" {
     ]),
     "stop_reason": "tool_use",
   }
-  let response = parse_anthropic_response(json)
+  let response = parse_response(json)
   match response {
     @types.ModelResponse::ToolCalls(calls) => {
       inspect(calls.length(), content="1")

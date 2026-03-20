@@ -1,0 +1,100 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "trkbt10/llm_interop/src/dialects/claude_mcp"
+
+import {
+  "moonbitlang/core/json",
+  "trkbt10/llm_interop/src/jsonrpc",
+  "trkbt10/llm_interop/src/mcp",
+  "trkbt10/llm_interop/src/types",
+}
+
+// Values
+pub fn auth_headers(String) -> Map[String, String]
+
+pub fn build_chat_request(String, String, String, Int) -> String
+
+pub fn build_initialize_result(Int) -> String
+
+pub fn build_ping_result(Int) -> String
+
+pub fn build_tools_call_result(Int, String, Bool) -> String
+
+pub fn build_tools_list_result(Int, Array[@mcp.McpToolDefinition]) -> String
+
+pub fn chat_request_to_prompt(String, @types.TransformContext) -> String
+
+pub fn default_base_url() -> String
+
+pub fn extract_assistant_content(String) -> String
+
+pub fn extract_prompt_args(Json) -> PromptArgs
+
+pub fn model_to_mcp_tool(String, String, String) -> @mcp.McpToolDefinition
+
+pub fn parse_tools_call_params(Json?) -> ToolsCallParams?
+
+pub fn prepare_initialize(ClaudeMcpSession) -> ClaudeMcpUpstreamRequest
+
+pub fn prepare_tools_call(ClaudeMcpSession, String, Json) -> ClaudeMcpUpstreamRequest
+
+pub fn prepare_tools_list(ClaudeMcpSession) -> ClaudeMcpUpstreamRequest
+
+pub fn tools_result_to_chat(String) -> String
+
+pub fn update_session_tools(ClaudeMcpSession, Array[@mcp.McpToolDefinition]) -> ClaudeMcpSession
+
+// Errors
+
+// Types and methods
+pub(all) struct ClaudeMcpConfig {
+  command : String
+  args : Array[String]
+  env : Map[String, String]
+  timeout_ms : Int
+}
+pub fn ClaudeMcpConfig::default() -> Self
+pub impl Eq for ClaudeMcpConfig
+pub impl Show for ClaudeMcpConfig
+pub impl ToJson for ClaudeMcpConfig
+pub impl @json.FromJson for ClaudeMcpConfig
+
+pub(all) enum ClaudeMcpPhase {
+  Uninitialized
+  Ready
+}
+pub impl Eq for ClaudeMcpPhase
+pub impl Show for ClaudeMcpPhase
+
+pub(all) struct ClaudeMcpSession {
+  phase : ClaudeMcpPhase
+  next_id : Int
+  tools : Array[@mcp.McpToolDefinition]
+}
+pub fn ClaudeMcpSession::new() -> Self
+pub impl Show for ClaudeMcpSession
+
+pub(all) struct ClaudeMcpUpstreamRequest {
+  steps : Array[@jsonrpc.RpcStep]
+  next_session : ClaudeMcpSession
+}
+pub impl Show for ClaudeMcpUpstreamRequest
+
+pub(all) struct PromptArgs {
+  prompt : String
+  system : String
+  max_tokens : Int
+}
+pub impl Eq for PromptArgs
+pub impl Show for PromptArgs
+
+pub(all) struct ToolsCallParams {
+  name : String
+  arguments : Json
+}
+pub impl Eq for ToolsCallParams
+pub impl Show for ToolsCallParams
+
+// Type aliases
+
+// Traits
+

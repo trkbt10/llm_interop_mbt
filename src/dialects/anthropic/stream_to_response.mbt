@@ -3,7 +3,7 @@
 
 ///|
 /// Process Anthropic Messages JSONL and return ModelResponse
-pub fn accumulate_anthropic_messages(
+pub fn accumulate_messages(
   content : String,
 ) -> @types.ModelResponse raise {
   let events = @sse.parse_jsonl(content)

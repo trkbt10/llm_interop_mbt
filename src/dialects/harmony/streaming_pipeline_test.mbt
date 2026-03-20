@@ -191,7 +191,7 @@ fn non_streaming_result(
   response_id : String,
   model : String,
 ) -> @types.ModelResponse {
-  let model_response = @openai.parse_openai_chat_response(response_json)
+  let model_response = @openai.parse_chat_response(response_json)
   // Round-trip through Responses API JSON to mirror the gateway's non-streaming path
   let responses_json = model_response_to_responses_json(
     model_response,

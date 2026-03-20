@@ -1,0 +1,74 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "trkbt10/llm_interop/src/dialects/gemini"
+
+import {
+  "trkbt10/llm_interop/src/types",
+}
+
+// Values
+pub fn auth_headers() -> Map[String, String]
+
+pub fn build_body(Array[@types.ModelMessage], Array[@types.ToolDefinition], max_tokens? : Int?, temperature? : Double?, top_p? : Double?, top_k? : Int?) -> Json
+
+pub fn chat_request_to_gemini(String, @types.TransformContext) -> String
+
+pub fn chat_response_to_gemini(String) -> String
+
+pub fn completion_path(String, String, String) -> String
+
+pub fn content_to_json(GeminiContent) -> Json
+
+pub fn default_base_url() -> String
+
+pub fn extract_model_from_path(String) -> String
+
+pub fn message_to_content(@types.ModelMessage) -> GeminiContent?
+
+pub fn messages_to_contents(Array[@types.ModelMessage]) -> Array[GeminiContent]
+
+pub fn models_path(String, String) -> String
+
+pub fn openai_error_to_gemini(String) -> String
+
+pub fn parse_as_model_response(Json) -> @types.ModelResponse
+
+pub fn parse_function_calls(Array[Json]) -> Array[@types.ToolCallRequest]
+
+pub fn parse_response(Json) -> @types.ModelResponse
+
+pub fn parse_stream_chunk(Json) -> (String, Array[@types.ToolCallRequest])?
+
+pub fn request_to_chat(String, String, @types.TransformContext) -> String
+
+pub fn resolve_completion(String, String, String) -> (String, String, String)?
+
+pub fn response_to_chat(String) -> String
+
+pub fn response_to_responses(Json, response_id~ : String, model~ : String) -> Json
+
+pub fn responses_request_to_gemini(Json) -> Json
+
+pub fn tool_to_json(@types.ToolDefinition) -> Json
+
+pub fn tools_to_json(Array[@types.ToolDefinition]) -> Json
+
+// Errors
+
+// Types and methods
+pub(all) struct GeminiContent {
+  role : String
+  parts : Array[GeminiPart]
+}
+
+pub(all) enum GeminiPart {
+  Text(String)
+  FunctionCall(name~ : String, args~ : Json)
+  FunctionResponse(name~ : String, response~ : Json)
+  InlineData(mime_type~ : String, data~ : String)
+  FileData(file_uri~ : String, mime_type~ : String?)
+}
+
+// Type aliases
+
+// Traits
+

@@ -16,7 +16,7 @@ pub fn responses_request_to_anthropic(request : Json) -> Json {
     _ => []
   }
   let messages = @harmony.responses_input_to_messages(input)
-  let msgs_json = messages_to_anthropic_json(messages)
+  let msgs_json = messages_to_json(messages)
   // Extract system message
   let system = extract_system_message(messages)
   // Get max_tokens (Anthropic requires this)

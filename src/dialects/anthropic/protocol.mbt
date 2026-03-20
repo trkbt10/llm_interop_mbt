@@ -7,7 +7,7 @@
 
 ///|
 /// Convert ModelMessage to JSON (Anthropic format)
-pub fn message_to_anthropic_json(message : @types.ModelMessage) -> Json {
+pub fn message_to_json(message : @types.ModelMessage) -> Json {
   match message {
     @types.ModelMessage::System(content) =>
       { "role": "system", "content": content }
@@ -48,7 +48,7 @@ pub fn message_to_anthropic_json(message : @types.ModelMessage) -> Json {
 
 ///|
 /// Convert message array to Anthropic format JSON array (excludes System messages)
-pub fn messages_to_anthropic_json(
+pub fn messages_to_json(
   messages : Array[@types.ModelMessage],
 ) -> Array[Json] {
   let result : Array[Json] = []
@@ -113,7 +113,7 @@ pub fn extract_system_message(messages : Array[@types.ModelMessage]) -> String {
 
 ///|
 /// Convert ToolDefinition to JSON (Anthropic format)
-pub fn tool_to_anthropic_json(tool : @types.ToolDefinition) -> Json {
+pub fn tool_to_json(tool : @types.ToolDefinition) -> Json {
   match tool.kind {
     @types.ToolDefinitionKind::Function =>
       {
@@ -123,12 +123,12 @@ pub fn tool_to_anthropic_json(tool : @types.ToolDefinition) -> Json {
       }
     @types.ToolDefinitionKind::WebSearchPreview(..)
     | @types.ToolDefinitionKind::WebSearchPreview20250311(..) =>
-      web_search_tool_to_anthropic_json()
+      web_search_tool_to_json()
   }
 }
 
 ///|
-fn web_search_tool_to_anthropic_json() -> Json {
+fn web_search_tool_to_json() -> Json {
   {
     "name": "web_search",
     "description": "Search the web",
@@ -142,12 +142,12 @@ fn web_search_tool_to_anthropic_json() -> Json {
 
 ///|
 /// Convert tool definition array to Anthropic format JSON array
-pub fn tools_to_anthropic_json(
+pub fn tools_to_json(
   tools : Array[@types.ToolDefinition],
 ) -> Array[Json] {
   let result : Array[Json] = []
   for tool in tools {
-    result.push(tool_to_anthropic_json(tool))
+    result.push(tool_to_json(tool))
   }
   result
 }
@@ -158,7 +158,7 @@ pub fn tools_to_anthropic_json(
 
 ///|
 /// Build Anthropic request body
-pub fn build_anthropic_body(
+pub fn build_body(
   model : String,
   messages : Array[@types.ModelMessage],
   tools : Array[@types.ToolDefinition],
@@ -171,7 +171,7 @@ pub fn build_anthropic_body(
   } else {
     extract_system_message(messages)
   }
-  let msgs = messages_to_anthropic_json(messages)
+  let msgs = messages_to_json(messages)
   // Anthropic API requires max_tokens
   let effective_max_tokens = max_tokens.unwrap_or(8192)
   let mut body : Json = {
@@ -191,7 +191,7 @@ pub fn build_anthropic_body(
     body = @utils.set_json_field(
       body,
       "tools",
-      Json::array(tools_to_anthropic_json(tools)),
+      Json::array(tools_to_json(tools)),
     )
   }
   body
@@ -203,12 +203,12 @@ pub fn build_anthropic_body(
 
 ///|
 /// Parse Anthropic response
-pub fn parse_anthropic_response(response_json : Json) -> @types.ModelResponse {
+pub fn parse_response(response_json : Json) -> @types.ModelResponse {
   match response_json {
     { "content": content, "stop_reason": String(stop_reason), .. } => {
       // Check for tool use
       if stop_reason == "tool_use" {
-        let tool_calls = parse_anthropic_tool_calls(content)
+        let tool_calls = parse_tool_calls(content)
         if tool_calls.length() > 0 {
           return @types.ModelResponse::ToolCalls(tool_calls)
         }
@@ -241,7 +241,7 @@ pub fn parse_anthropic_response(response_json : Json) -> @types.ModelResponse {
 
 ///|
 /// Parse tool calls from Anthropic response
-pub fn parse_anthropic_tool_calls(
+pub fn parse_tool_calls(
   content : Json,
 ) -> Array[@types.ToolCallRequest] {
   let result : Array[@types.ToolCallRequest] = []

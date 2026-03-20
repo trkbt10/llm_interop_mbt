@@ -39,7 +39,7 @@ pub fn responses_request_to_gemini(request : Json) -> Json {
         )
     }
   })
-  build_gemini_body(messages, tool_defs, max_tokens~)
+  build_body(messages, tool_defs, max_tokens~)
 }
 
 ///|

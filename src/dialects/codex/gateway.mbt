@@ -14,13 +14,13 @@
 ///|
 /// Codex app-server has no HTTP endpoint; this is a placeholder
 /// for DialectSpec compatibility. The actual transport is stdio.
-pub fn codex_default_base_url() -> String {
+pub fn default_base_url() -> String {
   ""
 }
 
 ///|
 /// No auth headers needed — Codex uses stdio, not HTTP.
-pub fn codex_auth_headers(_api_key : String) -> Map[String, String] {
+pub fn auth_headers(_api_key : String) -> Map[String, String] {
   {}
 }
 

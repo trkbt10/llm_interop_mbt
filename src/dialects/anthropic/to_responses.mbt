@@ -6,7 +6,7 @@
 
 ///|
 /// Convert Anthropic Messages API response JSON to Responses API response JSON
-pub fn anthropic_response_to_responses(
+pub fn response_to_responses(
   response : Json,
   response_id~ : String,
 ) -> Json {
@@ -105,7 +105,7 @@ fn build_web_search_action(input : Json) -> Json {
 pub fn parse_anthropic_as_model_response(
   response : Json,
 ) -> @types.ModelResponse {
-  parse_anthropic_response(response)
+  parse_response(response)
 }
 
 ///|
@@ -115,5 +115,5 @@ pub fn anthropic_to_responses_full(
   response_id~ : String,
 ) -> Json {
   // Option 1: Direct JSON conversion (preserves all details)
-  anthropic_response_to_responses(response, response_id~)
+  response_to_responses(response, response_id~)
 }

@@ -505,9 +505,9 @@ test "list_configured_models returns all models" {
 }
 
 ///|
-test "extract_gemini_model_from_path extracts model correctly" {
+test "extract_model_from_path extracts model correctly" {
   assert_eq(
-    @gemini.extract_gemini_model_from_path(
+    @gemini.extract_model_from_path(
       "/v1/models/gemini-pro:generateContent",
     ),
     "gemini-pro",
@@ -515,9 +515,9 @@ test "extract_gemini_model_from_path extracts model correctly" {
 }
 
 ///|
-test "extract_gemini_model_from_path handles complex model names" {
+test "extract_model_from_path handles complex model names" {
   assert_eq(
-    @gemini.extract_gemini_model_from_path(
+    @gemini.extract_model_from_path(
       "/v1/models/gemini-1.5-pro-latest:generateContent",
     ),
     "gemini-1.5-pro-latest",

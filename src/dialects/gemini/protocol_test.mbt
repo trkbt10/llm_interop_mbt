@@ -6,9 +6,9 @@
 // =============================================================================
 
 ///|
-test "message_to_gemini_content converts User message" {
+test "message_to_content converts User message" {
   let msg = @types.ModelMessage::User(content="Hello Gemini", name=None)
-  match message_to_gemini_content(msg) {
+  match message_to_content(msg) {
     Some(content) => {
       inspect(content.role, content="user")
       inspect(content.parts.length(), content="1")
@@ -22,14 +22,14 @@ test "message_to_gemini_content converts User message" {
 }
 
 ///|
-test "message_to_gemini_content converts Assistant with tool_calls" {
+test "message_to_content converts Assistant with tool_calls" {
   let calls = [
     @types.ToolCallRequest::new(id="gemini_search_0", name="search", arguments={
       "query": "MoonBit",
     }),
   ]
   let msg = @types.ModelMessage::Assistant(content="", tool_calls=Some(calls))
-  match message_to_gemini_content(msg) {
+  match message_to_content(msg) {
     Some(content) => {
       inspect(content.role, content="model")
       inspect(content.parts.length(), content="1")
@@ -43,12 +43,12 @@ test "message_to_gemini_content converts Assistant with tool_calls" {
 }
 
 ///|
-test "gemini_content_to_json converts text content" {
+test "content_to_json converts text content" {
   let content : GeminiContent = {
     role: "user",
     parts: [GeminiPart::Text("Hello")],
   }
-  let json = gemini_content_to_json(content)
+  let json = content_to_json(content)
   match json {
     { "role": "user", "parts": Array(parts), .. } => {
       inspect(parts.length(), content="1")
@@ -62,14 +62,14 @@ test "gemini_content_to_json converts text content" {
 }
 
 ///|
-test "gemini_content_to_json converts function call" {
+test "content_to_json converts function call" {
   let content : GeminiContent = {
     role: "model",
     parts: [
       GeminiPart::FunctionCall(name="get_weather", args={ "city": "Tokyo" }),
     ],
   }
-  let json = gemini_content_to_json(content)
+  let json = content_to_json(content)
   match json {
     { "role": "model", "parts": Array(parts), .. } =>
       match parts[0] {
@@ -88,13 +88,13 @@ test "gemini_content_to_json converts function call" {
 }
 
 ///|
-test "tool_to_gemini_json creates correct format" {
+test "tool_to_json creates correct format" {
   let tool = @types.ToolDefinition::new(
     name="calculator",
     description="Calculate math expressions",
     parameters={ "type": "object", "properties": {} },
   )
-  let json = tool_to_gemini_json(tool)
+  let json = tool_to_json(tool)
   match json {
     {
       "name": "calculator",
@@ -107,12 +107,12 @@ test "tool_to_gemini_json creates correct format" {
 }
 
 ///|
-test "tools_to_gemini_json wraps in functionDeclarations" {
+test "tools_to_json wraps in functionDeclarations" {
   let tools = [
     @types.ToolDefinition::new(name="tool1", description="First tool", parameters={}),
     @types.ToolDefinition::new(name="tool2", description="Second tool", parameters={}),
   ]
-  let json = tools_to_gemini_json(tools)
+  let json = tools_to_json(tools)
   match json {
     { "functionDeclarations": Array(decls), .. } =>
       inspect(decls.length(), content="2")
@@ -121,12 +121,12 @@ test "tools_to_gemini_json wraps in functionDeclarations" {
 }
 
 ///|
-test "build_gemini_body creates valid body" {
+test "build_body creates valid body" {
   let messages = [@types.ModelMessage::User(content="Calculate 2+2", name=None)]
   let tools = [
     @types.ToolDefinition::new(name="calculator", description="Math", parameters={}),
   ]
-  let body = build_gemini_body(
+  let body = build_body(
     messages,
     tools,
     max_tokens=Some(1000),
@@ -153,7 +153,7 @@ test "build_gemini_body creates valid body" {
 }
 
 ///|
-test "parse_gemini_response parses text response" {
+test "parse_response parses text response" {
   let json : Json = {
     "candidates": Json::array([
       {
@@ -165,7 +165,7 @@ test "parse_gemini_response parses text response" {
       },
     ]),
   }
-  let response = parse_gemini_response(json)
+  let response = parse_response(json)
   match response {
     @types.ModelResponse::Text(content) =>
       inspect(content, content="The answer is 4")
@@ -174,7 +174,7 @@ test "parse_gemini_response parses text response" {
 }
 
 ///|
-test "parse_gemini_response parses function call response" {
+test "parse_response parses function call response" {
   let json : Json = {
     "candidates": Json::array([
       {
@@ -193,7 +193,7 @@ test "parse_gemini_response parses function call response" {
       },
     ]),
   }
-  let response = parse_gemini_response(json)
+  let response = parse_response(json)
   match response {
     @types.ModelResponse::ToolCalls(calls) => {
       inspect(calls.length(), content="1")
@@ -206,11 +206,11 @@ test "parse_gemini_response parses function call response" {
 }
 
 ///|
-test "parse_gemini_response handles safety block" {
+test "parse_response handles safety block" {
   let json : Json = {
     "candidates": Json::array([{ "finishReason": "SAFETY" }]),
   }
-  let response = parse_gemini_response(json)
+  let response = parse_response(json)
   match response {
     @types.ModelResponse::ModelError(msg) => assert_true(msg.contains("safety"))
     _ => fail("Expected ModelError response")

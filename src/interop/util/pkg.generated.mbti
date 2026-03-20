@@ -12,21 +12,7 @@ pub fn anthropic_to_openai_chat_call_id(String) -> String
 
 pub fn anthropic_to_openai_responses_call_id(String) -> String
 
-pub fn convert_claude_image_to_responses(Json) -> Json
-
-pub fn convert_claude_text_to_responses(Json) -> Json
-
-pub fn convert_claude_tool_result_to_responses(Json) -> Json
-
-pub fn convert_claude_tool_use_to_responses(Json) -> Json
-
 pub fn convert_message_tool_call_ids(Array[@types.ModelMessage], ToolCallIdProvider) -> Array[@types.ModelMessage]
-
-pub fn convert_responses_function_call_output_to_claude(Json) -> Json
-
-pub fn convert_responses_function_call_to_claude(Json) -> Json
-
-pub fn convert_responses_image_to_claude(Json) -> Json
 
 pub fn convert_tool_call_id_to(String, ToolCallIdProvider) -> String
 
@@ -50,17 +36,7 @@ pub fn generate_openai_responses_call_id() -> String
 
 pub fn generate_tool_call_id(ToolCallIdProvider) -> String
 
-pub fn is_image_block(Json) -> Bool
-
 pub fn is_same_tool_call_id(String, String) -> Bool
-
-pub fn is_text_block(Json) -> Bool
-
-pub fn is_tool_result_block(Json) -> Bool
-
-pub fn is_tool_use_block(Json) -> Bool
-
-pub fn normalize_json_schema_for_openai(Json) -> Json
 
 pub fn openai_chat_to_anthropic_tool_use_id(String) -> String
 
@@ -73,8 +49,6 @@ pub fn openai_responses_to_anthropic_tool_use_id(String) -> String
 pub fn openai_responses_to_openai_chat_call_id(String) -> String
 
 pub fn reset_tool_call_id_counter() -> Unit
-
-pub fn schema_needs_normalization(Json) -> Bool
 
 // Errors
 

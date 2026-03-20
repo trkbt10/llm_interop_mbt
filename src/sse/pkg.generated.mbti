@@ -6,13 +6,9 @@ pub fn format_sse_done() -> String
 
 pub fn format_sse_event(String, Json) -> String
 
-pub fn parse_data_only_chunk(String) -> ParsedChunk
+pub fn parse_jsonl(String) -> Array[SseEvent] raise
 
-pub fn parse_data_only_jsonl(String) -> Array[SseEvent] raise
-
-pub fn parse_event_data_chunk(String) -> ParsedChunk
-
-pub fn parse_event_data_jsonl(String) -> Array[SseEvent] raise
+pub fn parse_sse_chunk(String) -> ParsedChunk
 
 // Errors
 

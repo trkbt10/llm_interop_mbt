@@ -1,0 +1,87 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "trkbt10/llm_interop/src/dialects/openai"
+
+import {
+  "trkbt10/llm_interop/src/sse",
+  "trkbt10/llm_interop/src/types",
+}
+
+// Values
+pub fn accumulate_chat_completions(String) -> @types.ModelResponse raise
+
+pub fn accumulate_responses_api(String) -> @types.ModelResponse raise
+
+pub fn build_chat_body(String, Array[@types.ModelMessage], Array[@types.ToolDefinition], max_tokens? : Int?, temperature? : Double?) -> Json
+
+pub fn build_responses_api_body(String, Array[@types.ModelMessage], Array[@types.ToolDefinition]) -> Json
+
+pub fn chat_completions_auth_headers(String) -> Map[String, String]
+
+pub fn chat_completions_default_base_url() -> String
+
+pub fn chat_completions_models_path(String) -> String
+
+pub fn chat_completions_path(String) -> String
+
+pub fn chat_completions_resolve(String, String, String) -> (String, String)?
+
+pub fn message_to_json(@types.ModelMessage) -> Json
+
+pub fn messages_to_json(Array[@types.ModelMessage]) -> Array[Json]
+
+pub fn messages_to_responses_input(Array[@types.ModelMessage]) -> Array[Json]
+
+pub fn normalize_json_schema_for_openai(Json) -> Json
+
+pub fn parse_chat_response(Json) -> @types.ModelResponse
+
+pub fn parse_responses_api_response(Json) -> @types.ModelResponse
+
+pub fn parse_tool_calls(Json) -> Array[@types.ToolCallRequest]
+
+pub fn responses_api_default_base_url() -> String
+
+pub fn responses_api_path(String) -> String
+
+pub fn responses_api_resolve(String, String, String) -> (String, String)?
+
+pub fn schema_needs_normalization(Json) -> Bool
+
+pub fn tool_to_json(@types.ToolDefinition) -> Json
+
+pub fn tool_to_responses_api_json(@types.ToolDefinition) -> Json
+
+pub fn tools_to_json(Array[@types.ToolDefinition]) -> Array[Json]
+
+pub fn tools_to_responses_api_json(Array[@types.ToolDefinition]) -> Array[Json]
+
+// Errors
+
+// Types and methods
+pub struct ChatCompletionsAccumulator {
+  text : StringBuilder
+  tool_calls : Array[@types.ToolCallAcc]
+  mut finish_reason : String
+}
+pub fn ChatCompletionsAccumulator::feed(Self, @sse.SseEvent) -> Unit
+pub fn ChatCompletionsAccumulator::finish(Self) -> @types.ModelResponse
+pub fn ChatCompletionsAccumulator::new() -> Self
+
+pub struct ResponsesApiAccumulator {
+  text : StringBuilder
+  annotations : Array[@types.ResponseAnnotation]
+  function_calls : Array[@types.ToolCallAcc]
+  output_index_map : Map[String, Int]
+  web_search_traces : Array[WebSearchTraceAcc]
+  mut completed : Bool
+}
+pub fn ResponsesApiAccumulator::feed(Self, @sse.SseEvent) -> Unit
+pub fn ResponsesApiAccumulator::finish(Self) -> @types.ModelResponse
+pub fn ResponsesApiAccumulator::new() -> Self
+
+type WebSearchTraceAcc
+
+// Type aliases
+
+// Traits
+

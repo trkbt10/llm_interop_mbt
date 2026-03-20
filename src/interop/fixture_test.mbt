@@ -85,7 +85,7 @@ test "fixture: parse Claude text response" {
       return
     }
   }
-  let result = @anthropic.anthropic_response_to_responses(
+  let result = @anthropic.response_to_responses(
     json,
     response_id="resp_test",
   )
@@ -115,7 +115,7 @@ test "fixture: parse Claude tool_use and convert to Responses API" {
       return
     }
   }
-  let result = @anthropic.anthropic_response_to_responses(
+  let result = @anthropic.response_to_responses(
     json,
     response_id="resp_test",
   )
@@ -156,7 +156,7 @@ test "fixture: parse Claude multi-tool and convert to Responses API" {
       return
     }
   }
-  let result = @anthropic.anthropic_response_to_responses(
+  let result = @anthropic.response_to_responses(
     json,
     response_id="resp_test",
   )
@@ -373,7 +373,7 @@ test "multi-turn: user -> assistant -> tool_result -> assistant" {
       return
     }
   }
-  let responses_result = @anthropic.anthropic_response_to_responses(
+  let responses_result = @anthropic.response_to_responses(
     anthropic_response,
     response_id="resp_1",
   )
@@ -426,7 +426,7 @@ test "multi-turn: user -> assistant -> tool_result -> assistant" {
       return
     }
   }
-  let final_result = @anthropic.anthropic_response_to_responses(
+  let final_result = @anthropic.response_to_responses(
     final_response,
     response_id="resp_2",
   )
@@ -475,7 +475,7 @@ test "multi-turn: tool call ID preserved through conversation" {
   }
   assert_true(original_claude_id.has_prefix("toolu_"))
   // Convert to Responses API
-  let responses_result = @anthropic.anthropic_response_to_responses(
+  let responses_result = @anthropic.response_to_responses(
     anthropic_response,
     response_id="resp_1",
   )

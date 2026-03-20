@@ -41,7 +41,7 @@ pub fn ClientConfig::new(
 ///|
 fn get_endpoint(provider : Provider) -> String {
   match provider {
-    Anthropic => @anthropic.anthropic_default_base_url() + "/messages"
+    Anthropic => @anthropic.default_base_url() + "/messages"
     OpenAI => @openai.chat_completions_default_base_url() + "/chat/completions"
     OpenAICompatible(base_url~) => base_url + "/v1/chat/completions"
   }
@@ -50,7 +50,7 @@ fn get_endpoint(provider : Provider) -> String {
 ///|
 fn get_headers(config : ClientConfig) -> Map[String, String] {
   match config.provider {
-    Anthropic => @anthropic.anthropic_auth_headers(config.api_key)
+    Anthropic => @anthropic.auth_headers(config.api_key)
     OpenAI | OpenAICompatible(_) =>
       @openai.chat_completions_auth_headers(config.api_key)
   }
@@ -64,7 +64,7 @@ fn build_request_body(
 ) -> String {
   let body = match config.provider {
     Anthropic =>
-      @anthropic.build_anthropic_body(
+      @anthropic.build_body(
         config.model,
         messages,
         tools,
@@ -72,7 +72,7 @@ fn build_request_body(
         temperature=config.temperature,
       )
     OpenAI | OpenAICompatible(_) =>
-      @openai.build_openai_chat_body(
+      @openai.build_chat_body(
         config.model,
         messages,
         tools,
@@ -86,8 +86,8 @@ fn build_request_body(
 ///|
 fn parse_response(config : ClientConfig, json : Json) -> @types.ModelResponse {
   match config.provider {
-    Anthropic => @anthropic.parse_anthropic_response(json)
-    OpenAI | OpenAICompatible(_) => @openai.parse_openai_chat_response(json)
+    Anthropic => @anthropic.parse_response(json)
+    OpenAI | OpenAICompatible(_) => @openai.parse_chat_response(json)
   }
 }
 
@@ -150,7 +150,7 @@ pub async fn chat_stream(
   let headers = get_headers(config)
   let body_json = match config.provider {
     Anthropic => {
-      let base = @anthropic.build_anthropic_body(
+      let base = @anthropic.build_body(
         config.model,
         messages,
         tools,
@@ -160,7 +160,7 @@ pub async fn chat_stream(
       @utils.set_json_field(base, "stream", Json::boolean(true))
     }
     OpenAI | OpenAICompatible(_) => {
-      let base = @openai.build_openai_chat_body(
+      let base = @openai.build_chat_body(
         config.model,
         messages,
         tools,

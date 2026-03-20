@@ -127,7 +127,7 @@ test "anthropic_to_responses: converts text response" {
     "model": "claude-sonnet-4-20250514",
     "stop_reason": "end_turn",
   }
-  let result = @anthropic.anthropic_response_to_responses(
+  let result = @anthropic.response_to_responses(
     response,
     response_id="resp_123",
   )
@@ -168,7 +168,7 @@ test "anthropic_to_responses: converts tool_use to function_call" {
     "model": "claude-sonnet-4-20250514",
     "stop_reason": "tool_use",
   }
-  let result = @anthropic.anthropic_response_to_responses(
+  let result = @anthropic.response_to_responses(
     response,
     response_id="resp_456",
   )
@@ -210,7 +210,7 @@ test "anthropic_to_responses: converts web_search tool_use to web_search_call" {
     "model": "claude-sonnet-4-20250514",
     "stop_reason": "tool_use",
   }
-  let result = @anthropic.anthropic_response_to_responses(
+  let result = @anthropic.response_to_responses(
     response,
     response_id="resp_web_1",
   )
@@ -285,7 +285,7 @@ test "gemini_to_responses: converts text response" {
       },
     ]),
   }
-  let result = @gemini.gemini_response_to_responses(
+  let result = @gemini.response_to_responses(
     response,
     response_id="resp_789",
     model="gemini-2.0-flash",
@@ -328,7 +328,7 @@ test "gemini_to_responses: converts functionCall to function_call" {
       },
     ]),
   }
-  let result = @gemini.gemini_response_to_responses(
+  let result = @gemini.response_to_responses(
     response,
     response_id="resp_func",
     model="gemini-2.0-flash",
@@ -372,7 +372,7 @@ test "gemini_to_responses: converts web_search functionCall to web_search_call" 
       },
     ]),
   }
-  let result = @gemini.gemini_response_to_responses(
+  let result = @gemini.response_to_responses(
     response,
     response_id="resp_web_gemini",
     model="gemini-2.0-flash",
@@ -413,7 +413,7 @@ test "full_pipeline: anthropic roundtrip preserves tool call IDs" {
     "stop_reason": "tool_use",
   }
   // 3. Convert back to Responses API
-  let responses_result = @anthropic.anthropic_response_to_responses(
+  let responses_result = @anthropic.response_to_responses(
     anthropic_response,
     response_id="resp_test",
   )

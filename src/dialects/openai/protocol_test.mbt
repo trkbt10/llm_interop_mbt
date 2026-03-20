@@ -15,9 +15,9 @@ let test_response_id : String = "resp_123"
 // =============================================================================
 
 ///|
-test "message_to_openai_json converts System message" {
+test "message_to_json converts System message" {
   let msg = @types.ModelMessage::System("You are a helpful assistant")
-  let json = message_to_openai_json(msg)
+  let json = message_to_json(msg)
   match json {
     { "role": "system", "content": "You are a helpful assistant", .. } => ()
     _ => fail("Unexpected JSON format")
@@ -25,9 +25,9 @@ test "message_to_openai_json converts System message" {
 }
 
 ///|
-test "message_to_openai_json converts User message" {
+test "message_to_json converts User message" {
   let msg = @types.ModelMessage::User(content="Hello", name=None)
-  let json = message_to_openai_json(msg)
+  let json = message_to_json(msg)
   match json {
     { "role": "user", "content": "Hello", .. } => ()
     _ => fail("Unexpected JSON format")
@@ -35,14 +35,14 @@ test "message_to_openai_json converts User message" {
 }
 
 ///|
-test "message_to_openai_json converts Assistant with tool_calls" {
+test "message_to_json converts Assistant with tool_calls" {
   let calls = [
     @types.ToolCallRequest::new(id="call_123", name="get_weather", arguments={
       "city": "Tokyo",
     }),
   ]
   let msg = @types.ModelMessage::Assistant(content="", tool_calls=Some(calls))
-  let json = message_to_openai_json(msg)
+  let json = message_to_json(msg)
   match json {
     { "role": "assistant", "tool_calls": Array(tc), .. } => {
       inspect(tc.length(), content="1")
@@ -57,12 +57,12 @@ test "message_to_openai_json converts Assistant with tool_calls" {
 }
 
 ///|
-test "message_to_openai_json converts ToolResult" {
+test "message_to_json converts ToolResult" {
   let msg = @types.ModelMessage::ToolResult(
     tool_call_id="call_123",
     content="Sunny, 25C",
   )
-  let json = message_to_openai_json(msg)
+  let json = message_to_json(msg)
   match json {
     { "role": "tool", "tool_call_id": "call_123", "content": "Sunny, 25C", .. } =>
       ()
@@ -75,7 +75,7 @@ test "message_to_openai_json converts ToolResult" {
 // =============================================================================
 
 ///|
-test "tool_to_openai_json creates correct format" {
+test "tool_to_json creates correct format" {
   let tool = @types.ToolDefinition::new(
     name="get_weather",
     description="Get weather info",
@@ -84,7 +84,7 @@ test "tool_to_openai_json creates correct format" {
       "properties": { "city": { "type": "string" } },
     },
   )
-  let json = tool_to_openai_json(tool)
+  let json = tool_to_json(tool)
   match json {
     { "type": "function", "function": { "name": "get_weather", .. }, .. } => ()
     _ => fail("Unexpected JSON format")
@@ -133,13 +133,13 @@ test "tool_to_responses_api_json creates web search builtin format" {
 // =============================================================================
 
 ///|
-test "build_openai_chat_body creates valid body" {
+test "build_chat_body creates valid body" {
   let messages = [
     @types.ModelMessage::System("You are helpful"),
     @types.ModelMessage::User(content="Hello", name=None),
   ]
   let tools : Array[@types.ToolDefinition] = []
-  let body = build_openai_chat_body(
+  let body = build_chat_body(
     test_model_openai,
     messages,
     tools,
@@ -209,7 +209,7 @@ test "build_responses_api_body includes web search builtin tool" {
 // =============================================================================
 
 ///|
-test "parse_openai_chat_response parses text response" {
+test "parse_chat_response parses text response" {
   let json : Json = {
     "choices": Json::array([
       {
@@ -218,7 +218,7 @@ test "parse_openai_chat_response parses text response" {
       },
     ]),
   }
-  let response = parse_openai_chat_response(json)
+  let response = parse_chat_response(json)
   match response {
     @types.ModelResponse::Text(content) => inspect(content, content="Hello!")
     _ => fail("Expected Text response")
@@ -226,7 +226,7 @@ test "parse_openai_chat_response parses text response" {
 }
 
 ///|
-test "parse_openai_chat_response parses tool_calls response" {
+test "parse_chat_response parses tool_calls response" {
   let json : Json = {
     "choices": Json::array([
       {
@@ -248,7 +248,7 @@ test "parse_openai_chat_response parses tool_calls response" {
       },
     ]),
   }
-  let response = parse_openai_chat_response(json)
+  let response = parse_chat_response(json)
   match response {
     @types.ModelResponse::ToolCalls(calls) => {
       inspect(calls.length(), content="1")

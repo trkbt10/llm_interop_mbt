@@ -12,7 +12,7 @@
 /// Transform an OpenAI Chat Completion request into a Codex intermediate format.
 /// Extracts the conversation into a prompt string that prepare_codex_upstream
 /// will use to build a JSON-RPC turn/start message.
-pub fn chat_request_to_codex(
+pub fn chat_request_to_protocol(
   body : String,
   _ctx : @types.TransformContext,
 ) -> String {
@@ -132,7 +132,7 @@ fn EventAccumulator::new() -> EventAccumulator {
 /// Transform Codex aggregated events (JSON array string) into an OpenAI
 /// Chat Completion response. The host transport collects JSONL events
 /// into a JSON array before calling this function.
-pub fn codex_events_to_chat(events_json : String) -> String {
+pub fn events_to_chat(events_json : String) -> String {
   let events = @json.parse(events_json) catch { _ => return events_json }
   let items = match events {
     Array(arr) => arr
@@ -147,8 +147,8 @@ pub fn codex_events_to_chat(events_json : String) -> String {
 
 ///|
 /// Alias for transform_response dispatch.
-pub fn codex_response_to_chat(events_json : String) -> String {
-  codex_events_to_chat(events_json)
+pub fn response_to_chat(events_json : String) -> String {
+  events_to_chat(events_json)
 }
 
 ///|

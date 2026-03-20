@@ -6,7 +6,7 @@
 
 ///|
 /// Convert Gemini GenerateContent response JSON to Responses API response JSON
-pub fn gemini_response_to_responses(
+pub fn response_to_responses(
   response : Json,
   response_id~ : String,
   model~ : String,
@@ -120,6 +120,6 @@ fn build_web_search_action(input : Json) -> Json {
 
 ///|
 /// Parse Gemini response JSON and convert to ModelResponse
-pub fn parse_gemini_as_model_response(response : Json) -> @types.ModelResponse {
-  parse_gemini_response(response)
+pub fn parse_as_model_response(response : Json) -> @types.ModelResponse {
+  parse_response(response)
 }

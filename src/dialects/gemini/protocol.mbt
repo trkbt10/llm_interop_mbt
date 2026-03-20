@@ -33,7 +33,7 @@ pub(all) struct GeminiContent {
 
 ///|
 /// Convert ModelMessage to GeminiContent
-pub fn message_to_gemini_content(
+pub fn message_to_content(
   message : @types.ModelMessage,
 ) -> GeminiContent? {
   match message {
@@ -80,12 +80,12 @@ pub fn message_to_gemini_content(
 
 ///|
 /// Convert message array to Gemini contents
-pub fn messages_to_gemini_contents(
+pub fn messages_to_contents(
   messages : Array[@types.ModelMessage],
 ) -> Array[GeminiContent] {
   let result : Array[GeminiContent] = []
   for msg in messages {
-    match message_to_gemini_content(msg) {
+    match message_to_content(msg) {
       Some(content) => result.push(content)
       None => ()
     }
@@ -114,7 +114,7 @@ fn gemini_part_to_json(part : GeminiPart) -> Json {
 
 ///|
 /// Convert GeminiContent to JSON
-pub fn gemini_content_to_json(content : GeminiContent) -> Json {
+pub fn content_to_json(content : GeminiContent) -> Json {
   let parts = content.parts.map(gemini_part_to_json)
   { "role": content.role, "parts": Json::array(parts) }
 }
@@ -125,7 +125,7 @@ pub fn gemini_content_to_json(content : GeminiContent) -> Json {
 
 ///|
 /// Convert ToolDefinition to Gemini function declaration JSON
-pub fn tool_to_gemini_json(tool : @types.ToolDefinition) -> Json {
+pub fn tool_to_json(tool : @types.ToolDefinition) -> Json {
   match tool.kind {
     @types.ToolDefinitionKind::Function =>
       {
@@ -135,12 +135,12 @@ pub fn tool_to_gemini_json(tool : @types.ToolDefinition) -> Json {
       }
     @types.ToolDefinitionKind::WebSearchPreview(..)
     | @types.ToolDefinitionKind::WebSearchPreview20250311(..) =>
-      web_search_tool_to_gemini_json()
+      web_search_tool_to_json()
   }
 }
 
 ///|
-fn web_search_tool_to_gemini_json() -> Json {
+fn web_search_tool_to_json() -> Json {
   {
     "name": "web_search",
     "description": "Search the web",
@@ -154,8 +154,8 @@ fn web_search_tool_to_gemini_json() -> Json {
 
 ///|
 /// Convert tool definitions array to Gemini tools format
-pub fn tools_to_gemini_json(tools : Array[@types.ToolDefinition]) -> Json {
-  let function_declarations = tools.map(tool_to_gemini_json)
+pub fn tools_to_json(tools : Array[@types.ToolDefinition]) -> Json {
+  let function_declarations = tools.map(tool_to_json)
   { "functionDeclarations": Json::array(function_declarations) }
 }
 
@@ -165,7 +165,7 @@ pub fn tools_to_gemini_json(tools : Array[@types.ToolDefinition]) -> Json {
 
 ///|
 /// Build Gemini GenerateContent request body
-pub fn build_gemini_body(
+pub fn build_body(
   messages : Array[@types.ModelMessage],
   tools : Array[@types.ToolDefinition],
   max_tokens? : Int? = None,
@@ -173,8 +173,8 @@ pub fn build_gemini_body(
   top_p? : Double? = None,
   top_k? : Int? = None,
 ) -> Json {
-  let contents = messages_to_gemini_contents(messages)
-  let contents_json = contents.map(gemini_content_to_json)
+  let contents = messages_to_contents(messages)
+  let contents_json = contents.map(content_to_json)
   let mut body : Json = { "contents": Json::array(contents_json) }
   // Generation config
   let mut has_gen_config = false
@@ -227,7 +227,7 @@ pub fn build_gemini_body(
     body = @utils.set_json_field(
       body,
       "tools",
-      Json::array([tools_to_gemini_json(tools)]),
+      Json::array([tools_to_json(tools)]),
     )
   }
   body
@@ -239,7 +239,7 @@ pub fn build_gemini_body(
 
 ///|
 /// Parse Gemini response
-pub fn parse_gemini_response(response_json : Json) -> @types.ModelResponse {
+pub fn parse_response(response_json : Json) -> @types.ModelResponse {
   match response_json {
     { "candidates": Array(candidates), .. } => {
       if candidates.length() == 0 {
@@ -248,7 +248,7 @@ pub fn parse_gemini_response(response_json : Json) -> @types.ModelResponse {
       let candidate = candidates[0]
       match candidate {
         { "content": { "parts": Array(parts), .. }, .. } => {
-          let tool_calls = parse_gemini_function_calls(parts)
+          let tool_calls = parse_function_calls(parts)
           if tool_calls.length() > 0 {
             return @types.ModelResponse::ToolCalls(tool_calls)
           }
@@ -269,7 +269,7 @@ pub fn parse_gemini_response(response_json : Json) -> @types.ModelResponse {
 
 ///|
 /// Parse function calls from Gemini response parts
-pub fn parse_gemini_function_calls(
+pub fn parse_function_calls(
   parts : Array[Json],
 ) -> Array[@types.ToolCallRequest] {
   let result : Array[@types.ToolCallRequest] = []
@@ -325,7 +325,7 @@ fn generate_gemini_synthetic_call_id(
 
 ///|
 /// Parse Gemini streaming chunk
-pub fn parse_gemini_stream_chunk(
+pub fn parse_stream_chunk(
   chunk_json : Json,
 ) -> (String, Array[@types.ToolCallRequest])? {
   match chunk_json {
@@ -334,7 +334,7 @@ pub fn parse_gemini_stream_chunk(
         match candidates[0] {
           { "content": { "parts": Array(parts), .. }, .. } => {
             let text = extract_gemini_text(parts)
-            let tool_calls = parse_gemini_function_calls(parts)
+            let tool_calls = parse_function_calls(parts)
             Some((text, tool_calls))
           }
           _ => None

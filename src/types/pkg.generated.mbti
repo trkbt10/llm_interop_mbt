@@ -4,9 +4,29 @@ package "trkbt10/llm_interop/src/types"
 // Values
 pub fn build_json_schema(type_~ : String, properties~ : Map[String, Json], required~ : Array[String]) -> Json
 
+pub fn process_tool_call_delta(Array[ToolCallAcc], Json) -> Unit
+
+pub fn tool_calls_to_requests(Array[ToolCallAcc]) -> Array[ToolCallRequest]
+
 // Errors
 
 // Types and methods
+pub(all) struct GenerationParams {
+  max_tokens : Json
+  temperature : Json
+  top_p : Json
+  top_k : Json
+  stop : Json
+  stream : Json
+}
+pub fn GenerationParams::apply_to_anthropic(Self, Map[String, Json], TransformContext) -> Unit
+pub fn GenerationParams::apply_to_gemini(Self, Map[String, Json], TransformContext) -> Unit
+pub fn GenerationParams::apply_to_openai(Self, Map[String, Json], TransformContext) -> Unit
+pub fn GenerationParams::empty() -> Self
+pub fn GenerationParams::from_anthropic(Json) -> Self
+pub fn GenerationParams::from_gemini(Json) -> Self
+pub fn GenerationParams::from_openai(Json) -> Self
+
 pub(all) enum ModelMessage {
   System(String)
   User(content~ : String, name~ : String?)
@@ -43,6 +63,12 @@ pub(all) struct RichTextResponse {
   tool_traces : Array[ToolCallTrace]
 }
 pub fn RichTextResponse::new(content~ : String, annotations? : Array[ResponseAnnotation], tool_traces? : Array[ToolCallTrace]) -> Self
+
+pub(all) struct ToolCallAcc {
+  mut id : String
+  mut name : String
+  arguments : StringBuilder
+}
 
 pub(all) enum ToolCallKind {
   Function
@@ -127,6 +153,12 @@ pub(all) enum ToolResult {
   Error(message~ : String)
   RequiresAction(next_tool~ : String, arguments~ : Json)
 }
+
+pub(all) struct TransformContext {
+  max_tokens : Int
+  max_tokens_field : String
+}
+pub fn TransformContext::default() -> Self
 
 // Type aliases
 

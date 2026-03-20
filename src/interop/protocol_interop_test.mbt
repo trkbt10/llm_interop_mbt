@@ -114,7 +114,7 @@ fn fixture_gemini_toolcall_response() -> Json {
 
 ///|
 test "parse Anthropic response and extract tool calls" {
-  let response = @anthropic.parse_anthropic_response(
+  let response = @anthropic.parse_response(
     fixture_anthropic_toolcall_response(),
   )
   match response {
@@ -133,7 +133,7 @@ test "parse Anthropic response and extract tool calls" {
 
 ///|
 test "parse OpenAI Chat response and extract tool calls" {
-  let response = @openai.parse_openai_chat_response(
+  let response = @openai.parse_chat_response(
     fixture_openai_chat_toolcall_response(),
   )
   match response {
@@ -168,7 +168,7 @@ test "parse OpenAI Responses API response and extract tool calls" {
 
 ///|
 test "parse Gemini response and extract tool calls" {
-  let response = @gemini.parse_gemini_response(
+  let response = @gemini.parse_response(
     fixture_gemini_toolcall_response(),
   )
   match response {
@@ -192,7 +192,7 @@ test "parse Gemini response and extract tool calls" {
 
 ///|
 test "interop: Anthropic tool call -> OpenAI Chat format" {
-  let anthropic_response = @anthropic.parse_anthropic_response(
+  let anthropic_response = @anthropic.parse_response(
     fixture_anthropic_toolcall_response(),
   )
   match anthropic_response {
@@ -213,7 +213,7 @@ test "interop: Anthropic tool call -> OpenAI Chat format" {
 
 ///|
 test "interop: OpenAI Chat tool call -> Anthropic format" {
-  let openai_response = @openai.parse_openai_chat_response(
+  let openai_response = @openai.parse_chat_response(
     fixture_openai_chat_toolcall_response(),
   )
   match openai_response {
@@ -232,7 +232,7 @@ test "interop: OpenAI Chat tool call -> Anthropic format" {
 
 ///|
 test "interop: Gemini tool call -> OpenAI Responses format" {
-  let gemini_response = @gemini.parse_gemini_response(
+  let gemini_response = @gemini.parse_response(
     fixture_gemini_toolcall_response(),
   )
   match gemini_response {
@@ -253,12 +253,12 @@ test "interop: Gemini tool call -> OpenAI Responses format" {
 test "interop: all providers can be compared via is_same_tool_call_id" {
   // Parse responses from all providers
   let anthropic_calls = match
-    @anthropic.parse_anthropic_response(fixture_anthropic_toolcall_response()) {
+    @anthropic.parse_response(fixture_anthropic_toolcall_response()) {
     @types.ModelResponse::ToolCalls(c) => c
     _ => []
   }
   let openai_chat_calls = match
-    @openai.parse_openai_chat_response(fixture_openai_chat_toolcall_response()) {
+    @openai.parse_chat_response(fixture_openai_chat_toolcall_response()) {
     @types.ModelResponse::ToolCalls(c) => c
     _ => []
   }
@@ -309,7 +309,7 @@ fn fixture_gemini_multi_toolcall_response() -> Json {
 
 ///|
 test "interop: Gemini multi tool calls -> Anthropic format" {
-  let gemini_response = @gemini.parse_gemini_response(
+  let gemini_response = @gemini.parse_response(
     fixture_gemini_multi_toolcall_response(),
   )
   match gemini_response {
@@ -340,7 +340,7 @@ test "interop: Gemini multi tool calls -> Anthropic format" {
 ///|
 test "full flow: parse Anthropic -> build message -> convert to OpenAI Chat" {
   // Parse Anthropic response
-  let anthropic_response = @anthropic.parse_anthropic_response(
+  let anthropic_response = @anthropic.parse_response(
     fixture_anthropic_toolcall_response(),
   )
   let tool_calls = match anthropic_response {
@@ -373,7 +373,7 @@ test "full flow: parse Anthropic -> build message -> convert to OpenAI Chat" {
     _ => fail("Expected ToolResult")
   }
   // Build OpenAI Chat body
-  let body = @openai.build_openai_chat_body(
+  let body = @openai.build_chat_body(
     "gpt-4",
     openai_messages,
     [],
@@ -396,7 +396,7 @@ test "full flow: parse Anthropic -> build message -> convert to OpenAI Chat" {
 ///|
 test "full flow: parse OpenAI -> convert to Anthropic -> build body" {
   // Parse OpenAI Chat response
-  let openai_response = @openai.parse_openai_chat_response(
+  let openai_response = @openai.parse_chat_response(
     fixture_openai_chat_toolcall_response(),
   )
   let tool_calls = match openai_response {
@@ -418,7 +418,7 @@ test "full flow: parse OpenAI -> convert to Anthropic -> build body" {
     @util.ToolCallIdProvider::AnthropicClaude,
   )
   // Build Anthropic body
-  let body = @anthropic.build_anthropic_body(
+  let body = @anthropic.build_body(
     "claude-3-opus-20240229",
     anthropic_messages,
     [],

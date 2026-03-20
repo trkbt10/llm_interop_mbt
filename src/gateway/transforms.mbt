@@ -11,27 +11,27 @@ pub fn transform_request(
     (OpenAI, OpenAI) => normalize_openai_params(body, ctx)
     (Anthropic, Anthropic) => normalize_anthropic_params(body, ctx)
     (Gemini, Gemini) => normalize_gemini_params(body, ctx)
-    (Anthropic, OpenAI) => @anthropic.anthropic_request_to_chat(body, ctx)
-    (Gemini, OpenAI) => @gemini.gemini_request_to_chat(body, model, ctx)
+    (Anthropic, OpenAI) => @anthropic.request_to_chat(body, ctx)
+    (Gemini, OpenAI) => @gemini.request_to_chat(body, model, ctx)
     (OpenAI, Anthropic) => @anthropic.chat_request_to_anthropic(body, ctx)
     (Gemini, Anthropic) => {
-      let openai = @gemini.gemini_request_to_chat(body, model, ctx)
+      let openai = @gemini.request_to_chat(body, model, ctx)
       @anthropic.chat_request_to_anthropic(openai, ctx)
     }
     (OpenAI, Gemini) => @gemini.chat_request_to_gemini(body, ctx)
     (Anthropic, Gemini) => {
-      let openai = @anthropic.anthropic_request_to_chat(body, ctx)
+      let openai = @anthropic.request_to_chat(body, ctx)
       @gemini.chat_request_to_gemini(openai, ctx)
     }
     // Codex: extract prompt from any surface via OpenAI pivot
-    (OpenAI, Codex) => @codex.chat_request_to_codex(body, ctx)
+    (OpenAI, Codex) => @codex.chat_request_to_protocol(body, ctx)
     (Anthropic, Codex) => {
-      let openai = @anthropic.anthropic_request_to_chat(body, ctx)
-      @codex.chat_request_to_codex(openai, ctx)
+      let openai = @anthropic.request_to_chat(body, ctx)
+      @codex.chat_request_to_protocol(openai, ctx)
     }
     (Gemini, Codex) => {
-      let openai = @gemini.gemini_request_to_chat(body, model, ctx)
-      @codex.chat_request_to_codex(openai, ctx)
+      let openai = @gemini.request_to_chat(body, model, ctx)
+      @codex.chat_request_to_protocol(openai, ctx)
     }
     (Codex, OpenAI) | (Codex, Anthropic) | (Codex, Gemini) => body
     (Codex, Codex) => body
@@ -105,12 +105,12 @@ pub fn transform_response(
 ) -> String {
   let json = @json.parse(body) catch { _ => return body }
   // Check for errors first
-  if @anthropic.is_anthropic_error(json) {
-    return match @anthropic.extract_anthropic_error(json) {
+  if @anthropic.is_error(json) {
+    return match @anthropic.extract_error(json) {
       Some(error_obj) =>
         match to {
-          OpenAI | Codex => @anthropic.anthropic_error_to_openai(error_obj)
-          Gemini => @anthropic.anthropic_error_to_gemini(error_obj)
+          OpenAI | Codex => @anthropic.error_to_openai(error_obj)
+          Gemini => @anthropic.error_to_gemini(error_obj)
           Anthropic => body
         }
       None => body
@@ -126,26 +126,26 @@ pub fn transform_response(
   // Transform success response
   match (from, to) {
     (OpenAI, OpenAI) | (Anthropic, Anthropic) | (Gemini, Gemini) => body
-    (Anthropic, OpenAI) => @anthropic.anthropic_response_to_chat(body)
-    (Gemini, OpenAI) => @gemini.gemini_response_to_chat(body)
+    (Anthropic, OpenAI) => @anthropic.response_to_chat(body)
+    (Gemini, OpenAI) => @gemini.response_to_chat(body)
     (OpenAI, Anthropic) => @anthropic.chat_response_to_anthropic(body)
     (Gemini, Anthropic) => {
-      let openai = @gemini.gemini_response_to_chat(body)
+      let openai = @gemini.response_to_chat(body)
       @anthropic.chat_response_to_anthropic(openai)
     }
     (OpenAI, Gemini) => @gemini.chat_response_to_gemini(body)
     (Anthropic, Gemini) => {
-      let openai = @anthropic.anthropic_response_to_chat(body)
+      let openai = @anthropic.response_to_chat(body)
       @gemini.chat_response_to_gemini(openai)
     }
     // Codex: events → target surface via OpenAI pivot
-    (Codex, OpenAI) => @codex.codex_response_to_chat(body)
+    (Codex, OpenAI) => @codex.response_to_chat(body)
     (Codex, Anthropic) => {
-      let openai = @codex.codex_response_to_chat(body)
+      let openai = @codex.response_to_chat(body)
       @anthropic.chat_response_to_anthropic(openai)
     }
     (Codex, Gemini) => {
-      let openai = @codex.codex_response_to_chat(body)
+      let openai = @codex.response_to_chat(body)
       @gemini.chat_response_to_gemini(openai)
     }
     (OpenAI, Codex) | (Anthropic, Codex) | (Gemini, Codex) => body

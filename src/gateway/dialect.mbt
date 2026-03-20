@@ -38,7 +38,7 @@ pub fn ModelApi::to_spec(self : ModelApi) -> DialectSpec {
     AnthropicMessages =>
       {
         id: "anthropic-messages",
-        default_base_url: @anthropic.anthropic_default_base_url(),
+        default_base_url: @anthropic.default_base_url(),
         surface: Anthropic,
         completion_path: fn(base, _model, _key) {
           @anthropic.anthropic_completion_path(base)
@@ -46,16 +46,16 @@ pub fn ModelApi::to_spec(self : ModelApi) -> DialectSpec {
         models_path: fn(base, _key) {
           @openai.chat_completions_models_path(base)
         },
-        auth_headers: @anthropic.anthropic_auth_headers,
+        auth_headers: @anthropic.auth_headers,
       }
     GoogleGenerativeAI =>
       {
         id: "google-generative-ai",
-        default_base_url: @gemini.gemini_default_base_url(),
+        default_base_url: @gemini.default_base_url(),
         surface: Gemini,
-        completion_path: @gemini.gemini_completion_path,
-        models_path: @gemini.gemini_models_path,
-        auth_headers: fn(_key) { @gemini.gemini_auth_headers() },
+        completion_path: @gemini.completion_path,
+        models_path: @gemini.models_path,
+        auth_headers: fn(_key) { @gemini.auth_headers() },
       }
     GithubCopilot =>
       {
@@ -99,20 +99,20 @@ pub fn ModelApi::to_spec(self : ModelApi) -> DialectSpec {
     CodexAppServer =>
       {
         id: "codex-app-server",
-        default_base_url: @codex.codex_default_base_url(),
+        default_base_url: @codex.default_base_url(),
         surface: Codex,
         completion_path: fn(base, _model, _key) { base },
         models_path: fn(base, _key) { base },
-        auth_headers: @codex.codex_auth_headers,
+        auth_headers: @codex.auth_headers,
       }
     ClaudeMcpServe =>
       {
         id: "claude-mcp-serve",
-        default_base_url: @claude_mcp.claude_mcp_default_base_url(),
+        default_base_url: @claude_mcp.default_base_url(),
         surface: OpenAI, // `claude mcp serve` is a backend; route via OpenAI surface
         completion_path: fn(base, _model, _key) { base },
         models_path: fn(base, _key) { base },
-        auth_headers: @claude_mcp.claude_mcp_auth_headers,
+        auth_headers: @claude_mcp.auth_headers,
       }
   }
 }
@@ -188,7 +188,7 @@ pub fn GatewaySurface::resolve_completion(
         None => None
       }
     Gemini =>
-      match @gemini.gemini_resolve_completion(meth, path, body) {
+      match @gemini.resolve_completion(meth, path, body) {
         Some((_, model, b)) =>
           Some(CompletionWithModel(dialect=Gemini, model~, body=b))
         None => None

@@ -23,7 +23,7 @@
 /// On error, produces 2 events:
 ///   1. turn/started (inProgress)
 ///   2. turn/completed (failed)
-pub fn chat_response_to_codex_events(
+pub fn chat_response_to_events(
   response_body : String,
   thread_id : String,
   turn_id : String,

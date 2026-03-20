@@ -1,0 +1,60 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "trkbt10/llm_interop/src/dialects/harmony"
+
+import {
+  "trkbt10/llm_interop/src/sse",
+  "trkbt10/llm_interop/src/types",
+}
+
+// Values
+pub fn accumulate_harmony(String) -> @types.ModelResponse raise
+
+pub fn accumulate_harmony_with_reasoning(String) -> (@types.ModelResponse, String) raise
+
+pub fn chat_completion_to_synthetic_events(Json) -> Array[@sse.SseEvent]
+
+pub fn model_response_to_responses_json(@types.ModelResponse, response_id~ : String, model~ : String) -> Json
+
+pub fn responses_input_to_messages(Array[Json]) -> Array[@types.ModelMessage]
+
+pub fn responses_request_to_chat_completions(Json, stream? : Bool) -> Json
+
+// Errors
+
+// Types and methods
+pub struct HarmonyAccumulator {
+  text : StringBuilder
+  reasoning : StringBuilder
+  mut current_channel : String
+  tool_calls : Array[@types.ToolCallAcc]
+  mut finish_reason : String
+}
+pub fn HarmonyAccumulator::feed(Self, @sse.SseEvent) -> Unit
+pub fn HarmonyAccumulator::finish(Self) -> @types.ModelResponse
+pub fn HarmonyAccumulator::get_reasoning(Self) -> String
+pub fn HarmonyAccumulator::new() -> Self
+
+pub struct HarmonyToResponsesTranslator {
+  response_id : String
+  model : String
+  mut next_output_index : Int
+  mut has_emitted_created : Bool
+  mut has_emitted_in_progress : Bool
+  mut current_message_output_index : Int
+  mut current_message_item_id : String
+  mut current_message_text : String
+  mut has_open_message : Bool
+  tool_calls : Array[HarmonyToolCallState]
+  reasoning_buffer : StringBuilder
+  completed_output : Array[Json]
+}
+pub fn HarmonyToResponsesTranslator::get_reasoning(Self) -> String
+pub fn HarmonyToResponsesTranslator::new(response_id~ : String, model? : String) -> Self
+pub fn HarmonyToResponsesTranslator::translate(Self, @sse.SseEvent) -> Array[(String, Json)]
+
+type HarmonyToolCallState
+
+// Type aliases
+
+// Traits
+

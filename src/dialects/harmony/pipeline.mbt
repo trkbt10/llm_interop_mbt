@@ -28,7 +28,7 @@ pub fn responses_request_to_chat_completions(
   for m in input_messages {
     messages.push(m)
   }
-  let msgs_json = @openai.messages_to_openai_json(messages)
+  let msgs_json = @openai.messages_to_json(messages)
   // Build Chat Completions body
   let body : Map[String, Json] = {
     "model": Json::string(model),

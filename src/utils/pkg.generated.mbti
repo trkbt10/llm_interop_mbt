@@ -2,6 +2,18 @@
 package "trkbt10/llm_interop/src/utils"
 
 // Values
+pub fn extract_json_field(String, String) -> String?
+
+pub fn find_substr(String, String, Int) -> Int?
+
+pub fn inject_json_field(String, String, String) -> String
+
+pub fn parse_url(String) -> (String, String)
+
+pub fn read_testdata(String) -> String raise
+
+pub fn resolve_testdata_path(String) -> String
+
 pub fn set_json_field(Json, String, Json) -> Json
 
 pub fn split_lines(String) -> Array[String]

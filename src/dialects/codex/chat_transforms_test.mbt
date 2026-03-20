@@ -6,10 +6,10 @@
 // =============================================================================
 
 ///|
-test "chat_request_to_codex: extracts last user message" {
+test "chat_request_to_protocol: extracts last user message" {
   let body =
     #|{"model":"codex","messages":[{"role":"system","content":"You are helpful."},{"role":"user","content":"Say hello"}]}
-  let result = chat_request_to_codex(body, @types.TransformContext::default())
+  let result = chat_request_to_protocol(body, @types.TransformContext::default())
   let json = @json.parse(result) catch { _ => fail("invalid json") }
   match json {
     { "prompt": String(prompt), "model": String(model), .. } => {
@@ -22,10 +22,10 @@ test "chat_request_to_codex: extracts last user message" {
 }
 
 ///|
-test "chat_request_to_codex: single user message" {
+test "chat_request_to_protocol: single user message" {
   let body =
     #|{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}]}
-  let result = chat_request_to_codex(body, @types.TransformContext::default())
+  let result = chat_request_to_protocol(body, @types.TransformContext::default())
   let json = @json.parse(result) catch { _ => fail("invalid json") }
   match json {
     { "prompt": String(prompt), "model": String(model), .. } => {
@@ -37,10 +37,10 @@ test "chat_request_to_codex: single user message" {
 }
 
 ///|
-test "chat_request_to_codex: picks last user message from multi-turn" {
+test "chat_request_to_protocol: picks last user message from multi-turn" {
   let body =
     #|{"model":"codex","messages":[{"role":"user","content":"first"},{"role":"assistant","content":"ok"},{"role":"user","content":"second"}]}
-  let result = chat_request_to_codex(body, @types.TransformContext::default())
+  let result = chat_request_to_protocol(body, @types.TransformContext::default())
   let json = @json.parse(result) catch { _ => fail("invalid json") }
   match json {
     { "prompt": String(prompt), .. } => assert_eq(prompt, "second")
@@ -49,10 +49,10 @@ test "chat_request_to_codex: picks last user message from multi-turn" {
 }
 
 ///|
-test "chat_request_to_codex: system + user concatenated" {
+test "chat_request_to_protocol: system + user concatenated" {
   let body =
     #|{"model":"codex","messages":[{"role":"system","content":"Be concise"},{"role":"user","content":"Hello"}]}
-  let result = chat_request_to_codex(body, @types.TransformContext::default())
+  let result = chat_request_to_protocol(body, @types.TransformContext::default())
   let json = @json.parse(result) catch { _ => fail("invalid json") }
   match json {
     { "prompt": String(prompt), .. } => {
@@ -64,10 +64,10 @@ test "chat_request_to_codex: system + user concatenated" {
 }
 
 ///|
-test "chat_request_to_codex: preserves messages array" {
+test "chat_request_to_protocol: preserves messages array" {
   let body =
     #|{"model":"codex","messages":[{"role":"user","content":"hi"}]}
-  let result = chat_request_to_codex(body, @types.TransformContext::default())
+  let result = chat_request_to_protocol(body, @types.TransformContext::default())
   let json = @json.parse(result) catch { _ => fail("invalid json") }
   match json {
     { "messages": Array(msgs), .. } => assert_eq(msgs.length(), 1)
@@ -76,10 +76,10 @@ test "chat_request_to_codex: preserves messages array" {
 }
 
 ///|
-test "chat_request_to_codex: extracts reasoning_effort" {
+test "chat_request_to_protocol: extracts reasoning_effort" {
   let body =
     #|{"model":"o3-mini","messages":[{"role":"user","content":"hi"}],"reasoning_effort":"high"}
-  let result = chat_request_to_codex(body, @types.TransformContext::default())
+  let result = chat_request_to_protocol(body, @types.TransformContext::default())
   let json = @json.parse(result) catch { _ => fail("invalid json") }
   match json {
     { "model": String(model), "effort": String(effort), .. } => {
@@ -91,17 +91,17 @@ test "chat_request_to_codex: extracts reasoning_effort" {
 }
 
 ///|
-test "chat_request_to_codex: omits effort when not present" {
+test "chat_request_to_protocol: omits effort when not present" {
   let body =
     #|{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}]}
-  let result = chat_request_to_codex(body, @types.TransformContext::default())
+  let result = chat_request_to_protocol(body, @types.TransformContext::default())
   let s = result
   assert_true(not(s.contains("effort")))
 }
 
 ///|
-test "chat_request_to_codex: handles invalid JSON gracefully" {
-  let result = chat_request_to_codex(
+test "chat_request_to_protocol: handles invalid JSON gracefully" {
+  let result = chat_request_to_protocol(
     "not json",
     @types.TransformContext::default(),
   )
@@ -132,11 +132,11 @@ fn build_events_array_from_fixture() -> String raise {
 // =============================================================================
 
 ///|
-test "codex_events_to_chat: produces valid response from fixture" {
+test "events_to_chat: produces valid response from fixture" {
   let events_json = build_events_array_from_fixture() catch {
     err => fail("Failed to load fixture: " + err.to_string())
   }
-  let result = codex_events_to_chat(events_json)
+  let result = events_to_chat(events_json)
   let json = @json.parse(result) catch { _ => fail("invalid json: " + result) }
   match json {
     {
@@ -184,11 +184,11 @@ test "codex_events_to_chat: produces valid response from fixture" {
 }
 
 ///|
-test "codex_events_to_chat: extracts turn ID from fixture" {
+test "events_to_chat: extracts turn ID from fixture" {
   let events_json = build_events_array_from_fixture() catch {
     err => fail("Failed to load fixture: " + err.to_string())
   }
-  let result = codex_events_to_chat(events_json)
+  let result = events_to_chat(events_json)
   let json = @json.parse(result) catch { _ => fail("invalid json") }
   match json {
     { "id": String(id), .. } =>
@@ -198,11 +198,11 @@ test "codex_events_to_chat: extracts turn ID from fixture" {
 }
 
 ///|
-test "codex_events_to_chat: includes cached and reasoning tokens" {
+test "events_to_chat: includes cached and reasoning tokens" {
   let events_json = build_events_array_from_fixture() catch {
     err => fail("Failed to load fixture: " + err.to_string())
   }
-  let result = codex_events_to_chat(events_json)
+  let result = events_to_chat(events_json)
   let json = @json.parse(result) catch { _ => fail("invalid json") }
   match json {
     {
@@ -225,8 +225,8 @@ test "codex_events_to_chat: includes cached and reasoning tokens" {
 // =============================================================================
 
 ///|
-test "codex_events_to_chat: empty events produce empty content" {
-  let result = codex_events_to_chat("[]")
+test "events_to_chat: empty events produce empty content" {
+  let result = events_to_chat("[]")
   let json = @json.parse(result) catch { _ => fail("invalid json") }
   match json {
     { "choices": Array(choices), .. } =>
@@ -240,10 +240,10 @@ test "codex_events_to_chat: empty events produce empty content" {
 }
 
 ///|
-test "codex_events_to_chat: assembles streaming deltas" {
+test "events_to_chat: assembles streaming deltas" {
   let events =
     #|[{"method":"item/agentMessage/delta","params":{"delta":"He"}},{"method":"item/agentMessage/delta","params":{"delta":"llo"}},{"method":"turn/completed","params":{"turn":{"id":"t1","status":"completed","error":null}}}]
-  let result = codex_events_to_chat(events)
+  let result = events_to_chat(events)
   let json = @json.parse(result) catch { _ => fail("invalid json") }
   match json {
     { "choices": Array(choices), .. } =>
@@ -257,10 +257,10 @@ test "codex_events_to_chat: assembles streaming deltas" {
 }
 
 ///|
-test "codex_events_to_chat: falls back to agent_message when no deltas" {
+test "events_to_chat: falls back to agent_message when no deltas" {
   let events =
     #|[{"method":"codex/event/agent_message","params":{"msg":{"type":"agent_message","message":"World","phase":"final_answer"}}},{"method":"turn/completed","params":{"turn":{"id":"t2","status":"completed","error":null}}}]
-  let result = codex_events_to_chat(events)
+  let result = events_to_chat(events)
   let json = @json.parse(result) catch { _ => fail("invalid json") }
   match json {
     { "choices": Array(choices), .. } =>
@@ -274,10 +274,10 @@ test "codex_events_to_chat: falls back to agent_message when no deltas" {
 }
 
 ///|
-test "codex_events_to_chat: falls back to task_complete last_agent_message" {
+test "events_to_chat: falls back to task_complete last_agent_message" {
   let events =
     #|[{"method":"codex/event/task_complete","params":{"msg":{"type":"task_complete","turn_id":"t3","last_agent_message":"Fallback"}}},{"method":"turn/completed","params":{"turn":{"id":"t3","status":"completed","error":null}}}]
-  let result = codex_events_to_chat(events)
+  let result = events_to_chat(events)
   let json = @json.parse(result) catch { _ => fail("invalid json") }
   match json {
     { "choices": Array(choices), .. } =>
@@ -291,10 +291,10 @@ test "codex_events_to_chat: falls back to task_complete last_agent_message" {
 }
 
 ///|
-test "codex_events_to_chat: handles codex/event/token_count format" {
+test "events_to_chat: handles codex/event/token_count format" {
   let events =
     #|[{"method":"codex/event/token_count","params":{"msg":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100,"output_tokens":50,"total_tokens":150,"cached_input_tokens":20,"reasoning_output_tokens":10}}}}},{"method":"turn/completed","params":{"turn":{"id":"t4","status":"completed","error":null}}}]
-  let result = codex_events_to_chat(events)
+  let result = events_to_chat(events)
   let json = @json.parse(result) catch { _ => fail("invalid json") }
   match json {
     {
@@ -315,10 +315,10 @@ test "codex_events_to_chat: handles codex/event/token_count format" {
 }
 
 ///|
-test "codex_events_to_chat: interrupted turn maps to stop" {
+test "events_to_chat: interrupted turn maps to stop" {
   let events =
     #|[{"method":"turn/completed","params":{"turn":{"id":"t5","status":"interrupted","error":null}}}]
-  let result = codex_events_to_chat(events)
+  let result = events_to_chat(events)
   let json = @json.parse(result) catch { _ => fail("invalid json") }
   match json {
     { "choices": Array(choices), .. } =>
@@ -331,10 +331,10 @@ test "codex_events_to_chat: interrupted turn maps to stop" {
 }
 
 ///|
-test "codex_events_to_chat: handles turn error" {
+test "events_to_chat: handles turn error" {
   let events =
     #|[{"method":"turn/completed","params":{"turn":{"id":"t6","status":"failed","error":"something went wrong"}}}]
-  let result = codex_events_to_chat(events)
+  let result = events_to_chat(events)
   let json = @json.parse(result) catch { _ => fail("invalid json") }
   match json {
     { "error": { "message": String(msg), .. }, .. } =>
@@ -344,18 +344,18 @@ test "codex_events_to_chat: handles turn error" {
 }
 
 ///|
-test "codex_events_to_chat: invalid JSON returns input" {
-  assert_eq(codex_events_to_chat("not json"), "not json")
+test "events_to_chat: invalid JSON returns input" {
+  assert_eq(events_to_chat("not json"), "not json")
 }
 
 ///|
-test "codex_response_to_chat: is alias for codex_events_to_chat" {
+test "response_to_chat: is alias for events_to_chat" {
   let events_json = build_events_array_from_fixture() catch {
     err => fail("Failed to load fixture: " + err.to_string())
   }
   assert_eq(
-    codex_events_to_chat(events_json),
-    codex_response_to_chat(events_json),
+    events_to_chat(events_json),
+    response_to_chat(events_json),
   )
 }
 

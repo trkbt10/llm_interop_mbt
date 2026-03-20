@@ -1,12 +1,38 @@
 // Generated using `moon info`, DON'T EDIT IT
 package "trkbt10/llm_interop/src/gateway"
 
+import {
+  "trkbt10/llm_interop/src/dialects/claude_mcp",
+  "trkbt10/llm_interop/src/dialects/codex",
+  "trkbt10/llm_interop/src/types",
+}
+
 // Values
 pub fn add_cors_headers(HttpResponse) -> HttpResponse
 
 pub fn config_to_json(GatewayConfig) -> Json
 
+pub fn enrich_remote_model_json(String, String, Array[ModelConfig]) -> Json
+
+pub fn model_config_to_codex_model_json(ModelConfig, String) -> Json
+
+pub fn model_to_list_json(String, String) -> Json
+
 pub fn parse_config(Json) -> GatewayConfig raise GatewayError
+
+pub fn parse_models_response(String, String) -> Array[Json]
+
+pub fn prepare_models_request(ProviderConfig, String, String) -> UpstreamRequest
+
+pub fn prepare_upstream(ProviderConfig, String, GatewaySurface, String, String, String) -> UpstreamRequest
+
+pub fn set_cors_headers(Map[String, String]) -> Unit
+
+pub fn transform_for_provider(ProviderConfig, String, GatewaySurface, GatewaySurface, String) -> String
+
+pub fn transform_request(String, GatewaySurface, GatewaySurface, String, @types.TransformContext) -> String
+
+pub fn transform_response(String, GatewaySurface, GatewaySurface) -> String
 
 // Errors
 pub(all) suberror GatewayError {
@@ -29,13 +55,6 @@ pub fn AuthMode::from_string(String) -> Self?
 pub impl Eq for AuthMode
 pub impl Show for AuthMode
 
-pub(all) struct BackendConfig {
-  id : String
-  provider : ProviderConfig
-  weight : Int
-}
-pub impl Show for BackendConfig
-
 pub(all) enum ConfigMode {
   Merge
   Replace
@@ -43,18 +62,27 @@ pub(all) enum ConfigMode {
 pub impl Eq for ConfigMode
 pub impl Show for ConfigMode
 
+pub(all) struct DialectSpec {
+  id : String
+  default_base_url : String
+  surface : GatewaySurface
+  completion_path : (String, String, String) -> String
+  models_path : (String, String) -> String
+  auth_headers : (String) -> Map[String, String]
+}
+
 pub(all) struct Gateway {
   config : GatewayConfig
   dialect : GatewaySurface
 }
+pub fn Gateway::list_configured_models(Self) -> Array[Json]
 pub fn Gateway::new(GatewayConfig, GatewaySurface) -> Self
-pub fn Gateway::route(Self, String, String, String) -> HttpResponse
-pub fn Gateway::select_backend(Self, String) -> BackendConfig?
+pub fn Gateway::resolve(Self, String, String, String) -> RouteResult
+pub fn Gateway::select_backend(Self, String) -> ProviderConfig?
 
 pub(all) struct GatewayConfig {
   mode : ConfigMode
   providers : Map[String, ProviderConfig]
-  backends : Array[BackendConfig]
   server : ServerConfig
 }
 pub fn GatewayConfig::default() -> Self
@@ -63,11 +91,19 @@ pub impl Show for GatewayConfig
 pub(all) enum GatewaySurface {
   OpenAI
   Anthropic
+  Gemini
+  Codex
 }
 pub fn GatewaySurface::from_string(String) -> Self?
+pub fn GatewaySurface::resolve_completion(Self, String, String, String) -> RouteResult?
 pub fn GatewaySurface::to_string(Self) -> String
 pub impl Eq for GatewaySurface
 pub impl Show for GatewaySurface
+
+pub(all) enum HandleResult {
+  Response(HttpResponse)
+  Streamed
+}
 
 pub(all) struct HttpResponse {
   status : Int
@@ -94,8 +130,16 @@ pub(all) enum ModelApi {
   GithubCopilot
   BedrockConverseStream
   Ollama
+  CodexAppServer
+  ClaudeMcpServe
 }
+pub fn ModelApi::auth_headers(Self, String) -> Map[String, String]
+pub fn ModelApi::completion_path(Self, String, String, String) -> String
+pub fn ModelApi::default_base_url(Self) -> String
 pub fn ModelApi::from_string(String) -> Self?
+pub fn ModelApi::models_path(Self, String, String) -> String
+pub fn ModelApi::to_dialect(Self) -> GatewaySurface
+pub fn ModelApi::to_spec(Self) -> DialectSpec
 pub fn ModelApi::to_string(Self) -> String
 pub impl Eq for ModelApi
 pub impl Show for ModelApi
@@ -140,9 +184,25 @@ pub(all) struct ProviderConfig {
   headers : Map[String, String]
   auth_header : Bool
   models : Array[ModelConfig]
+  models_from_endpoint : Bool
+  model_patterns : Array[String]
+  codex : @codex.CodexConfig?
+  claude_mcp : @claude_mcp.ClaudeMcpConfig?
+  model_aliases : Map[String, String]
 }
+pub fn ProviderConfig::list_model_json(Self) -> Array[Json]
 pub fn ProviderConfig::new(String, ModelApi) -> Self
 pub impl Show for ProviderConfig
+
+pub(all) enum RouteResult {
+  Health
+  ListModels
+  Completion(dialect~ : GatewaySurface, body~ : String)
+  ResponsesApi(body~ : String)
+  CompletionWithModel(dialect~ : GatewaySurface, model~ : String, body~ : String)
+  NotFound(path~ : String, dialect~ : String)
+}
+pub impl Show for RouteResult
 
 pub(all) struct ServerConfig {
   port : Int
@@ -158,6 +218,13 @@ pub(all) struct TokenCost {
 }
 pub fn TokenCost::default() -> Self
 pub impl Show for TokenCost
+
+pub(all) struct UpstreamRequest {
+  origin : String
+  path : String
+  headers : Map[String, String]
+  body : String
+}
 
 // Type aliases
 

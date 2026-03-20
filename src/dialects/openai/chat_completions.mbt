@@ -7,7 +7,7 @@
 
 ///|
 /// Convert ModelMessage to JSON (OpenAI Chat Completions format)
-pub fn message_to_openai_json(message : @types.ModelMessage) -> Json {
+pub fn message_to_json(message : @types.ModelMessage) -> Json {
   match message {
     @types.ModelMessage::System(content) =>
       { "role": "system", "content": content }
@@ -45,12 +45,12 @@ pub fn message_to_openai_json(message : @types.ModelMessage) -> Json {
 
 ///|
 /// Convert message array to OpenAI Chat Completions format JSON array
-pub fn messages_to_openai_json(
+pub fn messages_to_json(
   messages : Array[@types.ModelMessage],
 ) -> Array[Json] {
   let result : Array[Json] = []
   for msg in messages {
-    result.push(message_to_openai_json(msg))
+    result.push(message_to_json(msg))
   }
   result
 }
@@ -61,7 +61,7 @@ pub fn messages_to_openai_json(
 
 ///|
 /// Convert ToolDefinition to JSON (OpenAI Chat Completions format)
-pub fn tool_to_openai_json(tool : @types.ToolDefinition) -> Json {
+pub fn tool_to_json(tool : @types.ToolDefinition) -> Json {
   match tool.kind {
     @types.ToolDefinitionKind::Function =>
       {
@@ -74,12 +74,12 @@ pub fn tool_to_openai_json(tool : @types.ToolDefinition) -> Json {
       }
     @types.ToolDefinitionKind::WebSearchPreview(..)
     | @types.ToolDefinitionKind::WebSearchPreview20250311(..) =>
-      web_search_tool_to_openai_json()
+      web_search_tool_to_json()
   }
 }
 
 ///|
-fn web_search_tool_to_openai_json() -> Json {
+fn web_search_tool_to_json() -> Json {
   {
     "type": "function",
     "function": {
@@ -96,12 +96,12 @@ fn web_search_tool_to_openai_json() -> Json {
 
 ///|
 /// Convert tool definition array to OpenAI Chat Completions format JSON array
-pub fn tools_to_openai_json(
+pub fn tools_to_json(
   tools : Array[@types.ToolDefinition],
 ) -> Array[Json] {
   let result : Array[Json] = []
   for tool in tools {
-    result.push(tool_to_openai_json(tool))
+    result.push(tool_to_json(tool))
   }
   result
 }
@@ -112,14 +112,14 @@ pub fn tools_to_openai_json(
 
 ///|
 /// Build OpenAI Chat Completions request body
-pub fn build_openai_chat_body(
+pub fn build_chat_body(
   model : String,
   messages : Array[@types.ModelMessage],
   tools : Array[@types.ToolDefinition],
   max_tokens? : Int? = None,
   temperature? : Double? = None,
 ) -> Json {
-  let msgs = messages_to_openai_json(messages)
+  let msgs = messages_to_json(messages)
   let mut body : Json = { "model": model, "messages": Json::array(msgs) }
   match max_tokens {
     Some(max) =>
@@ -139,7 +139,7 @@ pub fn build_openai_chat_body(
     body = @utils.set_json_field(
       body,
       "tools",
-      Json::array(tools_to_openai_json(tools)),
+      Json::array(tools_to_json(tools)),
     )
     body = @utils.set_json_field(body, "tool_choice", Json::string("auto"))
   }
@@ -152,7 +152,7 @@ pub fn build_openai_chat_body(
 
 ///|
 /// Parse OpenAI Chat Completions response
-pub fn parse_openai_chat_response(json : Json) -> @types.ModelResponse {
+pub fn parse_chat_response(json : Json) -> @types.ModelResponse {
   match json {
     { "choices": Array(choices), .. } => {
       if choices.length() == 0 {
@@ -165,7 +165,7 @@ pub fn parse_openai_chat_response(json : Json) -> @types.ModelResponse {
           if finish_reason == "tool_calls" {
             match message {
               { "tool_calls": tool_calls, .. } => {
-                let calls = parse_openai_tool_calls(tool_calls)
+                let calls = parse_tool_calls(tool_calls)
                 if calls.length() > 0 {
                   return @types.ModelResponse::ToolCalls(calls)
                 }
@@ -178,7 +178,7 @@ pub fn parse_openai_chat_response(json : Json) -> @types.ModelResponse {
             { "content": String(content), .. } =>
               @types.ModelResponse::Text(content)
             { "content": Null, "tool_calls": tool_calls, .. } => {
-              let calls = parse_openai_tool_calls(tool_calls)
+              let calls = parse_tool_calls(tool_calls)
               if calls.length() > 0 {
                 @types.ModelResponse::ToolCalls(calls)
               } else {
@@ -199,7 +199,7 @@ pub fn parse_openai_chat_response(json : Json) -> @types.ModelResponse {
 
 ///|
 /// Parse tool calls from OpenAI response
-pub fn parse_openai_tool_calls(
+pub fn parse_tool_calls(
   tool_calls : Json,
 ) -> Array[@types.ToolCallRequest] {
   let result : Array[@types.ToolCallRequest] = []

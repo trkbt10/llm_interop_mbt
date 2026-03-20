@@ -3,13 +3,13 @@
 
 ///|
 /// Returns the default base URL for the Gemini API
-pub fn gemini_default_base_url() -> String {
+pub fn default_base_url() -> String {
   "https://generativelanguage.googleapis.com/v1beta"
 }
 
 ///|
 /// Builds the generateContent endpoint path including model and API key
-pub fn gemini_completion_path(
+pub fn completion_path(
   base_path : String,
   model : String,
   api_key : String,
@@ -19,13 +19,13 @@ pub fn gemini_completion_path(
 
 ///|
 /// Builds the models listing endpoint path with API key
-pub fn gemini_models_path(base_path : String, api_key : String) -> String {
+pub fn models_path(base_path : String, api_key : String) -> String {
   base_path + "/models?key=" + api_key
 }
 
 ///|
 /// Builds request headers (API key is passed via URL, not headers)
-pub fn gemini_auth_headers() -> Map[String, String] {
+pub fn auth_headers() -> Map[String, String] {
   let headers : Map[String, String] = {}
   headers["Content-Type"] = "application/json"
   // API key is passed in URL, no auth header needed
@@ -35,7 +35,7 @@ pub fn gemini_auth_headers() -> Map[String, String] {
 ///|
 /// Resolves an incoming HTTP request as a Gemini generateContent call.
 /// Returns `Some((dialect, model, body))` if the request matches, `None` otherwise.
-pub fn gemini_resolve_completion(
+pub fn resolve_completion(
   meth : String,
   path : String,
   body : String,
@@ -43,7 +43,7 @@ pub fn gemini_resolve_completion(
   if path.has_prefix("/v1/models/") &&
     path.has_suffix(":generateContent") &&
     meth == "POST" {
-    let model = extract_gemini_model_from_path(path)
+    let model = extract_model_from_path(path)
     return Some(("gemini", model, body))
   }
   None
@@ -52,7 +52,7 @@ pub fn gemini_resolve_completion(
 ///|
 /// Extract model name from Gemini generateContent path
 /// Path format: /v1/models/{model}:generateContent
-pub fn extract_gemini_model_from_path(path : String) -> String {
+pub fn extract_model_from_path(path : String) -> String {
   let prefix = "/v1/models/"
   let suffix = ":generateContent"
   if path.has_prefix(prefix) && path.has_suffix(suffix) {

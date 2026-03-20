@@ -3,7 +3,7 @@
 
 ///|
 /// Returns the default base URL for the Anthropic Messages API
-pub fn anthropic_default_base_url() -> String {
+pub fn default_base_url() -> String {
   "https://api.anthropic.com/v1"
 }
 
@@ -15,7 +15,7 @@ pub fn anthropic_completion_path(base_path : String) -> String {
 
 ///|
 /// Builds authentication headers including the API key and anthropic-version
-pub fn anthropic_auth_headers(api_key : String) -> Map[String, String] {
+pub fn auth_headers(api_key : String) -> Map[String, String] {
   let headers : Map[String, String] = {}
   headers["Content-Type"] = "application/json"
   headers["x-api-key"] = api_key

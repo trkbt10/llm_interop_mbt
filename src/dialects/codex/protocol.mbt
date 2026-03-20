@@ -8,25 +8,25 @@
 
 ///|
 /// Build a JSON-RPC 2.0 success response (delegates to @jsonrpc)
-pub fn codex_rpc_response(id : Int?, result : Json) -> String {
+pub fn rpc_response(id : Int?, result : Json) -> String {
   @jsonrpc.build_response(id, result)
 }
 
 ///|
 /// Build a JSON-RPC 2.0 error response (delegates to @jsonrpc)
-pub fn codex_rpc_error(id : Int?, code : Int, message : String) -> String {
+pub fn rpc_error(id : Int?, code : Int, message : String) -> String {
   @jsonrpc.build_error_response(id, code, message)
 }
 
 ///|
 /// Build a JSON-RPC 2.0 notification (delegates to @jsonrpc)
-pub fn codex_rpc_notification(rpc_method : String, params : Json) -> String {
+pub fn rpc_notification(rpc_method : String, params : Json) -> String {
   @jsonrpc.build_notification(rpc_method, Some(params))
 }
 
 ///|
 /// Build a Codex error event string (for inline error in IPC transport)
-pub fn codex_ipc_error_event(message : String) -> String {
+pub fn ipc_error_event(message : String) -> String {
   let event : Json = { "method": "error", "params": { "message": message } }
   "[" + event.stringify() + "]"
 }

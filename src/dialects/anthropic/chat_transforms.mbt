@@ -6,7 +6,7 @@
 
 ///|
 /// Transform Anthropic Messages request to OpenAI Chat Completions format
-pub fn anthropic_request_to_chat(
+pub fn request_to_chat(
   body : String,
   ctx : @types.TransformContext,
 ) -> String {
@@ -168,7 +168,7 @@ fn transform_openai_content_to_anthropic(content : Json) -> Json {
 
 ///|
 /// Transform Anthropic Messages response to OpenAI Chat Completions format
-pub fn anthropic_response_to_chat(body : String) -> String {
+pub fn response_to_chat(body : String) -> String {
   let json = @json.parse(body) catch { _ => return body }
   // Extract fields from Anthropic response
   let id = match json {
@@ -252,7 +252,7 @@ pub fn chat_response_to_anthropic(body : String) -> String {
 
 ///|
 /// Transform Anthropic error to OpenAI error format
-pub fn anthropic_error_to_openai(error_obj : Json) -> String {
+pub fn error_to_openai(error_obj : Json) -> String {
   let message = match error_obj {
     { "message": String(msg), .. } => msg
     _ => "Unknown error"
@@ -271,7 +271,7 @@ pub fn anthropic_error_to_openai(error_obj : Json) -> String {
 
 ///|
 /// Transform Anthropic error to Gemini error format
-pub fn anthropic_error_to_gemini(error_obj : Json) -> String {
+pub fn error_to_gemini(error_obj : Json) -> String {
   let message = match error_obj {
     { "message": String(msg), .. } => msg
     _ => "Unknown error"
@@ -308,7 +308,7 @@ pub fn openai_error_to_anthropic(body : String) -> String {
 
 ///|
 /// Check if response is an Anthropic error format
-pub fn is_anthropic_error(json : Json) -> Bool {
+pub fn is_error(json : Json) -> Bool {
   match json {
     { "type": String("error"), "error": _, .. } => true
     _ => false
@@ -326,7 +326,7 @@ pub fn is_openai_error(json : Json) -> Bool {
 
 ///|
 /// Extract error object from Anthropic error response
-pub fn extract_anthropic_error(json : Json) -> Json? {
+pub fn extract_error(json : Json) -> Json? {
   match json {
     { "type": String("error"), "error": error_obj, .. } => Some(error_obj)
     _ => None
