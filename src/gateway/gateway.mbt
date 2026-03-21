@@ -37,10 +37,15 @@ pub fn prepare_upstream(
   } else {
     transformed
   }
+  // Merge auth_headers with provider.headers (provider.headers take precedence)
+  let headers = provider.api.auth_headers(api_key)
+  for key, value in provider.headers {
+    headers[key] = value
+  }
   {
     origin,
     path: provider.api.completion_path(base_path, backend_model, api_key),
-    headers: provider.api.auth_headers(api_key),
+    headers,
     body: final_body,
   }
 }

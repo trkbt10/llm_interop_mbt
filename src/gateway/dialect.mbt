@@ -96,6 +96,19 @@ pub fn ModelApi::to_spec(self : ModelApi) -> DialectSpec {
         },
         auth_headers: @openai.chat_completions_auth_headers,
       }
+    OpenRouter =>
+      {
+        id: "openrouter",
+        default_base_url: "https://openrouter.ai/api",
+        surface: OpenAI,
+        completion_path: fn(base, _model, _key) {
+          @openai.chat_completions_path(base)
+        },
+        models_path: fn(base, _key) {
+          @openai.chat_completions_models_path(base)
+        },
+        auth_headers: @openai.chat_completions_auth_headers,
+      }
     CodexAppServer =>
       {
         id: "codex-app-server",

@@ -22,6 +22,7 @@ pub(all) enum ModelApi {
   GithubCopilot // GitHub Copilot API
   BedrockConverseStream // AWS Bedrock converse stream
   Ollama // Ollama local API
+  OpenRouter // OpenRouter API (OpenAI-compatible + custom headers)
   CodexAppServer // Codex app-server JSON-RPC API
   ClaudeMcpServe // `claude mcp serve` subprocess API
 } derive(Show, Eq)
@@ -37,6 +38,7 @@ pub fn ModelApi::from_string(s : String) -> ModelApi? {
     "github-copilot" | "copilot" => Some(GithubCopilot)
     "bedrock-converse-stream" | "bedrock" => Some(BedrockConverseStream)
     "ollama" => Some(Ollama)
+    "openrouter" => Some(OpenRouter)
     "codex-app-server" | "codex" => Some(CodexAppServer)
     "claude-mcp-serve" | "claude-mcp" => Some(ClaudeMcpServe)
     _ => None
@@ -54,6 +56,7 @@ pub fn ModelApi::to_string(self : ModelApi) -> String {
     GithubCopilot => "github-copilot"
     BedrockConverseStream => "bedrock-converse-stream"
     Ollama => "ollama"
+    OpenRouter => "openrouter"
     CodexAppServer => "codex-app-server"
     ClaudeMcpServe => "claude-mcp-serve"
   }

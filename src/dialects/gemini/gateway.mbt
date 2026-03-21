@@ -18,6 +18,16 @@ pub fn completion_path(
 }
 
 ///|
+/// Builds the streamGenerateContent endpoint path for streaming responses
+pub fn stream_completion_path(
+  base_path : String,
+  model : String,
+  api_key : String,
+) -> String {
+  base_path + "/models/" + model + ":streamGenerateContent?alt=sse&key=" + api_key
+}
+
+///|
 /// Builds the models listing endpoint path with API key
 pub fn models_path(base_path : String, api_key : String) -> String {
   base_path + "/models?key=" + api_key
@@ -40,13 +50,55 @@ pub fn resolve_completion(
   path : String,
   body : String,
 ) -> (String, String, String)? {
-  if path.has_prefix("/v1/models/") &&
-    path.has_suffix(":generateContent") &&
-    meth == "POST" {
+  if meth != "POST" || not(path.has_prefix("/v1/models/")) {
+    return None
+  }
+  if path.has_suffix(":generateContent") {
     let model = extract_model_from_path(path)
     return Some(("gemini", model, body))
   }
+  // Streaming endpoint: :streamGenerateContent?alt=sse
+  if path.contains(":streamGenerateContent") {
+    let model = extract_model_from_stream_path(path)
+    return Some(("gemini", model, body))
+  }
   None
+}
+
+///|
+/// Extract model name from Gemini streamGenerateContent path
+/// Path format: /v1/models/{model}:streamGenerateContent?alt=sse&key=...
+pub fn extract_model_from_stream_path(path : String) -> String {
+  let prefix = "/v1/models/"
+  let suffix = ":streamGenerateContent"
+  if path.has_prefix(prefix) {
+    let start = prefix.length()
+    // Find the position of the suffix
+    let mut end = path.length()
+    let mut idx = 0
+    for c in path {
+      if idx >= start && c == ':' {
+        end = idx
+        break
+      }
+      idx = idx + 1
+    }
+    if end > start {
+      let mut result = ""
+      let mut i = 0
+      for c in path {
+        if i >= start && i < end {
+          result = result + c.to_string()
+        }
+        i = i + 1
+      }
+      result
+    } else {
+      ""
+    }
+  } else {
+    ""
+  }
 }
 
 ///|

@@ -554,3 +554,100 @@ test "add_cors_headers adds required headers" {
     None => fail("expected Access-Control-Allow-Methods header")
   }
 }
+
+// =============================================================================
+// Provider headers merge tests
+// =============================================================================
+
+///|
+test "prepare_upstream merges provider custom headers" {
+  let provider : ProviderConfig = {
+    id: "openrouter",
+    base_url: "https://openrouter.ai/api/v1",
+    api_key: "sk-or-test",
+    auth: ApiKey,
+    api: OpenRouter,
+    headers: {
+      "HTTP-Referer": "https://myapp.com",
+      "X-Title": "My App",
+    },
+    auth_header: true,
+    models: [],
+    model_patterns: [],
+    models_from_endpoint: true,
+    codex: None,
+    claude_mcp: None,
+    model_aliases: {},
+  }
+  let body =
+    #|{"model": "anthropic/claude-sonnet-4-20250514", "messages": [{"role": "user", "content": "hi"}]}
+  let req = prepare_upstream(
+    provider,
+    body,
+    OpenAI,
+    "anthropic/claude-sonnet-4-20250514",
+    "https://openrouter.ai/api/v1",
+    "sk-or-test",
+  )
+  // Auth headers should be present
+  assert_eq(req.headers.get("Authorization"), Some("Bearer sk-or-test"))
+  // Custom provider headers should be merged
+  assert_eq(req.headers.get("HTTP-Referer"), Some("https://myapp.com"))
+  assert_eq(req.headers.get("X-Title"), Some("My App"))
+}
+
+///|
+test "prepare_upstream without custom headers works normally" {
+  let provider : ProviderConfig = {
+    id: "openai",
+    base_url: "https://api.openai.com/v1",
+    api_key: "sk-test",
+    auth: ApiKey,
+    api: OpenAICompletions,
+    headers: {},
+    auth_header: true,
+    models: [],
+    model_patterns: [],
+    models_from_endpoint: true,
+    codex: None,
+    claude_mcp: None,
+    model_aliases: {},
+  }
+  let body =
+    #|{"model": "gpt-4o", "messages": [{"role": "user", "content": "hi"}]}
+  let req = prepare_upstream(
+    provider,
+    body,
+    OpenAI,
+    "gpt-4o",
+    "https://api.openai.com/v1",
+    "sk-test",
+  )
+  assert_eq(req.headers.get("Authorization"), Some("Bearer sk-test"))
+  // No extra headers
+  assert_eq(req.headers.get("HTTP-Referer"), None)
+}
+
+///|
+test "OpenRouter ModelApi resolves correctly" {
+  let spec = OpenRouter.to_spec()
+  assert_eq(spec.id, "openrouter")
+  assert_eq(spec.default_base_url, "https://openrouter.ai/api")
+  assert_eq(spec.surface, OpenAI)
+}
+
+///|
+test "ModelApi::from_string parses openrouter" {
+  match ModelApi::from_string("openrouter") {
+    Some(OpenRouter) => ()
+    other => fail("expected OpenRouter, got \{other}")
+  }
+}
+
+///|
+test "Ollama ModelApi resolves correctly" {
+  let spec = Ollama.to_spec()
+  assert_eq(spec.id, "ollama")
+  assert_eq(spec.default_base_url, "http://localhost:11434")
+  assert_eq(spec.surface, OpenAI)
+}
