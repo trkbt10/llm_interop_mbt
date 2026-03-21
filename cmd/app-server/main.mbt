@@ -13,19 +13,6 @@
 /// Any backend (OpenAI, Anthropic, Gemini, Ollama...)
 /// ```
 
-///|
-let default_config : String = "gateway-config.json"
-
-///|
-fn load_config(path : String) -> @gw.GatewayConfig raise @gw.GatewayError {
-  let text = @fs.read_file_to_string(path) catch {
-    _ => raise @gw.GatewayError::ConfigError("Failed to read config: " + path)
-  }
-  let json = @json.parse(text) catch {
-    _ => raise @gw.GatewayError::ConfigError("Invalid JSON in config")
-  }
-  @gw.parse_config(json)
-}
 
 ///|
 fn expand_env(s : String) -> String {
@@ -995,7 +982,7 @@ struct CliOptions {
 
 ///|
 fn parse_args(args : Array[String]) -> CliOptions {
-  let mut config_path = default_config
+  let mut config_path = @gw.default_config_filename
   let mut ws_port : Int? = None
   let mut help = false
   let mut i = 0
@@ -1022,7 +1009,7 @@ fn parse_args(args : Array[String]) -> CliOptions {
 ///|
 fn print_help() -> Unit {
   println(
-    "Codex app-server frontend - LLM backend proxy\n\nUsage: app-server [options]\n\nOptions:\n  -c, --config <path>    Path to gateway config file (default: \{default_config})\n      --ws-port <port>   Start WebSocket server instead of stdio\n  -h, --help             Show this help message\n\nDefault: reads JSON-RPC from stdin, writes to stdout.\nWith --ws-port: listens on ws://0.0.0.0:<port>.",
+    "Codex app-server frontend - LLM backend proxy\n\nUsage: app-server [options]\n\nOptions:\n  -c, --config <path>    Path to gateway config file (default: \{@gw.default_config_filename})\n      --ws-port <port>   Start WebSocket server instead of stdio\n  -h, --help             Show this help message\n\nDefault: reads JSON-RPC from stdin, writes to stdout.\nWith --ws-port: listens on ws://0.0.0.0:<port>.",
   )
 }
 
@@ -1034,7 +1021,7 @@ async fn run() -> Unit {
     print_help()
     return
   }
-  let config = load_config(opts.config_path) catch {
+  let config = @gw.load_config_from_file(opts.config_path) catch {
     e => {
       @stdio.stderr.write("Error: \{e}\n")
       @sys.exit(1)

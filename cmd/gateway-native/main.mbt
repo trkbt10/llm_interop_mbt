@@ -10,8 +10,6 @@ let default_port : Int = 18080
 ///|
 let default_host : String = "0.0.0.0"
 
-///|
-let default_config : String = "gateway-config.json"
 
 ///|
 struct CliOptions {
@@ -25,7 +23,7 @@ struct CliOptions {
 ///|
 fn CliOptions::default() -> CliOptions {
   {
-    config_path: default_config,
+    config_path: @gw.default_config_filename,
     host: default_host,
     port: default_port,
     dialect: @gw.GatewaySurface::OpenAI,
@@ -118,20 +116,10 @@ fn parse_args_from(
 ///|
 fn print_help() -> Unit {
   println(
-    "LLM Gateway - OpenAI-compatible API proxy\n\nUsage: gateway [options]\n\nOptions:\n  -c, --config <path>    Path to config file (default: \{default_config})\n  -p, --port <number>    Port to listen on (default: \{default_port})\n      --host <host>      Host to bind (default: \{default_host})\n  -d, --dialect <type>   API dialect: openai, anthropic (default: openai)\n  -h, --help             Show this help message",
+    "LLM Gateway - OpenAI-compatible API proxy\n\nUsage: gateway [options]\n\nOptions:\n  -c, --config <path>    Path to config file (default: \{@gw.default_config_filename})\n  -p, --port <number>    Port to listen on (default: \{default_port})\n      --host <host>      Host to bind (default: \{default_host})\n  -d, --dialect <type>   API dialect: openai, anthropic (default: openai)\n  -h, --help             Show this help message",
   )
 }
 
-///|
-fn load_config(path : String) -> @gw.GatewayConfig raise @gw.GatewayError {
-  let text = @fs.read_file_to_string(path) catch {
-    _ => raise @gw.GatewayError::ConfigError("Failed to read config: " + path)
-  }
-  let json = @json.parse(text) catch {
-    _ => raise @gw.GatewayError::ConfigError("Invalid JSON in config")
-  }
-  @gw.parse_config(json)
-}
 
 ///|
 /// Expand environment variables in a string (e.g., "${OPENAI_API_KEY}")
@@ -1245,7 +1233,7 @@ async fn main {
     print_help()
     return
   }
-  let base_config = load_config(opts.config_path) catch {
+  let base_config = @gw.load_config_from_file(opts.config_path) catch {
     e => {
       println("Error: \{e}")
       @sys.exit(1)

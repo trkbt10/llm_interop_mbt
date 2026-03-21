@@ -14,19 +14,6 @@
 /// Any backend (OpenAI, Anthropic, Gemini, Ollama...)
 /// ```
 
-///|
-let default_config : String = "gateway-config.json"
-
-///|
-fn load_config(path : String) -> @gw.GatewayConfig raise @gw.GatewayError {
-  let text = @fs.read_file_to_string(path) catch {
-    _ => raise @gw.GatewayError::ConfigError("Failed to read config: " + path)
-  }
-  let json = @json.parse(text) catch {
-    _ => raise @gw.GatewayError::ConfigError("Invalid JSON in config")
-  }
-  @gw.parse_config(json)
-}
 
 ///|
 fn expand_env(s : String) -> String {
@@ -258,7 +245,7 @@ struct CliOptions {
 
 ///|
 fn parse_args(args : Array[String]) -> CliOptions {
-  let mut config_path = default_config
+  let mut config_path = @gw.default_config_filename
   let mut help = false
   let mut i = 0
   while i < args.length() {
@@ -279,7 +266,7 @@ fn parse_args(args : Array[String]) -> CliOptions {
 ///|
 fn print_help() -> Unit {
   println(
-    "MCP server frontend - LLM backend proxy (emulates `claude mcp serve`)\n\nUsage: claude-mcp-server [options]\n\nOptions:\n  -c, --config <path>    Path to gateway config file (default: \{default_config})\n  -h, --help             Show this help message\n\nReads MCP JSON-RPC from stdin, writes to stdout.\nEach model in config is exposed as an MCP tool.",
+    "MCP server frontend - LLM backend proxy (emulates `claude mcp serve`)\n\nUsage: claude-mcp-server [options]\n\nOptions:\n  -c, --config <path>    Path to gateway config file (default: \{@gw.default_config_filename})\n  -h, --help             Show this help message\n\nReads MCP JSON-RPC from stdin, writes to stdout.\nEach model in config is exposed as an MCP tool.",
   )
 }
 
@@ -291,7 +278,7 @@ async fn run() -> Unit {
     print_help()
     return
   }
-  let config = load_config(opts.config_path) catch {
+  let config = @gw.load_config_from_file(opts.config_path) catch {
     e => {
       @stdio.stderr.write("Error: \{e}\n")
       @sys.exit(1)

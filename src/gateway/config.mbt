@@ -2,8 +2,27 @@
 /// Gateway configuration parser
 
 ///|
+/// Default config filename used by all gateway commands
+pub let default_config_filename : String = "gateway-config.json"
+
+///|
 /// Default port for the gateway server
 let default_server_port : Int = 18080
+
+///|
+/// Load and parse gateway configuration from a file path.
+/// Single source of truth for config file resolution.
+pub fn load_config_from_file(
+  path : String,
+) -> GatewayConfig raise GatewayError {
+  let text = @fs.read_file_to_string(path) catch {
+    _ => raise GatewayError::ConfigError("Failed to read config: " + path)
+  }
+  let json = @json.parse(text) catch {
+    _ => raise GatewayError::ConfigError("Invalid JSON in config")
+  }
+  parse_config(json)
+}
 
 ///|
 /// Parse gateway configuration from JSON

@@ -4,7 +4,6 @@ import {
   "trkbt10/llm_interop/src/jsonrpc" @jsonrpc,
   "trkbt10/llm_interop/src/mcp" @mcp,
   "moonbitlang/core/json",
-  "moonbitlang/x/fs",
   "moonbitlang/x/sys",
   "moonbitlang/async",
   "moonbitlang/async/http",

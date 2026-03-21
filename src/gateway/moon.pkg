@@ -1,5 +1,6 @@
 import {
   "moonbitlang/core/json",
+  "moonbitlang/x/fs",
   "trkbt10/llm_interop/types",
   "trkbt10/llm_interop/utils" @utils,
   "trkbt10/llm_interop/dialects/openai" @openai,

@@ -7,7 +7,6 @@ import {
   "trkbt10/subprocess/ipc" @ipc,
   "moonbitlang/core/json",
   "moonbitlang/core/strconv",
-  "moonbitlang/x/fs",
   "moonbitlang/x/sys",
   "moonbitlang/async",
   "moonbitlang/async/http",
