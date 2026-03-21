@@ -25,25 +25,25 @@ fn load(path : String) -> String {
 ///|
 test "fixture/openai-cc/text: parse directly" {
   let body = load("testdata/openai/chat_completions/live_text_20250321.json")
-  let json : Json = @json.parse(body) catch { _ => fail!("parse") }
+  let json : Json = @json.parse(body) catch { _ => fail("parse") }
   let resp = @openai.parse_chat_response(json)
   match resp {
     @types.ModelResponse::Text(_) => ()
-    _ => fail!("expected Text from real OpenAI text fixture")
+    _ => fail("expected Text from real OpenAI text fixture")
   }
 }
 
 ///|
 test "fixture/openai-cc/toolcall: parse directly" {
   let body = load("testdata/openai/chat_completions/live_toolcall_20250321.json")
-  let json : Json = @json.parse(body) catch { _ => fail!("parse") }
+  let json : Json = @json.parse(body) catch { _ => fail("parse") }
   let resp = @openai.parse_chat_response(json)
   match resp {
     @types.ModelResponse::ToolCalls(calls) => {
       assert_true(calls.length() > 0)
       assert_true(calls[0].name.length() > 0)
     }
-    _ => fail!("expected ToolCalls from real OpenAI toolcall fixture")
+    _ => fail("expected ToolCalls from real OpenAI toolcall fixture")
   }
 }
 
@@ -51,11 +51,11 @@ test "fixture/openai-cc/toolcall: parse directly" {
 test "fixture/openai-cc/toolcall: transform OpenAI→OpenAI preserves" {
   let body = load("testdata/openai/chat_completions/live_toolcall_20250321.json")
   let transformed = transform_response(body, OpenAI, OpenAI)
-  let json : Json = @json.parse(transformed) catch { _ => fail!("parse") }
+  let json : Json = @json.parse(transformed) catch { _ => fail("parse") }
   let resp = @openai.parse_chat_response(json)
   match resp {
     @types.ModelResponse::ToolCalls(calls) => assert_true(calls.length() > 0)
-    _ => fail!("expected ToolCalls after identity transform")
+    _ => fail("expected ToolCalls after identity transform")
   }
 }
 
@@ -66,18 +66,18 @@ test "fixture/openai-cc/toolcall: transform OpenAI→OpenAI preserves" {
 ///|
 test "fixture/groq/text: parse as OpenAI CC" {
   let body = load("testdata/groq/chat_completions/text_nonstream.json")
-  let json : Json = @json.parse(body) catch { _ => fail!("parse") }
+  let json : Json = @json.parse(body) catch { _ => fail("parse") }
   let resp = @openai.parse_chat_response(json)
   match resp {
     @types.ModelResponse::Text(_) => ()
-    _ => fail!("expected Text from real Groq text fixture")
+    _ => fail("expected Text from real Groq text fixture")
   }
 }
 
 ///|
 test "fixture/groq/toolcall: parse as OpenAI CC" {
   let body = load("testdata/groq/chat_completions/toolcall_nonstream.json")
-  let json : Json = @json.parse(body) catch { _ => fail!("parse") }
+  let json : Json = @json.parse(body) catch { _ => fail("parse") }
   let resp = @openai.parse_chat_response(json)
   match resp {
     @types.ModelResponse::ToolCalls(calls) => {
@@ -85,7 +85,7 @@ test "fixture/groq/toolcall: parse as OpenAI CC" {
       // Groq tool call should have name "get_weather"
       assert_eq(calls[0].name, "get_weather")
     }
-    _ => fail!("expected ToolCalls from real Groq toolcall fixture")
+    _ => fail("expected ToolCalls from real Groq toolcall fixture")
   }
 }
 
@@ -93,11 +93,11 @@ test "fixture/groq/toolcall: parse as OpenAI CC" {
 test "fixture/groq/toolcall: transform OpenAI→OpenAI preserves" {
   let body = load("testdata/groq/chat_completions/toolcall_nonstream.json")
   let transformed = transform_response(body, OpenAI, OpenAI)
-  let json : Json = @json.parse(transformed) catch { _ => fail!("parse") }
+  let json : Json = @json.parse(transformed) catch { _ => fail("parse") }
   let resp = @openai.parse_chat_response(json)
   match resp {
     @types.ModelResponse::ToolCalls(calls) => assert_eq(calls[0].name, "get_weather")
-    _ => fail!("expected ToolCalls after identity transform of Groq fixture")
+    _ => fail("expected ToolCalls after identity transform of Groq fixture")
   }
 }
 
@@ -109,14 +109,14 @@ test "fixture/groq/toolcall: transform OpenAI→OpenAI preserves" {
 test "fixture/anthropic/text: transform Anthropic→OpenAI and parse" {
   let body = load("testdata/anthropic/messages/text_nonstream.json")
   let openai = transform_response(body, Anthropic, OpenAI)
-  let json : Json = @json.parse(openai) catch { _ => fail!("parse") }
+  let json : Json = @json.parse(openai) catch { _ => fail("parse") }
   let resp = @openai.parse_chat_response(json)
   match resp {
     @types.ModelResponse::Text(t) => {
       // Real fixture says "Four"
       assert_true(t.length() > 0)
     }
-    _ => fail!("expected Text from real Anthropic text fixture → OpenAI transform")
+    _ => fail("expected Text from real Anthropic text fixture → OpenAI transform")
   }
 }
 
@@ -124,14 +124,14 @@ test "fixture/anthropic/text: transform Anthropic→OpenAI and parse" {
 test "fixture/anthropic/toolcall: transform Anthropic→OpenAI and parse" {
   let body = load("testdata/anthropic/messages/toolcall_nonstream.json")
   let openai = transform_response(body, Anthropic, OpenAI)
-  let json : Json = @json.parse(openai) catch { _ => fail!("parse") }
+  let json : Json = @json.parse(openai) catch { _ => fail("parse") }
   let resp = @openai.parse_chat_response(json)
   match resp {
     @types.ModelResponse::ToolCalls(calls) => {
       assert_true(calls.length() > 0)
       assert_eq(calls[0].name, "get_weather")
     }
-    _ => fail!("expected ToolCalls from real Anthropic toolcall fixture → OpenAI transform")
+    _ => fail("expected ToolCalls from real Anthropic toolcall fixture → OpenAI transform")
   }
 }
 
@@ -145,7 +145,7 @@ test "fixture/anthropic/toolcall: real fixture has mixed text+tool_use" {
   assert_true(body.contains("\"text\""))
   // Transform should produce ToolCalls (tool_use takes precedence)
   let openai = transform_response(body, Anthropic, OpenAI)
-  let json : Json = @json.parse(openai) catch { _ => fail!("parse") }
+  let json : Json = @json.parse(openai) catch { _ => fail("parse") }
   let resp = @openai.parse_chat_response(json)
   match resp {
     @types.ModelResponse::ToolCalls(calls) => {
@@ -153,7 +153,7 @@ test "fixture/anthropic/toolcall: real fixture has mixed text+tool_use" {
       // Real fixture has toolu_ ID, converted to call_ for OpenAI CC
       assert_true(calls[0].id.has_prefix("call_"))
     }
-    _ => fail!("expected ToolCalls from mixed Anthropic fixture")
+    _ => fail("expected ToolCalls from mixed Anthropic fixture")
   }
 }
 
@@ -165,11 +165,11 @@ test "fixture/anthropic/toolcall: real fixture has mixed text+tool_use" {
 test "fixture/gemini/text: transform Gemini→OpenAI and parse" {
   let body = load("testdata/gemini/generate_content/text_nonstream.json")
   let openai = transform_response(body, Gemini, OpenAI)
-  let json : Json = @json.parse(openai) catch { _ => fail!("parse") }
+  let json : Json = @json.parse(openai) catch { _ => fail("parse") }
   let resp = @openai.parse_chat_response(json)
   match resp {
     @types.ModelResponse::Text(t) => assert_true(t.contains("Hello"))
-    _ => fail!("expected Text from real Gemini text fixture → OpenAI transform")
+    _ => fail("expected Text from real Gemini text fixture → OpenAI transform")
   }
 }
 
@@ -177,14 +177,14 @@ test "fixture/gemini/text: transform Gemini→OpenAI and parse" {
 test "fixture/gemini/toolcall: transform Gemini→OpenAI and parse" {
   let body = load("testdata/gemini/generate_content/toolcall_nonstream.json")
   let openai = transform_response(body, Gemini, OpenAI)
-  let json : Json = @json.parse(openai) catch { _ => fail!("parse") }
+  let json : Json = @json.parse(openai) catch { _ => fail("parse") }
   let resp = @openai.parse_chat_response(json)
   match resp {
     @types.ModelResponse::ToolCalls(calls) => {
       assert_eq(calls.length(), 1)
       assert_eq(calls[0].name, "get_weather")
     }
-    _ => fail!("expected ToolCalls from real Gemini toolcall fixture → OpenAI transform")
+    _ => fail("expected ToolCalls from real Gemini toolcall fixture → OpenAI transform")
   }
 }
 
@@ -192,7 +192,7 @@ test "fixture/gemini/toolcall: transform Gemini→OpenAI and parse" {
 test "fixture/gemini/multi_toolcall: transform Gemini→OpenAI and parse" {
   let body = load("testdata/gemini/generate_content/multi_toolcall_nonstream.json")
   let openai = transform_response(body, Gemini, OpenAI)
-  let json : Json = @json.parse(openai) catch { _ => fail!("parse") }
+  let json : Json = @json.parse(openai) catch { _ => fail("parse") }
   let resp = @openai.parse_chat_response(json)
   match resp {
     @types.ModelResponse::ToolCalls(calls) => {
@@ -200,7 +200,7 @@ test "fixture/gemini/multi_toolcall: transform Gemini→OpenAI and parse" {
       assert_eq(calls[0].name, "get_weather")
       assert_eq(calls[1].name, "get_time")
     }
-    _ => fail!("expected ToolCalls with 2 calls from real Gemini multi-tool fixture")
+    _ => fail("expected ToolCalls with 2 calls from real Gemini multi-tool fixture")
   }
 }
 
@@ -249,18 +249,18 @@ test "fixture/groq→gemini: real toolcall fixture (OpenAI CC → Gemini)" {
 ///|
 test "fixture/live-openai-text: real gpt-4o-mini text response" {
   let body = load("testdata/openai/chat_completions/live_text_20250321.json")
-  let json : Json = @json.parse(body) catch { _ => fail!("parse") }
+  let json : Json = @json.parse(body) catch { _ => fail("parse") }
   let resp = @openai.parse_chat_response(json)
   match resp {
     @types.ModelResponse::Text(t) => assert_eq(t, "Hello!")
-    _ => fail!("expected Text")
+    _ => fail("expected Text")
   }
 }
 
 ///|
 test "fixture/live-openai-toolcall: real gpt-4o-mini tool_calls response" {
   let body = load("testdata/openai/chat_completions/live_toolcall_20250321.json")
-  let json : Json = @json.parse(body) catch { _ => fail!("parse") }
+  let json : Json = @json.parse(body) catch { _ => fail("parse") }
   let resp = @openai.parse_chat_response(json)
   match resp {
     @types.ModelResponse::ToolCalls(calls) => {
@@ -269,31 +269,31 @@ test "fixture/live-openai-toolcall: real gpt-4o-mini tool_calls response" {
       // Real response has a real call ID
       assert_true(calls[0].id.has_prefix("call_"))
     }
-    _ => fail!("expected ToolCalls")
+    _ => fail("expected ToolCalls")
   }
 }
 
 ///|
 test "fixture/live-groq-text: real llama-3.3-70b text response" {
   let body = load("testdata/groq/chat_completions/live_text_20250321.json")
-  let json : Json = @json.parse(body) catch { _ => fail!("parse") }
+  let json : Json = @json.parse(body) catch { _ => fail("parse") }
   let resp = @openai.parse_chat_response(json)
   match resp {
     @types.ModelResponse::Text(t) => assert_eq(t, "hello")
-    _ => fail!("expected Text")
+    _ => fail("expected Text")
   }
 }
 
 ///|
 test "fixture/live-groq-toolcall: real llama-3.3-70b tool_calls response" {
   let body = load("testdata/groq/chat_completions/live_toolcall_20250321.json")
-  let json : Json = @json.parse(body) catch { _ => fail!("parse") }
+  let json : Json = @json.parse(body) catch { _ => fail("parse") }
   let resp = @openai.parse_chat_response(json)
   match resp {
     @types.ModelResponse::ToolCalls(calls) => {
       assert_eq(calls.length(), 1)
       assert_eq(calls[0].name, "get_weather")
     }
-    _ => fail!("expected ToolCalls from live Groq fixture")
+    _ => fail("expected ToolCalls from live Groq fixture")
   }
 }

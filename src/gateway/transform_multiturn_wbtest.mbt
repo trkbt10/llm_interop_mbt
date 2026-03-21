@@ -2,13 +2,11 @@
 /// Multi-turn tool conversation transform tests.
 /// Verifies that assistant tool_calls and tool results survive dialect transforms.
 
-fn mt_load(path : String) -> String {
-  @utils.read_testdata(path) catch { _ => "" }
-}
-
 // OpenAI CC multi-turn request with assistant tool_calls + tool result
 fn openai_multiturn_request() -> String {
-  #|{"model":"test","messages":[{"role":"user","content":"weather?"},{"role":"assistant","content":null,"tool_calls":[{"id":"call_01","type":"function","function":{"name":"get_weather","arguments":"{\"city\":\"Tokyo\"}"}}]},{"role":"tool","content":"Sunny 25C","tool_call_id":"call_01"},{"role":"user","content":"Thanks!"}],"tools":[{"type":"function","function":{"name":"get_weather","description":"Get weather","parameters":{"type":"object","properties":{"city":{"type":"string"}}}}}],"max_tokens":1024}
+  let s =
+    #|{"model":"test","messages":[{"role":"user","content":"weather?"},{"role":"assistant","content":null,"tool_calls":[{"id":"call_01","type":"function","function":{"name":"get_weather","arguments":"{\"city\":\"Tokyo\"}"}}]},{"role":"tool","content":"Sunny 25C","tool_call_id":"call_01"},{"role":"user","content":"Thanks!"}],"tools":[{"type":"function","function":{"name":"get_weather","description":"Get weather","parameters":{"type":"object","properties":{"city":{"type":"string"}}}}}],"max_tokens":1024}
+  s
 }
 
 fn default_tc() -> @types.TransformContext {
@@ -23,7 +21,7 @@ fn default_tc() -> @types.TransformContext {
 test "multiturn/req/oai→anth: assistant tool_calls become tool_use content" {
   let req = openai_multiturn_request()
   let result = transform_request(req, OpenAI, Anthropic, "test", default_tc())
-  let json : Json = @json.parse(result) catch { _ => fail!("parse") }
+  let json : Json = @json.parse(result) catch { _ => fail("parse") }
   match json {
     { "messages": Array(msgs), .. } => {
       // Find the assistant message — it should contain tool_use content
@@ -45,7 +43,7 @@ test "multiturn/req/oai→anth: assistant tool_calls become tool_use content" {
       }
       assert_true(found_tool_use)
     }
-    _ => fail!("bad structure")
+    _ => fail("bad structure")
   }
 }
 
@@ -53,7 +51,7 @@ test "multiturn/req/oai→anth: assistant tool_calls become tool_use content" {
 test "multiturn/req/oai→anth: tool result becomes user tool_result" {
   let req = openai_multiturn_request()
   let result = transform_request(req, OpenAI, Anthropic, "test", default_tc())
-  let json : Json = @json.parse(result) catch { _ => fail!("parse") }
+  let json : Json = @json.parse(result) catch { _ => fail("parse") }
   match json {
     { "messages": Array(msgs), .. } => {
       let mut found_tool_result = false
@@ -74,7 +72,7 @@ test "multiturn/req/oai→anth: tool result becomes user tool_result" {
       }
       assert_true(found_tool_result)
     }
-    _ => fail!("bad structure")
+    _ => fail("bad structure")
   }
 }
 
@@ -103,7 +101,7 @@ test "multiturn/req/oai→anth: all user content preserved" {
 test "multiturn/req/oai→gem: assistant tool_calls become functionCall parts" {
   let req = openai_multiturn_request()
   let result = transform_request(req, OpenAI, Gemini, "test", default_tc())
-  let json : Json = @json.parse(result) catch { _ => fail!("parse") }
+  let json : Json = @json.parse(result) catch { _ => fail("parse") }
   match json {
     { "contents": Array(contents), .. } => {
       let mut found_fc = false
@@ -124,7 +122,7 @@ test "multiturn/req/oai→gem: assistant tool_calls become functionCall parts" {
       }
       assert_true(found_fc)
     }
-    _ => fail!("bad structure")
+    _ => fail("bad structure")
   }
 }
 
@@ -132,7 +130,7 @@ test "multiturn/req/oai→gem: assistant tool_calls become functionCall parts" {
 test "multiturn/req/oai→gem: tool result becomes functionResponse" {
   let req = openai_multiturn_request()
   let result = transform_request(req, OpenAI, Gemini, "test", default_tc())
-  let json : Json = @json.parse(result) catch { _ => fail!("parse") }
+  let json : Json = @json.parse(result) catch { _ => fail("parse") }
   match json {
     { "contents": Array(contents), .. } => {
       let mut found_fr = false
@@ -153,7 +151,7 @@ test "multiturn/req/oai→gem: tool result becomes functionResponse" {
       }
       assert_true(found_fr)
     }
-    _ => fail!("bad structure")
+    _ => fail("bad structure")
   }
 }
 

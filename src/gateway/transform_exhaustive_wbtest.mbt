@@ -9,71 +9,105 @@
 // =============================================================================
 
 fn openai_cc_request_with_tools() -> String {
-  #|{"model":"test-model","messages":[{"role":"system","content":"You are helpful"},{"role":"user","content":"weather in Tokyo?"}],"tools":[{"type":"function","function":{"name":"get_weather","description":"Get weather","parameters":{"type":"object","properties":{"city":{"type":"string"}},"required":["city"]}}}],"tool_choice":"auto","max_tokens":1024,"temperature":0.7}
+  let s =
+    #|{"model":"test-model","messages":[{"role":"system","content":"You are helpful"},{"role":"user","content":"weather in Tokyo?"}],"tools":[{"type":"function","function":{"name":"get_weather","description":"Get weather","parameters":{"type":"object","properties":{"city":{"type":"string"}},"required":["city"]}}}],"tool_choice":"auto","max_tokens":1024,"temperature":0.7}
+  s
 }
 
 fn openai_cc_request_text_only() -> String {
-  #|{"model":"test-model","messages":[{"role":"system","content":"You are helpful"},{"role":"user","content":"Hello"}],"max_tokens":1024}
+  let s =
+    #|{"model":"test-model","messages":[{"role":"system","content":"You are helpful"},{"role":"user","content":"Hello"}],"max_tokens":1024}
+  s
 }
 
 fn openai_cc_request_multi_turn() -> String {
-  #|{"model":"test-model","messages":[{"role":"user","content":"weather?"},{"role":"assistant","content":null,"tool_calls":[{"id":"call_01","type":"function","function":{"name":"get_weather","arguments":"{\"city\":\"Tokyo\"}"}}]},{"role":"tool","content":"Sunny, 25C","tool_call_id":"call_01"},{"role":"user","content":"Thanks!"}],"max_tokens":1024}
+  let s =
+    #|{"model":"test-model","messages":[{"role":"user","content":"weather?"},{"role":"assistant","content":null,"tool_calls":[{"id":"call_01","type":"function","function":{"name":"get_weather","arguments":"{\"city\":\"Tokyo\"}"}}]},{"role":"tool","content":"Sunny, 25C","tool_call_id":"call_01"},{"role":"user","content":"Thanks!"}],"max_tokens":1024}
+  s
 }
 
 fn anthropic_text_response() -> String {
-  #|{"id":"msg_01","model":"claude","content":[{"type":"text","text":"Hello!"}],"stop_reason":"end_turn","usage":{"input_tokens":10,"output_tokens":5}}
+  let s =
+    #|{"id":"msg_01","model":"claude","content":[{"type":"text","text":"Hello!"}],"stop_reason":"end_turn","usage":{"input_tokens":10,"output_tokens":5}}
+  s
 }
 
 fn anthropic_tool_use_response() -> String {
-  #|{"id":"msg_02","model":"claude","content":[{"type":"tool_use","id":"toolu_01","name":"get_weather","input":{"city":"Tokyo"}}],"stop_reason":"tool_use","usage":{"input_tokens":10,"output_tokens":5}}
+  let s =
+    #|{"id":"msg_02","model":"claude","content":[{"type":"tool_use","id":"toolu_01","name":"get_weather","input":{"city":"Tokyo"}}],"stop_reason":"tool_use","usage":{"input_tokens":10,"output_tokens":5}}
+  s
 }
 
 fn anthropic_mixed_response() -> String {
-  #|{"id":"msg_03","model":"claude","content":[{"type":"text","text":"Let me check"},{"type":"tool_use","id":"toolu_02","name":"get_weather","input":{"city":"Tokyo"}}],"stop_reason":"tool_use","usage":{"input_tokens":10,"output_tokens":5}}
+  let s =
+    #|{"id":"msg_03","model":"claude","content":[{"type":"text","text":"Let me check"},{"type":"tool_use","id":"toolu_02","name":"get_weather","input":{"city":"Tokyo"}}],"stop_reason":"tool_use","usage":{"input_tokens":10,"output_tokens":5}}
+  s
 }
 
 fn anthropic_multi_tool_response() -> String {
-  #|{"id":"msg_04","model":"claude","content":[{"type":"tool_use","id":"toolu_a","name":"read_file","input":{"path":"a"}},{"type":"tool_use","id":"toolu_b","name":"write_file","input":{"path":"b"}}],"stop_reason":"tool_use","usage":{"input_tokens":10,"output_tokens":5}}
+  let s =
+    #|{"id":"msg_04","model":"claude","content":[{"type":"tool_use","id":"toolu_a","name":"read_file","input":{"path":"a"}},{"type":"tool_use","id":"toolu_b","name":"write_file","input":{"path":"b"}}],"stop_reason":"tool_use","usage":{"input_tokens":10,"output_tokens":5}}
+  s
 }
 
 fn gemini_text_response() -> String {
-  #|{"candidates":[{"content":{"parts":[{"text":"Hello!"}],"role":"model"},"finishReason":"STOP"}]}
+  let s =
+    #|{"candidates":[{"content":{"parts":[{"text":"Hello!"}],"role":"model"},"finishReason":"STOP"}]}
+  s
 }
 
 fn gemini_function_call_response() -> String {
-  #|{"candidates":[{"content":{"parts":[{"functionCall":{"name":"get_weather","args":{"city":"Tokyo"}}}],"role":"model"},"finishReason":"STOP"}]}
+  let s =
+    #|{"candidates":[{"content":{"parts":[{"functionCall":{"name":"get_weather","args":{"city":"Tokyo"}}}],"role":"model"},"finishReason":"STOP"}]}
+  s
 }
 
 fn gemini_mixed_response() -> String {
-  #|{"candidates":[{"content":{"parts":[{"text":"Checking..."},{"functionCall":{"name":"get_weather","args":{"city":"Tokyo"}}}],"role":"model"},"finishReason":"STOP"}]}
+  let s =
+    #|{"candidates":[{"content":{"parts":[{"text":"Checking..."},{"functionCall":{"name":"get_weather","args":{"city":"Tokyo"}}}],"role":"model"},"finishReason":"STOP"}]}
+  s
 }
 
 fn gemini_multi_function_call_response() -> String {
-  #|{"candidates":[{"content":{"parts":[{"functionCall":{"name":"read_file","args":{"path":"a"}}},{"functionCall":{"name":"write_file","args":{"path":"b"}}}],"role":"model"},"finishReason":"STOP"}]}
+  let s =
+    #|{"candidates":[{"content":{"parts":[{"functionCall":{"name":"read_file","args":{"path":"a"}}},{"functionCall":{"name":"write_file","args":{"path":"b"}}}],"role":"model"},"finishReason":"STOP"}]}
+  s
 }
 
 fn openai_cc_text_response() -> String {
-  #|{"id":"chatcmpl-1","object":"chat.completion","model":"gpt-4","choices":[{"index":0,"message":{"role":"assistant","content":"Hello!"},"finish_reason":"stop"}]}
+  let s =
+    #|{"id":"chatcmpl-1","object":"chat.completion","model":"gpt-4","choices":[{"index":0,"message":{"role":"assistant","content":"Hello!"},"finish_reason":"stop"}]}
+  s
 }
 
 fn openai_cc_tool_calls_response() -> String {
-  #|{"id":"chatcmpl-2","object":"chat.completion","model":"gpt-4","choices":[{"index":0,"message":{"role":"assistant","content":null,"tool_calls":[{"id":"call_01","type":"function","function":{"name":"get_weather","arguments":"{\"city\":\"Tokyo\"}"}}]},"finish_reason":"tool_calls"}]}
+  let s =
+    #|{"id":"chatcmpl-2","object":"chat.completion","model":"gpt-4","choices":[{"index":0,"message":{"role":"assistant","content":null,"tool_calls":[{"id":"call_01","type":"function","function":{"name":"get_weather","arguments":"{\"city\":\"Tokyo\"}"}}]},"finish_reason":"tool_calls"}]}
+  s
 }
 
 fn openai_cc_mixed_response() -> String {
-  #|{"id":"chatcmpl-4","object":"chat.completion","model":"gpt-4","choices":[{"index":0,"message":{"role":"assistant","content":"Let me check","tool_calls":[{"id":"call_01","type":"function","function":{"name":"get_weather","arguments":"{\"city\":\"Tokyo\"}"}}]},"finish_reason":"tool_calls"}]}
+  let s =
+    #|{"id":"chatcmpl-4","object":"chat.completion","model":"gpt-4","choices":[{"index":0,"message":{"role":"assistant","content":"Let me check","tool_calls":[{"id":"call_01","type":"function","function":{"name":"get_weather","arguments":"{\"city\":\"Tokyo\"}"}}]},"finish_reason":"tool_calls"}]}
+  s
 }
 
 fn openai_cc_multi_tool_response() -> String {
-  #|{"id":"chatcmpl-3","object":"chat.completion","model":"gpt-4","choices":[{"index":0,"message":{"role":"assistant","content":null,"tool_calls":[{"id":"call_01","type":"function","function":{"name":"read_file","arguments":"{\"path\":\"a\"}"}},{"id":"call_02","type":"function","function":{"name":"write_file","arguments":"{\"path\":\"b\"}"}}]},"finish_reason":"tool_calls"}]}
+  let s =
+    #|{"id":"chatcmpl-3","object":"chat.completion","model":"gpt-4","choices":[{"index":0,"message":{"role":"assistant","content":null,"tool_calls":[{"id":"call_01","type":"function","function":{"name":"read_file","arguments":"{\"path\":\"a\"}"}},{"id":"call_02","type":"function","function":{"name":"write_file","arguments":"{\"path\":\"b\"}"}}]},"finish_reason":"tool_calls"}]}
+  s
 }
 
 fn openai_error_response() -> String {
-  #|{"error":{"message":"rate limited","type":"rate_limit_error"}}
+  let s =
+    #|{"error":{"message":"rate limited","type":"rate_limit_error"}}
+  s
 }
 
 fn anthropic_error_response() -> String {
-  #|{"type":"error","error":{"type":"invalid_request_error","message":"bad request"}}
+  let s =
+    #|{"type":"error","error":{"type":"invalid_request_error","message":"bad request"}}
+  s
 }
 
 fn default_ctx() -> @types.TransformContext {
@@ -162,8 +196,8 @@ test "req OAI→Anth: text" {
 test "req OAI→Anth: system" {
   let r = transform_request(openai_cc_request_text_only(), OpenAI, Anthropic, "m", default_ctx())
   assert_true(json_has_field(r, "system"))
-  let j : Json = @json.parse(r) catch { _ => fail!("p") }
-  match j { { "system": String(s), .. } => assert_eq(s, "You are helpful"); _ => fail!("no sys") }
+  let j : Json = @json.parse(r) catch { _ => fail("p") }
+  match j { { "system": String(s), .. } => assert_eq(s, "You are helpful"); _ => fail("no sys") }
 }
 
 ///|
@@ -249,25 +283,25 @@ test "req OAI→OAI: multi-turn" {
 ///|
 test "resp Anth→OAI: text" {
   let r = parse_as_model_response(transform_response(anthropic_text_response(), Anthropic, OpenAI))
-  match r { @types.ModelResponse::Text(t) => assert_eq(t, "Hello!"); _ => fail!("expected Text") }
+  match r { @types.ModelResponse::Text(t) => assert_eq(t, "Hello!"); _ => fail("expected Text") }
 }
 
 ///|
 test "resp Anth→OAI: single tool_use" {
   let r = parse_as_model_response(transform_response(anthropic_tool_use_response(), Anthropic, OpenAI))
-  match r { @types.ModelResponse::ToolCalls(c) => { assert_eq(c.length(), 1); assert_eq(c[0].name, "get_weather") }; _ => fail!("tc") }
+  match r { @types.ModelResponse::ToolCalls(c) => { assert_eq(c.length(), 1); assert_eq(c[0].name, "get_weather") }; _ => fail("tc") }
 }
 
 ///|
 test "resp Anth→OAI: multi tool_use" {
   let r = parse_as_model_response(transform_response(anthropic_multi_tool_response(), Anthropic, OpenAI))
-  match r { @types.ModelResponse::ToolCalls(c) => { assert_eq(c.length(), 2); assert_eq(c[0].name, "read_file"); assert_eq(c[1].name, "write_file") }; _ => fail!("tc") }
+  match r { @types.ModelResponse::ToolCalls(c) => { assert_eq(c.length(), 2); assert_eq(c[0].name, "read_file"); assert_eq(c[1].name, "write_file") }; _ => fail("tc") }
 }
 
 ///|
 test "resp Anth→OAI: mixed text+tool" {
   let r = parse_as_model_response(transform_response(anthropic_mixed_response(), Anthropic, OpenAI))
-  match r { @types.ModelResponse::ToolCalls(c) => assert_eq(c[0].name, "get_weather"); _ => fail!("tc") }
+  match r { @types.ModelResponse::ToolCalls(c) => assert_eq(c[0].name, "get_weather"); _ => fail("tc") }
 }
 
 ///|
@@ -283,25 +317,25 @@ test "resp Anth→OAI: error" {
 ///|
 test "resp Gem→OAI: text" {
   let r = parse_as_model_response(transform_response(gemini_text_response(), Gemini, OpenAI))
-  match r { @types.ModelResponse::Text(t) => assert_eq(t, "Hello!"); _ => fail!("Text") }
+  match r { @types.ModelResponse::Text(t) => assert_eq(t, "Hello!"); _ => fail("Text") }
 }
 
 ///|
 test "resp Gem→OAI: single functionCall" {
   let r = parse_as_model_response(transform_response(gemini_function_call_response(), Gemini, OpenAI))
-  match r { @types.ModelResponse::ToolCalls(c) => { assert_eq(c.length(), 1); assert_eq(c[0].name, "get_weather") }; _ => fail!("tc") }
+  match r { @types.ModelResponse::ToolCalls(c) => { assert_eq(c.length(), 1); assert_eq(c[0].name, "get_weather") }; _ => fail("tc") }
 }
 
 ///|
 test "resp Gem→OAI: multi functionCall" {
   let r = parse_as_model_response(transform_response(gemini_multi_function_call_response(), Gemini, OpenAI))
-  match r { @types.ModelResponse::ToolCalls(c) => { assert_eq(c.length(), 2); assert_eq(c[0].name, "read_file"); assert_eq(c[1].name, "write_file") }; _ => fail!("tc") }
+  match r { @types.ModelResponse::ToolCalls(c) => { assert_eq(c.length(), 2); assert_eq(c[0].name, "read_file"); assert_eq(c[1].name, "write_file") }; _ => fail("tc") }
 }
 
 ///|
 test "resp Gem→OAI: mixed text+functionCall" {
   let r = parse_as_model_response(transform_response(gemini_mixed_response(), Gemini, OpenAI))
-  match r { @types.ModelResponse::ToolCalls(c) => assert_eq(c[0].name, "get_weather"); _ => fail!("tc") }
+  match r { @types.ModelResponse::ToolCalls(c) => assert_eq(c[0].name, "get_weather"); _ => fail("tc") }
 }
 
 ///|
@@ -317,25 +351,25 @@ test "resp Gem→OAI: error (unparseable passes through)" {
 ///|
 test "resp OAI→OAI: text" {
   let r = parse_as_model_response(transform_response(openai_cc_text_response(), OpenAI, OpenAI))
-  match r { @types.ModelResponse::Text(t) => assert_eq(t, "Hello!"); _ => fail!("Text") }
+  match r { @types.ModelResponse::Text(t) => assert_eq(t, "Hello!"); _ => fail("Text") }
 }
 
 ///|
 test "resp OAI→OAI: single tool_calls" {
   let r = parse_as_model_response(transform_response(openai_cc_tool_calls_response(), OpenAI, OpenAI))
-  match r { @types.ModelResponse::ToolCalls(c) => assert_eq(c[0].name, "get_weather"); _ => fail!("tc") }
+  match r { @types.ModelResponse::ToolCalls(c) => assert_eq(c[0].name, "get_weather"); _ => fail("tc") }
 }
 
 ///|
 test "resp OAI→OAI: multi tool_calls" {
   let r = parse_as_model_response(transform_response(openai_cc_multi_tool_response(), OpenAI, OpenAI))
-  match r { @types.ModelResponse::ToolCalls(c) => assert_eq(c.length(), 2); _ => fail!("tc") }
+  match r { @types.ModelResponse::ToolCalls(c) => assert_eq(c.length(), 2); _ => fail("tc") }
 }
 
 ///|
 test "resp OAI→OAI: mixed text+tool_calls" {
   let r = parse_as_model_response(transform_response(openai_cc_mixed_response(), OpenAI, OpenAI))
-  match r { @types.ModelResponse::ToolCalls(c) => assert_eq(c[0].name, "get_weather"); _ => fail!("tc") }
+  match r { @types.ModelResponse::ToolCalls(c) => assert_eq(c[0].name, "get_weather"); _ => fail("tc") }
 }
 
 ///|

@@ -1,6 +1,6 @@
 {
   "name": "trkbt10/llm_interop",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "deps": {
     "mizchi/x": "0.1.5",
     "moonbitlang/async": "0.16.7",
@@ -15,7 +15,6 @@
     "scripts",
     "testdata",
     "ui",
-    "Users",
     "plans",
     "fixtures",
     ".claude",

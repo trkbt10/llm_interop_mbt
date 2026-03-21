@@ -70,7 +70,6 @@ pub fn resolve_completion(
 /// Path format: /v1/models/{model}:streamGenerateContent?alt=sse&key=...
 pub fn extract_model_from_stream_path(path : String) -> String {
   let prefix = "/v1/models/"
-  let suffix = ":streamGenerateContent"
   if path.has_prefix(prefix) {
     let start = prefix.length()
     // Find the position of the suffix

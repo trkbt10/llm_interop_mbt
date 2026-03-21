@@ -31,7 +31,7 @@ test "multi/parse/openai: 2 tools" {
       assert_true(c[0].arguments.stringify().contains("Tokyo"))
       assert_true(c[1].arguments.stringify().contains("config.json"))
     }
-    _ => fail!("expected 2 ToolCalls from OpenAI")
+    _ => fail("expected 2 ToolCalls from OpenAI")
   }
 }
 
@@ -45,7 +45,7 @@ test "multi/parse/groq: 2 tools" {
       assert_eq(c[1].name, "read_file")
       assert_true(c[0].id != c[1].id)
     }
-    _ => fail!("expected 2 ToolCalls from Groq")
+    _ => fail("expected 2 ToolCalls from Groq")
   }
 }
 
@@ -59,7 +59,7 @@ test "multi/parse/gemini: 2 tools (via transform)" {
       assert_eq(c[1].name, "get_time")
       assert_true(c[0].id != c[1].id)
     }
-    _ => fail!("expected 2 ToolCalls from Gemini")
+    _ => fail("expected 2 ToolCalls from Gemini")
   }
 }
 
@@ -72,7 +72,7 @@ test "multi/parse/anthropic: 1 tool mixed with text (via transform)" {
       assert_eq(c[0].name, "get_weather")
       assert_true(c[0].id.has_prefix("call_")) // toolu_ → call_ via interop
     }
-    _ => fail!("expected ToolCalls from Anthropic")
+    _ => fail("expected ToolCalls from Anthropic")
   }
 }
 
@@ -85,7 +85,7 @@ test "multi/rt/openai→anthropic→openai" {
   let body = load_fixture("testdata/openai/chat_completions/live_multi_toolcall_20250321.json")
   let anth = transform_response(body, OpenAI, Anthropic)
   // Verify Anthropic intermediate
-  let anth_json : Json = @json.parse(anth) catch { _ => fail!("parse anth") }
+  let anth_json : Json = @json.parse(anth) catch { _ => fail("parse anth") }
   match anth_json {
     { "content": Array(blocks), "stop_reason": String(sr), .. } => {
       assert_eq(sr, "tool_use")
@@ -93,7 +93,7 @@ test "multi/rt/openai→anthropic→openai" {
       for b in blocks { match b { { "type": String("tool_use"), .. } => tu = tu + 1; _ => () } }
       assert_eq(tu, 2)
     }
-    _ => fail!("bad anthropic")
+    _ => fail("bad anthropic")
   }
   // Round-trip back
   let r = parse_oai(transform_response(anth, Anthropic, OpenAI))
@@ -105,7 +105,7 @@ test "multi/rt/openai→anthropic→openai" {
       assert_true(c[0].arguments.stringify().contains("Tokyo"))
       assert_true(c[1].arguments.stringify().contains("config.json"))
     }
-    _ => fail!("roundtrip failed")
+    _ => fail("roundtrip failed")
   }
 }
 
@@ -113,14 +113,14 @@ test "multi/rt/openai→anthropic→openai" {
 test "multi/rt/openai→gemini→openai" {
   let body = load_fixture("testdata/openai/chat_completions/live_multi_toolcall_20250321.json")
   let gem = transform_response(body, OpenAI, Gemini)
-  let gem_json : Json = @json.parse(gem) catch { _ => fail!("parse gem") }
+  let gem_json : Json = @json.parse(gem) catch { _ => fail("parse gem") }
   match gem_json {
     { "candidates": [{ "content": { "parts": Array(parts), .. }, .. }], .. } => {
       let mut fc = 0
       for p in parts { match p { { "functionCall": _, .. } => fc = fc + 1; _ => () } }
       assert_eq(fc, 2)
     }
-    _ => fail!("bad gemini")
+    _ => fail("bad gemini")
   }
   let r = parse_oai(transform_response(gem, Gemini, OpenAI))
   match r {
@@ -129,7 +129,7 @@ test "multi/rt/openai→gemini→openai" {
       assert_eq(c[0].name, "get_weather")
       assert_eq(c[1].name, "read_file")
     }
-    _ => fail!("roundtrip failed")
+    _ => fail("roundtrip failed")
   }
 }
 
@@ -144,7 +144,7 @@ test "multi/rt/groq→anthropic→openai" {
       assert_eq(c[0].name, "get_weather")
       assert_eq(c[1].name, "read_file")
     }
-    _ => fail!("roundtrip failed")
+    _ => fail("roundtrip failed")
   }
 }
 
@@ -159,7 +159,7 @@ test "multi/rt/groq→gemini→openai" {
       assert_eq(c[0].name, "get_weather")
       assert_eq(c[1].name, "read_file")
     }
-    _ => fail!("roundtrip failed")
+    _ => fail("roundtrip failed")
   }
 }
 
@@ -172,7 +172,7 @@ test "multi/rt/gemini→openai→gemini" {
   let body = load_fixture("testdata/gemini/generate_content/multi_toolcall_nonstream.json")
   let oai = transform_response(body, Gemini, OpenAI)
   let back = transform_response(oai, OpenAI, Gemini)
-  let json : Json = @json.parse(back) catch { _ => fail!("parse") }
+  let json : Json = @json.parse(back) catch { _ => fail("parse") }
   match json {
     { "candidates": [{ "content": { "parts": Array(parts), .. }, .. }], .. } => {
       let names : Array[String] = []
@@ -183,7 +183,7 @@ test "multi/rt/gemini→openai→gemini" {
       assert_eq(names[0], "get_weather")
       assert_eq(names[1], "get_time")
     }
-    _ => fail!("bad gemini roundtrip")
+    _ => fail("bad gemini roundtrip")
   }
 }
 
@@ -191,24 +191,24 @@ test "multi/rt/gemini→openai→gemini" {
 test "multi/rt/gemini→anthropic→gemini" {
   let body = load_fixture("testdata/gemini/generate_content/multi_toolcall_nonstream.json")
   let anth = transform_response(body, Gemini, Anthropic)
-  let anth_json : Json = @json.parse(anth) catch { _ => fail!("parse anth") }
+  let anth_json : Json = @json.parse(anth) catch { _ => fail("parse anth") }
   match anth_json {
     { "content": Array(blocks), .. } => {
       let mut tu = 0
       for b in blocks { match b { { "type": String("tool_use"), .. } => tu = tu + 1; _ => () } }
       assert_eq(tu, 2)
     }
-    _ => fail!("bad anthropic")
+    _ => fail("bad anthropic")
   }
   let back = transform_response(anth, Anthropic, Gemini)
-  let json : Json = @json.parse(back) catch { _ => fail!("parse") }
+  let json : Json = @json.parse(back) catch { _ => fail("parse") }
   match json {
     { "candidates": [{ "content": { "parts": Array(parts), .. }, .. }], .. } => {
       let mut fc = 0
       for p in parts { match p { { "functionCall": _, .. } => fc = fc + 1; _ => () } }
       assert_eq(fc, 2)
     }
-    _ => fail!("bad gemini after anthropic roundtrip")
+    _ => fail("bad gemini after anthropic roundtrip")
   }
 }
 
@@ -220,14 +220,14 @@ test "multi/rt/gemini→anthropic→gemini" {
 test "multi/cross/anthropic→gemini preserves tool" {
   let body = load_fixture("testdata/anthropic/messages/toolcall_nonstream.json")
   let gem = transform_response(body, Anthropic, Gemini)
-  let json : Json = @json.parse(gem) catch { _ => fail!("parse") }
+  let json : Json = @json.parse(gem) catch { _ => fail("parse") }
   match json {
     { "candidates": [{ "content": { "parts": Array(parts), .. }, .. }], .. } => {
       let mut fc = 0
       for p in parts { match p { { "functionCall": _, .. } => fc = fc + 1; _ => () } }
       assert_eq(fc, 1) // one tool_use in the Anthropic fixture
     }
-    _ => fail!("bad gemini from anthropic")
+    _ => fail("bad gemini from anthropic")
   }
 }
 
@@ -241,6 +241,6 @@ test "multi/cross/anthropic→gemini→openai preserves tool" {
       assert_eq(c.length(), 1)
       assert_eq(c[0].name, "get_weather")
     }
-    _ => fail!("tool lost in triple transform")
+    _ => fail("tool lost in triple transform")
   }
 }
