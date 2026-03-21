@@ -36,9 +36,8 @@ pub fn response_to_responses(
 fn build_responses_output_from_anthropic(
   content_blocks : Array[Json],
 ) -> Array[Json] {
-  let output : Array[Json] = []
+  let tool_outputs : Array[Json] = []
   let text_parts : Array[Json] = []
-  // Process content blocks
   for block in content_blocks {
     match block {
       { "type": String("text"), "text": String(text), .. } =>
@@ -49,55 +48,22 @@ fn build_responses_output_from_anthropic(
         "name": String(name),
         "input": input,
         ..
-      } =>
-        if name == "web_search" {
-          output.push({
-            "type": "web_search_call",
-            "id": @interop_util.anthropic_to_openai_responses_call_id(id),
-            "status": "completed",
-            "action": build_web_search_action(input),
-          })
+      } => {
+        let call_id = @interop_util.anthropic_to_openai_responses_call_id(id)
+        if name == @types.web_search_tool_name() {
+          tool_outputs.push(
+            @openai.build_responses_web_search_call(call_id, input),
+          )
         } else {
-          // Convert Claude tool_use ID to Responses API call_id format
-          let call_id = @interop_util.anthropic_to_openai_responses_call_id(id)
-          output.push({
-            "type": "function_call",
-            "id": call_id,
-            "call_id": call_id,
-            "name": name,
-            "arguments": input.stringify(),
-            "status": "completed",
-          })
+          tool_outputs.push(
+            @openai.build_responses_function_call(call_id, name, input),
+          )
         }
+      }
       _ => ()
     }
   }
-  // Add message output if there's any text
-  if text_parts.length() > 0 {
-    // Insert message at the beginning
-    let message_output : Array[Json] = [
-      {
-        "type": "message",
-        "role": "assistant",
-        "content": Json::array(text_parts),
-      },
-    ]
-    for o in output {
-      message_output.push(o)
-    }
-    return message_output
-  }
-  output
-}
-
-///|
-fn build_web_search_action(input : Json) -> Json {
-  let action : Map[String, Json] = { "type": Json::string("search") }
-  match input {
-    { "query": String(query), .. } => action["query"] = Json::string(query)
-    _ => ()
-  }
-  Json::object(action)
+  @openai.assemble_responses_output(text_parts, tool_outputs)
 }
 
 ///|

@@ -178,18 +178,7 @@ fn convert_responses_tools_to_chat(tools : Array[Json]) -> Array[Json] {
     match tool {
       { "type": String("web_search_preview"), .. }
       | { "type": String("web_search_preview_2025_03_11"), .. } =>
-        result.push({
-          "type": "function",
-          "function": {
-            "name": "web_search",
-            "description": "Search the web",
-            "parameters": {
-              "type": "object",
-              "properties": { "query": { "type": "string" } },
-              "required": Json::array([Json::string("query")]),
-            },
-          },
-        })
+        result.push(@openai.web_search_tool_to_json())
       // Responses API function tool: flat {type,name,description,parameters}
       // → Chat Completions: nested {type:"function",function:{name,description,parameters}}
       { "type": String("function"), "name": String(name), .. } => {

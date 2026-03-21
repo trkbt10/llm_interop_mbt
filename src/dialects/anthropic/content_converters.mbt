@@ -177,7 +177,7 @@ pub fn convert_responses_function_call_to_claude(block : Json) -> Json {
       {
         "type": "tool_use",
         "id": @interop_util.openai_responses_to_anthropic_tool_use_id(id),
-        "name": "web_search",
+        "name": @types.web_search_tool_name(),
         "input": input,
       }
     }

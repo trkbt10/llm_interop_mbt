@@ -437,7 +437,7 @@ fn harmony_tool_call_id(
 ) -> String {
   match tc {
     { "id": String(id), .. } => id
-    _ => "fc_" + response_id + "_" + output_index.to_string()
+    _ => @interop_util.ToolCallIdProvider::OpenAIResponsesApi.prefix() + response_id + "_" + output_index.to_string()
   }
 }
 

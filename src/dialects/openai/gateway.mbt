@@ -42,8 +42,28 @@ pub fn chat_completions_resolve(
   None
 }
 
+// =============================================================================
+// OpenAI-compatible provider base URLs
+// =============================================================================
+
 ///|
-/// OpenAI Responses API gateway behavior
+pub fn github_copilot_default_base_url() -> String {
+  "https://api.github.com/copilot"
+}
+
+///|
+pub fn ollama_default_base_url() -> String {
+  "http://localhost:11434"
+}
+
+///|
+pub fn openrouter_default_base_url() -> String {
+  "https://openrouter.ai/api"
+}
+
+// =============================================================================
+// OpenAI Responses API gateway behavior
+// =============================================================================
 
 ///|
 /// Returns the default base URL for the OpenAI Responses API

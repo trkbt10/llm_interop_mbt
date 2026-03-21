@@ -79,17 +79,13 @@ pub fn tool_to_json(tool : @types.ToolDefinition) -> Json {
 }
 
 ///|
-fn web_search_tool_to_json() -> Json {
+pub fn web_search_tool_to_json() -> Json {
   {
     "type": "function",
     "function": {
-      "name": "web_search",
-      "description": "Search the web",
-      "parameters": {
-        "type": "object",
-        "properties": { "query": { "type": "string" } },
-        "required": Json::array([Json::string("query")]),
-      },
+      "name": @types.web_search_tool_name(),
+      "description": @types.web_search_tool_description(),
+      "parameters": @types.web_search_tool_parameters_schema(),
     },
   }
 }
@@ -104,6 +100,71 @@ pub fn tools_to_json(
     result.push(tool_to_json(tool))
   }
   result
+}
+
+// =============================================================================
+// Response Format Builders (used by cross-dialect transforms)
+// =============================================================================
+
+///|
+/// Build an OpenAI Chat Completions choice JSON.
+/// Used by Anthropic/Gemini response_to_chat() to construct OpenAI-format output.
+pub fn build_chat_choice(
+  index : Int,
+  text_content : String,
+  tool_calls : Array[Json],
+) -> Json {
+  let message : Map[String, Json] = {}
+  message["role"] = Json::string("assistant")
+  if tool_calls.length() > 0 {
+    if text_content.is_empty() {
+      message["content"] = Json::null()
+    } else {
+      message["content"] = Json::string(text_content)
+    }
+    message["tool_calls"] = Json::array(tool_calls)
+  } else {
+    message["content"] = Json::string(text_content)
+  }
+  let choice : Map[String, Json] = {}
+  choice["index"] = Json::number(index.to_double())
+  choice["message"] = Json::object(message)
+  choice["finish_reason"] = Json::string(
+    if tool_calls.length() > 0 { "tool_calls" } else { "stop" },
+  )
+  Json::object(choice)
+}
+
+///|
+/// Build a complete OpenAI Chat Completions response JSON string.
+pub fn build_chat_response(
+  id : String,
+  model : String,
+  choices : Array[Json],
+) -> String {
+  let result : Map[String, Json] = {}
+  result["id"] = Json::string(id)
+  result["object"] = Json::string("chat.completion")
+  result["model"] = Json::string(model)
+  result["choices"] = Json::array(choices)
+  Json::object(result).stringify()
+}
+
+///|
+/// Build an OpenAI tool_call JSON object.
+pub fn build_tool_call_json(
+  id : String,
+  name : String,
+  arguments : Json,
+) -> Json {
+  let func : Map[String, Json] = {}
+  func["name"] = Json::string(name)
+  func["arguments"] = Json::string(arguments.stringify())
+  let tc : Map[String, Json] = {}
+  tc["id"] = Json::string(id)
+  tc["type"] = Json::string("function")
+  tc["function"] = Json::object(func)
+  Json::object(tc)
 }
 
 // =============================================================================

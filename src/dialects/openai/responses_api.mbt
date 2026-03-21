@@ -110,6 +110,67 @@ pub fn tools_to_responses_api_json(
 }
 
 // =============================================================================
+// Responses API Output Builders (used by cross-dialect to_responses transforms)
+// =============================================================================
+
+///|
+/// Build a Responses API function_call output item.
+pub fn build_responses_function_call(
+  call_id : String,
+  name : String,
+  arguments : Json,
+) -> Json {
+  {
+    "type": "function_call",
+    "id": call_id,
+    "call_id": call_id,
+    "name": name,
+    "arguments": arguments.stringify(),
+    "status": "completed",
+  }
+}
+
+///|
+/// Build a Responses API web_search_call output item.
+pub fn build_responses_web_search_call(
+  call_id : String,
+  input : Json,
+) -> Json {
+  {
+    "type": "web_search_call",
+    "id": call_id,
+    "status": "completed",
+    "action": @types.build_web_search_action(input),
+  }
+}
+
+///|
+/// Build a Responses API message output wrapping text content.
+pub fn build_responses_message_output(text_parts : Array[Json]) -> Json {
+  {
+    "type": "message",
+    "role": "assistant",
+    "content": Json::array(text_parts),
+  }
+}
+
+///|
+/// Assemble Responses API output array: message first (if text), then tool calls.
+pub fn assemble_responses_output(
+  text_parts : Array[Json],
+  tool_outputs : Array[Json],
+) -> Array[Json] {
+  let result : Array[Json] = []
+  if text_parts.length() > 0 {
+    result.push(build_responses_message_output(text_parts))
+  }
+  for o in tool_outputs {
+    result.push(o)
+  }
+  result
+}
+
+// =============================================================================
 // Request Builder
 // =============================================================================
 
@@ -264,7 +325,7 @@ fn parse_web_search_trace(output : Json, id : String) -> @types.ToolCallTrace {
   }
   @types.ToolCallTrace::new(
     id~,
-    name="web_search",
+    name=@types.web_search_tool_name(),
     kind=@types.ToolCallKind::WebSearch,
     statuses~,
     arguments=Json::object(arguments),

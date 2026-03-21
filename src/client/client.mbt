@@ -1,5 +1,5 @@
 ///|
-/// LLM API Client using mizchi/x/http
+/// LLM API Client — gateway-based, all ModelApi providers via HttpTransport
 
 ///|
 pub suberror ClientError {
@@ -8,225 +8,94 @@ pub suberror ClientError {
   ApiError(code~ : Int, message~ : String)
 } derive(Show)
 
-///|
-/// API Provider type
-pub(all) enum Provider {
-  Anthropic
-  OpenAI
-  OpenAICompatible(base_url~ : String)
-}
+// =============================================================================
+// chat_gateway — canonical entry point for all providers
+// =============================================================================
 
 ///|
-/// Client configuration
-pub(all) struct ClientConfig {
-  provider : Provider
-  api_key : String
-  model : String
-  max_tokens : Int
-  temperature : Double?
-}
-
-///|
-/// Creates a new `ClientConfig` with the given provider, API key, and model.
-pub fn ClientConfig::new(
-  provider : Provider,
-  api_key : String,
-  model : String,
-  max_tokens? : Int = 4096,
-  temperature? : Double? = None,
-) -> ClientConfig {
-  { provider, api_key, model, max_tokens, temperature }
-}
-
-///|
-fn get_endpoint(provider : Provider) -> String {
-  match provider {
-    Anthropic => @anthropic.default_base_url() + "/messages"
-    OpenAI => @openai.chat_completions_default_base_url() + "/chat/completions"
-    OpenAICompatible(base_url~) => base_url + "/v1/chat/completions"
-  }
-}
-
-///|
-fn get_headers(config : ClientConfig) -> Map[String, String] {
-  match config.provider {
-    Anthropic => @anthropic.auth_headers(config.api_key)
-    OpenAI | OpenAICompatible(_) =>
-      @openai.chat_completions_auth_headers(config.api_key)
-  }
-}
-
-///|
-fn build_request_body(
-  config : ClientConfig,
+/// Send a chat request using gateway-based routing.
+/// Supports all ModelApi providers via HttpTransport injection.
+///
+/// Pipeline:
+///   1. Build body in OpenAI Chat Completions format (lingua franca)
+///   2. prepare_upstream(): transform_request(OpenAI → provider dialect), URL, headers, aliases
+///   3. HTTP POST via injected HttpTransport
+///   4. transform_response(provider dialect → OpenAI): includes tool_use/functionCall conversion
+///   5. parse_chat_response(): unified OpenAI-format parser
+///
+/// Exception: OpenAIResponses API has its own body/response format.
+/// Gateway does not have Chat Completions ↔ Responses API transform.
+pub async fn chat_gateway(
+  provider : @gateway.ProviderConfig,
+  transport : &HttpTransport,
   messages : Array[@types.ModelMessage],
   tools : Array[@types.ToolDefinition],
-) -> String {
-  let body = match config.provider {
-    Anthropic =>
-      @anthropic.build_body(
-        config.model,
-        messages,
-        tools,
-        max_tokens=Some(config.max_tokens),
-        temperature=config.temperature,
-      )
-    OpenAI | OpenAICompatible(_) =>
-      @openai.build_chat_body(
-        config.model,
-        messages,
-        tools,
-        max_tokens=Some(config.max_tokens),
-        temperature=config.temperature,
-      )
-  }
-  body.stringify()
-}
-
-///|
-fn parse_response(config : ClientConfig, json : Json) -> @types.ModelResponse {
-  match config.provider {
-    Anthropic => @anthropic.parse_response(json)
-    OpenAI | OpenAICompatible(_) => @openai.parse_chat_response(json)
-  }
-}
-
-///|
-fn bytes_to_string(bytes : Bytes) -> String {
-  @encoding.decode_lossy(bytes[:])
-}
-
-///|
-/// Send a chat request (non-streaming)
-pub async fn chat(
-  config : ClientConfig,
-  messages : Array[@types.ModelMessage],
-  tools? : Array[@types.ToolDefinition] = [],
+  model : String,
+  max_tokens? : Int? = None,
+  temperature? : Double? = None,
 ) -> @types.ModelResponse raise ClientError {
-  let url = get_endpoint(config.provider)
-  let headers = get_headers(config)
-  let body = build_request_body(config, messages, tools)
-  let body_data : &@io.Data = body
-  let (response, data) = @http.post(url, body_data, headers~) catch {
-    @http.HttpError::NetworkError(msg) => raise ClientError::HttpError(msg)
-    @http.HttpError::InvalidUrl(msg) =>
-      raise ClientError::HttpError("Invalid URL: " + msg)
-    @http.HttpError::TimeoutError =>
-      raise ClientError::HttpError("Request timeout")
-    @http.HttpError::NotSupported =>
-      raise ClientError::HttpError("HTTP not supported on this platform")
+  let api = provider.api
+  let uses_responses_api = api == @gateway.OpenAIResponses
+  // 1. Build body
+  let body = if uses_responses_api {
+    @openai.build_responses_api_body(model, messages, tools).stringify()
+  } else {
+    @openai.build_chat_body(
+      model, messages, tools, max_tokens~, temperature~,
+    ).stringify()
   }
-  let response_str = data.text() catch {
-    err =>
-      raise ClientError::ParseError(
-        "Failed to read response: " + err.to_string(),
-      )
+  // 2. prepare_upstream: transform_request + URL + headers + model aliases
+  let base_url = if provider.base_url.is_empty() {
+    api.default_base_url()
+  } else {
+    provider.base_url
   }
-  if response.code >= 400 {
-    raise ClientError::ApiError(code=response.code, message=response_str)
+  let upstream = @gateway.prepare_upstream(
+    provider,
+    body,
+    @gateway.GatewaySurface::OpenAI,
+    model,
+    base_url,
+    provider.api_key,
+  )
+  // 3. HTTP POST
+  let url = upstream.origin + upstream.path
+  let req : TransportRequest = {
+    url,
+    http_method: "POST",
+    headers: upstream.headers,
+    body: Some(upstream.body),
   }
-  let json = @json.parse(response_str) catch {
-    err => raise ClientError::ParseError("JSON parse error: " + err.to_string())
+  let resp = transport.request(req) catch {
+    TransportError::NetworkError(msg) =>
+      raise ClientError::HttpError("Transport error: " + msg)
+    TransportError::TimeoutError =>
+      raise ClientError::HttpError("Transport timeout")
   }
-  parse_response(config, json)
-}
-
-///|
-/// Stream event from SSE
-pub(all) struct StreamEvent {
-  event : String
-  data : Json
-}
-
-///|
-/// Send a chat request with streaming
-pub async fn chat_stream(
-  config : ClientConfig,
-  messages : Array[@types.ModelMessage],
-  tools? : Array[@types.ToolDefinition] = [],
-  on_event? : (StreamEvent) -> Unit = fn(_) {  },
-) -> @types.ModelResponse raise ClientError {
-  let url = get_endpoint(config.provider)
-  let headers = get_headers(config)
-  let body_json = match config.provider {
-    Anthropic => {
-      let base = @anthropic.build_body(
-        config.model,
-        messages,
-        tools,
-        max_tokens=Some(config.max_tokens),
-        temperature=config.temperature,
-      )
-      @utils.set_json_field(base, "stream", Json::boolean(true))
+  if resp.status == 429 {
+    return @types.ModelResponse::RateLimited(retry_after=60)
+  }
+  if resp.status < 200 || resp.status >= 300 {
+    raise ClientError::ApiError(code=resp.status, message=resp.body)
+  }
+  // 4. Parse response
+  if uses_responses_api {
+    let json = @json.parse(resp.body) catch {
+      err =>
+        raise ClientError::ParseError("JSON parse error: " + err.to_string())
     }
-    OpenAI | OpenAICompatible(_) => {
-      let base = @openai.build_chat_body(
-        config.model,
-        messages,
-        tools,
-        max_tokens=Some(config.max_tokens),
-        temperature=config.temperature,
-      )
-      @utils.set_json_field(base, "stream", Json::boolean(true))
+    @openai.parse_responses_api_response(json)
+  } else {
+    // transform_response: provider dialect → OpenAI (including tool_use/functionCall → tool_calls)
+    let openai_body = @gateway.transform_response(
+      resp.body,
+      api.to_dialect(),
+      @gateway.GatewaySurface::OpenAI,
+    )
+    let json = @json.parse(openai_body) catch {
+      err =>
+        raise ClientError::ParseError("JSON parse error: " + err.to_string())
     }
-  }
-  let body = body_json.stringify()
-  let body_data : &@io.Data = body
-  let (response, stream) = @http.post_stream(url, body_data, headers~) catch {
-    @http.HttpError::NetworkError(msg) => raise ClientError::HttpError(msg)
-    @http.HttpError::InvalidUrl(msg) =>
-      raise ClientError::HttpError("Invalid URL: " + msg)
-    @http.HttpError::TimeoutError =>
-      raise ClientError::HttpError("Request timeout")
-    @http.HttpError::NotSupported =>
-      raise ClientError::HttpError("HTTP not supported on this platform")
-  }
-  if response.code >= 400 {
-    let body_bytes = stream.read_all() catch { _ => b"" }
-    let body_str = bytes_to_string(body_bytes)
-    raise ClientError::ApiError(code=response.code, message=body_str)
-  }
-  let buffer = StringBuilder::new()
-  let all_events : Array[@sse.SseEvent] = []
-  while true {
-    let chunk = stream.read_some() catch { _ => break }
-    match chunk {
-      None => break
-      Some(bytes) => {
-        let text = bytes_to_string(bytes)
-        buffer.write_string(text)
-        let result = @sse.parse_sse_chunk(buffer.to_string())
-        for e in result.events {
-          on_event({ event: e.event, data: e.data })
-          all_events.push(e)
-        }
-        buffer.reset()
-        buffer.write_string(result.remaining)
-      }
-    }
-  }
-  let remaining = buffer.to_string()
-  if remaining.length() > 0 {
-    let result = @sse.parse_sse_chunk(remaining + "\n")
-    for e in result.events {
-      on_event({ event: e.event, data: e.data })
-      all_events.push(e)
-    }
-  }
-  match config.provider {
-    Anthropic => {
-      let acc = @anthropic.AnthropicMessagesAccumulator::new()
-      for e in all_events {
-        acc.feed(e)
-      }
-      acc.finish()
-    }
-    OpenAI | OpenAICompatible(_) => {
-      let acc = @openai.ChatCompletionsAccumulator::new()
-      for e in all_events {
-        acc.feed(e)
-      }
-      acc.finish()
-    }
+    @openai.parse_chat_response(json)
   }
 }

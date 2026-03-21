@@ -45,6 +45,43 @@ pub fn parse_url(url : String) -> (String, String) {
 }
 
 ///|
+/// Parse a data: URL into (media_type, base64_data).
+/// e.g., "data:image/png;base64,iVBOR..." -> ("image/png", "iVBOR...")
+pub fn parse_data_url(url : String) -> (String, String)? {
+  if not(url.has_prefix("data:")) {
+    return None
+  }
+  let semicolon = match find_substr(url, ";", 5) {
+    Some(i) => i
+    None => return None
+  }
+  // Extract media type: characters between "data:" (index 5) and semicolon
+  let media_type = StringBuilder::new()
+  for i = 5; i < semicolon; i = i + 1 {
+    media_type.write_char(url[i].to_int().unsafe_to_char())
+  }
+  // Verify "base64," marker after semicolon
+  let base64_start = semicolon + 1
+  if not(url.length() >= base64_start + 7) {
+    return None
+  }
+  let marker = StringBuilder::new()
+  for i = base64_start; i < base64_start + 7; i = i + 1 {
+    marker.write_char(url[i].to_int().unsafe_to_char())
+  }
+  if marker.to_string() != "base64," {
+    return None
+  }
+  // Extract base64 data
+  let data_start = base64_start + 7
+  let data = StringBuilder::new()
+  for i = data_start; i < url.length(); i = i + 1 {
+    data.write_char(url[i].to_int().unsafe_to_char())
+  }
+  Some((media_type.to_string(), data.to_string()))
+}
+
+///|
 /// Split string into lines, handling both LF and CRLF line endings
 pub fn split_lines(s : String) -> Array[String] {
   let lines : Array[String] = []

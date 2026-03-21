@@ -75,11 +75,9 @@ pub fn AnthropicMessagesAccumulator::feed(
 pub fn AnthropicMessagesAccumulator::finish(
   self : AnthropicMessagesAccumulator,
 ) -> @types.ModelResponse {
-  if self.stop_reason == "tool_use" && self.tool_calls.length() > 0 {
-    @types.ModelResponse::ToolCalls(
-      @types.tool_calls_to_requests(self.tool_calls),
-    )
-  } else {
-    @types.ModelResponse::Text(self.text.to_string())
-  }
+  @types.finalize_accumulation(
+    self.stop_reason == "tool_use",
+    self.tool_calls,
+    self.text,
+  )
 }

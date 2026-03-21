@@ -67,6 +67,75 @@ pub fn chat_request_to_gemini(
     { "messages": Array(msgs), .. } =>
       for msg in msgs {
         match msg {
+          // Skip system messages (Gemini handles them differently)
+          { "role": String("system"), .. } => ()
+          // Assistant with tool_calls → model with functionCall parts
+          {
+            "role": String("assistant"),
+            "tool_calls": Array(tool_calls),
+            ..
+          } => {
+            let parts : Array[Json] = []
+            // Include text content if present
+            match msg {
+              { "content": String(c), .. } =>
+                if not(c.is_empty()) {
+                  let p : Map[String, Json] = {}
+                  p["text"] = Json::string(c)
+                  parts.push(Json::object(p))
+                }
+              _ => ()
+            }
+            for tc in tool_calls {
+              match tc {
+                {
+                  "function": {
+                    "name": String(name),
+                    "arguments": String(args_str),
+                    ..
+                  },
+                  ..
+                } => {
+                  let args : Json = @json.parse(args_str) catch { _ => {} }
+                  let fc : Map[String, Json] = {}
+                  fc["name"] = Json::string(name)
+                  fc["args"] = args
+                  let p : Map[String, Json] = {}
+                  p["functionCall"] = Json::object(fc)
+                  parts.push(Json::object(p))
+                }
+                _ => ()
+              }
+            }
+            let c : Map[String, Json] = {}
+            c["role"] = Json::string("model")
+            c["parts"] = Json::array(parts)
+            contents.push(Json::object(c))
+          }
+          // Tool result → user with functionResponse part
+          {
+            "role": String("tool"),
+            "content": String(content),
+            "tool_call_id": String(_),
+            ..
+          } => {
+            // Need to find the function name; Gemini requires it in functionResponse.
+            // We extract it from the tool_call_id by looking at the previous assistant message.
+            // Fallback: use a generic name since Gemini needs name field.
+            let name = find_tool_name_for_id(msgs, msg)
+            let response : Map[String, Json] = {}
+            response["content"] = Json::string(content)
+            let fr : Map[String, Json] = {}
+            fr["name"] = Json::string(name)
+            fr["response"] = Json::object(response)
+            let p : Map[String, Json] = {}
+            p["functionResponse"] = Json::object(fr)
+            let c : Map[String, Json] = {}
+            c["role"] = Json::string("user")
+            c["parts"] = Json::array([Json::object(p)])
+            contents.push(Json::object(c))
+          }
+          // Regular messages
           { "role": String(role), "content": content, .. } => {
             let gemini_role = if role == "assistant" { "model" } else { "user" }
             let parts = transform_openai_content_to_gemini(content)
@@ -82,9 +151,69 @@ pub fn chat_request_to_gemini(
   }
   let gemini_body : Map[String, Json] = {}
   gemini_body["contents"] = Json::array(contents)
+  // Convert tools: OpenAI function tools → Gemini functionDeclarations
+  match json {
+    { "tools": Array(openai_tools), .. } => {
+      let declarations : Array[Json] = []
+      for tool in openai_tools {
+        match tool {
+          {
+            "type": String("function"),
+            "function": {
+              "name": String(name),
+              "description": String(desc),
+              "parameters": params,
+              ..
+            },
+            ..
+          } => {
+            let decl : Map[String, Json] = {}
+            decl["name"] = Json::string(name)
+            decl["description"] = Json::string(desc)
+            decl["parameters"] = params
+            declarations.push(Json::object(decl))
+          }
+          _ => ()
+        }
+      }
+      if declarations.length() > 0 {
+        let tool_obj : Map[String, Json] = {}
+        tool_obj["functionDeclarations"] = Json::array(declarations)
+        gemini_body["tools"] = Json::array([Json::object(tool_obj)])
+      }
+    }
+    _ => ()
+  }
   // Extract and apply all generation parameters as generationConfig
   @types.GenerationParams::from_openai(json).apply_to_gemini(gemini_body, ctx)
   Json::object(gemini_body).stringify()
+}
+
+///|
+/// Find the function name for a tool result by matching tool_call_id
+/// against the preceding assistant message's tool_calls array.
+fn find_tool_name_for_id(msgs : Array[Json], tool_msg : Json) -> String {
+  let tc_id = match tool_msg {
+    { "tool_call_id": String(id), .. } => id
+    _ => return "unknown"
+  }
+  // Search backwards through messages for an assistant with matching tool_call
+  for msg in msgs {
+    match msg {
+      { "role": String("assistant"), "tool_calls": Array(tcs), .. } =>
+        for tc in tcs {
+          match tc {
+            { "id": String(id), "function": { "name": String(name), .. }, .. } =>
+              if id == tc_id {
+                return name
+              }
+            _ => ()
+          }
+        }
+      _ => ()
+    }
+  }
+  "unknown"
 }
 
 ///|
@@ -110,7 +239,7 @@ fn transform_openai_content_to_gemini(content : Json) -> Array[Json] {
             "image_url": { "url": String(url), .. },
             ..
           } =>
-            match parse_data_url(url) {
+            match @utils.parse_data_url(url) {
               Some((mime_type, data)) => {
                 let inline_data : Map[String, Json] = {}
                 inline_data["mime_type"] = Json::string(mime_type)
@@ -134,18 +263,27 @@ fn transform_openai_content_to_gemini(content : Json) -> Array[Json] {
 /// Transform Gemini GenerateContent response to OpenAI Chat Completions format
 pub fn response_to_chat(body : String) -> String {
   let json = @json.parse(body) catch { _ => return body }
-  // Collect all text from all candidates and parts
   let choices : Array[Json] = []
   let mut idx = 0
+  let mut tool_call_counter = 0
   match json {
     { "candidates": Array(candidates), .. } =>
       for candidate in candidates {
         let texts : Array[String] = []
+        let tool_calls : Array[Json] = []
         match candidate {
           { "content": { "parts": Array(parts), .. }, .. } =>
             for part in parts {
               match part {
                 { "text": String(t), .. } => texts.push(t)
+                { "functionCall": { "name": String(name), "args": args, .. }, .. } => {
+                  let gemini_id = @interop_util.generate_gemini_tool_call_id(name, tool_call_counter)
+                  let openai_id = @interop_util.gemini_to_openai_chat_call_id(gemini_id)
+                  tool_calls.push(
+                    @openai.build_tool_call_json(openai_id, name, args),
+                  )
+                  tool_call_counter = tool_call_counter + 1
+                }
                 _ => ()
               }
             }
@@ -160,46 +298,73 @@ pub fn response_to_chat(body : String) -> String {
               acc + "\n\n" + t
             }
           })
-        let message : Map[String, Json] = {}
-        message["role"] = Json::string("assistant")
-        message["content"] = Json::string(content)
-        let choice : Map[String, Json] = {}
-        choice["index"] = Json::number(idx.to_double())
-        choice["message"] = Json::object(message)
-        choice["finish_reason"] = Json::string("stop")
-        choices.push(Json::object(choice))
+        choices.push(@openai.build_chat_choice(idx, content, tool_calls))
         idx = idx + 1
       }
     _ => ()
   }
-  // Generate ID from response or create placeholder
   let id = "gemini-" + idx.to_string()
-  let result : Map[String, Json] = {}
-  result["id"] = Json::string(id)
-  result["object"] = Json::string("chat.completion")
-  result["model"] = Json::string("gemini")
-  result["choices"] = Json::array(choices)
-  Json::object(result).stringify()
+  @openai.build_chat_response(id, "gemini", choices)
 }
 
 ///|
-/// Transform OpenAI Chat Completions response to Gemini GenerateContent format
+/// Transform OpenAI Chat Completions response to Gemini GenerateContent format.
+/// Handles both text and tool_calls.
 pub fn chat_response_to_gemini(body : String) -> String {
   let json = @json.parse(body) catch { _ => return body }
-  // Extract content from choices
-  let content_text = match json {
+  let parts : Array[Json] = []
+  match json {
     { "choices": Array(choices), .. } =>
       match choices.get(0) {
-        Some({ "message": { "content": String(c), .. }, .. }) => c
-        _ => ""
+        Some(choice) => {
+          // Text content
+          match choice {
+            { "message": { "content": String(c), .. }, .. } =>
+              if not(c.is_empty()) {
+                let p : Map[String, Json] = {}
+                p["text"] = Json::string(c)
+                parts.push(Json::object(p))
+              }
+            _ => ()
+          }
+          // Tool calls → functionCall parts
+          match choice {
+            { "message": { "tool_calls": Array(tcs), .. }, .. } =>
+              for tc in tcs {
+                match tc {
+                  {
+                    "function": {
+                      "name": String(name),
+                      "arguments": String(args_str),
+                      ..
+                    },
+                    ..
+                  } => {
+                    let args : Json = @json.parse(args_str) catch { _ => {} }
+                    let fc : Map[String, Json] = {}
+                    fc["name"] = Json::string(name)
+                    fc["args"] = args
+                    let p : Map[String, Json] = {}
+                    p["functionCall"] = Json::object(fc)
+                    parts.push(Json::object(p))
+                  }
+                  _ => ()
+                }
+              }
+            _ => ()
+          }
+        }
+        _ => ()
       }
-    _ => ""
+    _ => ()
   }
-  // Build Gemini format
-  let text_part : Map[String, Json] = {}
-  text_part["text"] = Json::string(content_text)
+  if parts.is_empty() {
+    let p : Map[String, Json] = {}
+    p["text"] = Json::string("")
+    parts.push(Json::object(p))
+  }
   let content : Map[String, Json] = {}
-  content["parts"] = Json::array([Json::object(text_part)])
+  content["parts"] = Json::array(parts)
   content["role"] = Json::string("model")
   let candidate : Map[String, Json] = {}
   candidate["content"] = Json::object(content)
@@ -232,59 +397,3 @@ pub fn openai_error_to_gemini(body : String) -> String {
   Json::object(result).stringify()
 }
 
-///|
-/// Parse data URL to extract media type and base64 data
-fn parse_data_url(url : String) -> (String, String)? {
-  if !url.has_prefix("data:") {
-    return None
-  }
-  // Find semicolon after "data:"
-  let mut semicolon_idx = -1
-  let mut idx = 5
-  for c in url {
-    if idx >= 5 && c == ';' {
-      semicolon_idx = idx
-      break
-    }
-    idx = idx + 1
-  }
-  if semicolon_idx < 0 {
-    return None
-  }
-  // Extract media type
-  let mut media_type = ""
-  idx = 0
-  for c in url {
-    if idx >= 5 && idx < semicolon_idx {
-      media_type = media_type + c.to_string()
-    }
-    idx = idx + 1
-  }
-  // Verify "base64," marker exists after semicolon
-  let base64_start = semicolon_idx + 1
-  if url.length() < base64_start + 7 {
-    return None
-  }
-  let mut base64_marker = ""
-  idx = 0
-  for c in url {
-    if idx >= base64_start && idx < base64_start + 7 {
-      base64_marker = base64_marker + c.to_string()
-    }
-    idx = idx + 1
-  }
-  if base64_marker != "base64," {
-    return None
-  }
-  // Extract base64 data (after "base64,")
-  let data_start = base64_start + 7
-  let mut data = ""
-  idx = 0
-  for c in url {
-    if idx >= data_start {
-      data = data + c.to_string()
-    }
-    idx = idx + 1
-  }
-  Some((media_type, data))
-}

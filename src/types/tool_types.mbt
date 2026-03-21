@@ -58,6 +58,48 @@ pub(all) struct ToolDefinition {
   metadata : Map[String, String]
 }
 
+// =============================================================================
+// Web Search Tool: shared definition (SoT)
+// Each dialect wraps this in its native format.
+// =============================================================================
+
+///|
+pub fn web_search_tool_name() -> String {
+  "web_search"
+}
+
+///|
+pub fn web_search_tool_description() -> String {
+  "Search the web"
+}
+
+///|
+/// JSON Schema for web search tool parameters (shared across all dialects)
+pub fn web_search_tool_parameters_schema() -> Json {
+  {
+    "type": "object",
+    "properties": { "query": { "type": "string" } },
+    "required": Json::array([Json::string("query")]),
+  }
+}
+
+///|
+/// Build a web search action JSON from tool input/arguments.
+/// Used by to_responses transforms across dialects.
+pub fn build_web_search_action(input : Json) -> Json {
+  let action : Map[String, Json] = { "type": Json::string("search") }
+  match input {
+    { "query": String(query), .. } => action["query"] = Json::string(query)
+    _ => ()
+  }
+  match input {
+    { "queries": Array(queries), .. } =>
+      action["queries"] = Json::array(queries)
+    _ => ()
+  }
+  Json::object(action)
+}
+
 ///|
 /// Parameter type enum (simplified)
 pub(all) enum ParameterType {

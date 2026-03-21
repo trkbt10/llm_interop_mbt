@@ -130,13 +130,9 @@ pub fn tool_to_json(tool : @types.ToolDefinition) -> Json {
 ///|
 fn web_search_tool_to_json() -> Json {
   {
-    "name": "web_search",
-    "description": "Search the web",
-    "input_schema": {
-      "type": "object",
-      "properties": { "query": { "type": "string" } },
-      "required": Json::array([Json::string("query")]),
-    },
+    "name": @types.web_search_tool_name(),
+    "description": @types.web_search_tool_description(),
+    "input_schema": @types.web_search_tool_parameters_schema(),
   }
 }
 

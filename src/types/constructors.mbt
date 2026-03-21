@@ -36,7 +36,7 @@ pub fn ToolCallRequest::web_search(
   }
   {
     id,
-    name: "web_search",
+    name: web_search_tool_name(),
     arguments: Json::object(arguments),
     kind: ToolCallKind::WebSearch,
   }
@@ -103,8 +103,8 @@ pub fn ToolDefinition::web_search_preview(
       search_context_size~,
       user_location_country~,
     ),
-    name: "web_search",
-    description: "Search the web",
+    name: web_search_tool_name(),
+    description: web_search_tool_description(),
     parameters: Json::object({}),
     schema: None,
     metadata: {},
@@ -122,8 +122,8 @@ pub fn ToolDefinition::web_search_preview_2025_03_11(
       search_context_size~,
       user_location_country~,
     ),
-    name: "web_search",
-    description: "Search the web",
+    name: web_search_tool_name(),
+    description: web_search_tool_description(),
     parameters: Json::object({}),
     schema: None,
     metadata: {},

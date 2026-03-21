@@ -95,13 +95,11 @@ fn HarmonyAccumulator::process_tool_call_delta(
 pub fn HarmonyAccumulator::finish(
   self : HarmonyAccumulator,
 ) -> @types.ModelResponse {
-  if self.finish_reason == "tool_calls" && self.tool_calls.length() > 0 {
-    @types.ModelResponse::ToolCalls(
-      @types.tool_calls_to_requests(self.tool_calls),
-    )
-  } else {
-    @types.ModelResponse::Text(self.text.to_string())
-  }
+  @types.finalize_accumulation(
+    self.finish_reason == "tool_calls",
+    self.tool_calls,
+    self.text,
+  )
 }
 
 ///|

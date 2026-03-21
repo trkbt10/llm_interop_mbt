@@ -142,13 +142,9 @@ pub fn tool_to_json(tool : @types.ToolDefinition) -> Json {
 ///|
 fn web_search_tool_to_json() -> Json {
   {
-    "name": "web_search",
-    "description": "Search the web",
-    "parameters": {
-      "type": "object",
-      "properties": { "query": { "type": "string" } },
-      "required": Json::array([Json::string("query")]),
-    },
+    "name": @types.web_search_tool_name(),
+    "description": @types.web_search_tool_description(),
+    "parameters": @types.web_search_tool_parameters_schema(),
   }
 }
 
@@ -278,7 +274,7 @@ pub fn parse_function_calls(
     match part {
       { "functionCall": { "name": String(name), "args": args, .. }, .. } => {
         // Gemini doesn't have call IDs - generate one based on index
-        let id = generate_gemini_synthetic_call_id(name, index)
+        let id = @interop_util.generate_gemini_tool_call_id(name, index)
         result.push(@types.ToolCallRequest::new(id~, name~, arguments=args))
         index = index + 1
       }
@@ -304,19 +300,6 @@ fn extract_gemini_text(parts : Array[Json]) -> String {
     }
   }
   text.to_string()
-}
-
-///|
-/// Generate a synthetic call ID for Gemini function calls
-/// Gemini API doesn't provide native IDs, so we generate them for tracking
-/// Format: `gemini_<tool_name>_<call_index>` (matches GoogleGemini provider prefix)
-fn generate_gemini_synthetic_call_id(
-  tool_name : String,
-  call_index : Int,
-) -> String {
-  // Prefix matches ToolCallIdProvider::GoogleGemini format from tool_call_id.mbt
-  let google_gemini_prefix = "gemini_"
-  "\{google_gemini_prefix}\{tool_name}_\{call_index}"
 }
 
 // =============================================================================

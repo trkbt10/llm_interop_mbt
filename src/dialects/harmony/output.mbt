@@ -37,7 +37,7 @@ pub fn model_response_to_responses_json(
               "type": "web_search_call",
               "id": call.id,
               "status": "completed",
-              "action": build_web_search_action(call.arguments),
+              "action": @types.build_web_search_action(call.arguments),
             })
         }
       }
@@ -77,7 +77,7 @@ fn build_text_response_json(
         "type": "web_search_call",
         "id": trace.id,
         "status": tool_trace_status_to_json(trace.statuses),
-        "action": build_web_search_action(trace.arguments),
+        "action": @types.build_web_search_action(trace.arguments),
       })
     }
   }
@@ -137,17 +137,3 @@ fn tool_trace_status_to_json(statuses : Array[@types.ToolCallStatus]) -> Json {
   }
 }
 
-///|
-fn build_web_search_action(arguments : Json) -> Json {
-  let action : Map[String, Json] = { "type": Json::string("search") }
-  match arguments {
-    { "query": String(query), .. } => action["query"] = Json::string(query)
-    _ => ()
-  }
-  match arguments {
-    { "queries": Array(queries), .. } =>
-      action["queries"] = Json::array(queries)
-    _ => ()
-  }
-  Json::object(action)
-}

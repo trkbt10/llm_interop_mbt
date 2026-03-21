@@ -278,7 +278,7 @@ fn web_search_trace_to_public(
 ) -> @types.ToolCallTrace {
   @types.ToolCallTrace::new(
     id=trace.id,
-    name="web_search",
+    name=@types.web_search_tool_name(),
     kind=@types.ToolCallKind::WebSearch,
     statuses=trace.statuses,
     arguments=Json::object(trace.arguments),

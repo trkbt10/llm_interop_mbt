@@ -60,7 +60,7 @@ pub fn ModelApi::to_spec(self : ModelApi) -> DialectSpec {
     GithubCopilot =>
       {
         id: "github-copilot",
-        default_base_url: "https://api.github.com/copilot",
+        default_base_url: @openai.github_copilot_default_base_url(),
         surface: OpenAI,
         completion_path: fn(base, _model, _key) {
           @openai.chat_completions_path(base)
@@ -86,7 +86,7 @@ pub fn ModelApi::to_spec(self : ModelApi) -> DialectSpec {
     Ollama =>
       {
         id: "ollama",
-        default_base_url: "http://localhost:11434",
+        default_base_url: @openai.ollama_default_base_url(),
         surface: OpenAI,
         completion_path: fn(base, _model, _key) {
           @openai.chat_completions_path(base)
@@ -99,7 +99,7 @@ pub fn ModelApi::to_spec(self : ModelApi) -> DialectSpec {
     OpenRouter =>
       {
         id: "openrouter",
-        default_base_url: "https://openrouter.ai/api",
+        default_base_url: @openai.openrouter_default_base_url(),
         surface: OpenAI,
         completion_path: fn(base, _model, _key) {
           @openai.chat_completions_path(base)
@@ -134,6 +134,18 @@ pub fn ModelApi::to_spec(self : ModelApi) -> DialectSpec {
 /// Convenience: get GatewaySurface from ModelApi
 pub fn ModelApi::to_dialect(self : ModelApi) -> GatewaySurface {
   self.to_spec().surface
+}
+
+///|
+/// Whether this provider natively supports the Responses API (/v1/responses).
+/// Only OpenAI's own Responses API variant returns true.
+/// Other providers (Ollama, Groq, OpenRouter, etc.) use Chat Completions
+/// and require translation if the caller wants Responses API semantics.
+pub fn ModelApi::supports_responses_api(self : ModelApi) -> Bool {
+  match self {
+    OpenAIResponses => true
+    _ => false
+  }
 }
 
 ///|

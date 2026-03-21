@@ -645,6 +645,17 @@ test "ModelApi::from_string parses openrouter" {
 }
 
 ///|
+test "supports_responses_api: only OpenAIResponses returns true" {
+  assert_true(OpenAIResponses.supports_responses_api())
+  assert_true(not(OpenAICompletions.supports_responses_api()))
+  assert_true(not(Ollama.supports_responses_api()))
+  assert_true(not(OpenRouter.supports_responses_api()))
+  assert_true(not(AnthropicMessages.supports_responses_api()))
+  assert_true(not(GoogleGenerativeAI.supports_responses_api()))
+  assert_true(not(GithubCopilot.supports_responses_api()))
+}
+
+///|
 test "Ollama ModelApi resolves correctly" {
   let spec = Ollama.to_spec()
   assert_eq(spec.id, "ollama")

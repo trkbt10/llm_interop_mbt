@@ -109,6 +109,71 @@ pub fn chat_request_to_anthropic(
         match msg {
           { "role": String("system"), "content": String(content), .. } =>
             result["system"] = Json::string(content)
+          // Assistant with tool_calls → Anthropic tool_use content blocks
+          {
+            "role": String("assistant"),
+            "tool_calls": Array(tool_calls),
+            ..
+          } => {
+            let blocks : Array[Json] = []
+            // Include text content if present
+            match msg {
+              { "content": String(c), .. } =>
+                if not(c.is_empty()) {
+                  let tb : Map[String, Json] = {}
+                  tb["type"] = Json::string("text")
+                  tb["text"] = Json::string(c)
+                  blocks.push(Json::object(tb))
+                }
+              _ => ()
+            }
+            // Convert each tool_call to tool_use block
+            for tc in tool_calls {
+              match tc {
+                {
+                  "id": String(tc_id),
+                  "function": {
+                    "name": String(name),
+                    "arguments": String(args_str),
+                    ..
+                  },
+                  ..
+                } => {
+                  let input : Json = @json.parse(args_str) catch { _ => {} }
+                  let anthropic_id = @interop_util.openai_chat_to_anthropic_tool_use_id(tc_id)
+                  let tb : Map[String, Json] = {}
+                  tb["type"] = Json::string("tool_use")
+                  tb["id"] = Json::string(anthropic_id)
+                  tb["name"] = Json::string(name)
+                  tb["input"] = input
+                  blocks.push(Json::object(tb))
+                }
+                _ => ()
+              }
+            }
+            let new_msg : Map[String, Json] = {}
+            new_msg["role"] = Json::string("assistant")
+            new_msg["content"] = Json::array(blocks)
+            messages.push(Json::object(new_msg))
+          }
+          // Tool result → Anthropic user message with tool_result content block
+          {
+            "role": String("tool"),
+            "content": String(content),
+            "tool_call_id": String(tc_id),
+            ..
+          } => {
+            let anthropic_id = @interop_util.openai_chat_to_anthropic_tool_use_id(tc_id)
+            let block : Map[String, Json] = {}
+            block["type"] = Json::string("tool_result")
+            block["tool_use_id"] = Json::string(anthropic_id)
+            block["content"] = Json::string(content)
+            let new_msg : Map[String, Json] = {}
+            new_msg["role"] = Json::string("user")
+            new_msg["content"] = Json::array([Json::object(block)])
+            messages.push(Json::object(new_msg))
+          }
+          // Regular messages (user, etc.)
           { "role": String(role), "content": content, .. } => {
             let new_msg : Map[String, Json] = {}
             new_msg["role"] = Json::string(role)
@@ -121,6 +186,37 @@ pub fn chat_request_to_anthropic(
     _ => ()
   }
   result["messages"] = Json::array(messages)
+  // Convert tools: OpenAI function tools → Anthropic tools
+  match json {
+    { "tools": Array(openai_tools), .. } => {
+      let anthropic_tools : Array[Json] = []
+      for tool in openai_tools {
+        match tool {
+          {
+            "type": String("function"),
+            "function": {
+              "name": String(name),
+              "description": String(desc),
+              "parameters": params,
+              ..
+            },
+            ..
+          } => {
+            let t : Map[String, Json] = {}
+            t["name"] = Json::string(name)
+            t["description"] = Json::string(desc)
+            t["input_schema"] = params
+            anthropic_tools.push(Json::object(t))
+          }
+          _ => ()
+        }
+      }
+      if anthropic_tools.length() > 0 {
+        result["tools"] = Json::array(anthropic_tools)
+      }
+    }
+    _ => ()
+  }
   Json::object(result).stringify()
 }
 
@@ -144,7 +240,7 @@ fn transform_openai_content_to_anthropic(content : Json) -> Json {
             "image_url": { "url": String(url), .. },
             ..
           } =>
-            match parse_data_url(url) {
+            match @utils.parse_data_url(url) {
               Some((media_type, data)) => {
                 let source : Map[String, Json] = {}
                 source["type"] = Json::string("base64")
@@ -167,10 +263,10 @@ fn transform_openai_content_to_anthropic(content : Json) -> Json {
 }
 
 ///|
-/// Transform Anthropic Messages response to OpenAI Chat Completions format
+/// Transform Anthropic Messages response to OpenAI Chat Completions format.
+/// Handles both text and tool_use content blocks.
 pub fn response_to_chat(body : String) -> String {
   let json = @json.parse(body) catch { _ => return body }
-  // Extract fields from Anthropic response
   let id = match json {
     { "id": String(id), .. } => id
     _ => ""
@@ -179,13 +275,24 @@ pub fn response_to_chat(body : String) -> String {
     { "model": String(m), .. } => m
     _ => ""
   }
-  // Collect all text content
+  // Extract text and tool_use blocks
   let texts : Array[String] = []
+  let tool_calls : Array[Json] = []
   match json {
     { "content": Array(blocks), .. } =>
       for block in blocks {
         match block {
           { "type": String("text"), "text": String(t), .. } => texts.push(t)
+          {
+            "type": String("tool_use"),
+            "id": String(tool_id),
+            "name": String(name),
+            "input": input,
+            ..
+          } => {
+            let openai_id = @interop_util.anthropic_to_openai_chat_call_id(tool_id)
+            tool_calls.push(@openai.build_tool_call_json(openai_id, name, input))
+          }
           _ => ()
         }
       }
@@ -194,24 +301,13 @@ pub fn response_to_chat(body : String) -> String {
   let content = texts
     .iter()
     .fold(init="", fn(acc, t) { if acc == "" { t } else { acc + "\n\n" + t } })
-  // Build OpenAI format response
-  let message : Map[String, Json] = {}
-  message["role"] = Json::string("assistant")
-  message["content"] = Json::string(content)
-  let choice : Map[String, Json] = {}
-  choice["index"] = Json::number(0.0)
-  choice["message"] = Json::object(message)
-  choice["finish_reason"] = Json::string("stop")
-  let result : Map[String, Json] = {}
-  result["id"] = Json::string(id)
-  result["object"] = Json::string("chat.completion")
-  result["model"] = Json::string(model)
-  result["choices"] = Json::array([Json::object(choice)])
-  Json::object(result).stringify()
+  let choice = @openai.build_chat_choice(0, content, tool_calls)
+  @openai.build_chat_response(id, model, [choice])
 }
 
 ///|
-/// Transform OpenAI Chat Completions response to Anthropic Messages format
+/// Transform OpenAI Chat Completions response to Anthropic Messages format.
+/// Handles both text and tool_calls.
 pub fn chat_response_to_anthropic(body : String) -> String {
   let json = @json.parse(body) catch { _ => return body }
   let id = match json {
@@ -222,26 +318,77 @@ pub fn chat_response_to_anthropic(body : String) -> String {
     { "model": String(m), .. } => m
     _ => ""
   }
-  // Extract content from choices
-  let content_text = match json {
+  // Extract content and tool_calls from first choice
+  let content_blocks : Array[Json] = []
+  let mut stop_reason = "end_turn"
+  match json {
     { "choices": Array(choices), .. } =>
       match choices.get(0) {
-        Some({ "message": { "content": String(c), .. }, .. }) => c
-        _ => ""
+        Some(choice) => {
+          // Text content
+          match choice {
+            { "message": { "content": String(c), .. }, .. } =>
+              if not(c.is_empty()) {
+                let text_block : Map[String, Json] = {}
+                text_block["type"] = Json::string("text")
+                text_block["text"] = Json::string(c)
+                content_blocks.push(Json::object(text_block))
+              }
+            _ => ()
+          }
+          // Tool calls
+          match choice {
+            { "message": { "tool_calls": Array(tcs), .. }, .. } =>
+              for tc in tcs {
+                match tc {
+                  {
+                    "id": String(tc_id),
+                    "function": {
+                      "name": String(name),
+                      "arguments": String(args_str),
+                      ..
+                    },
+                    ..
+                  } => {
+                    let input : Json = @json.parse(args_str) catch { _ => {} }
+                    let anthropic_id = @interop_util.openai_chat_to_anthropic_tool_use_id(tc_id)
+                    let tool_block : Map[String, Json] = {}
+                    tool_block["type"] = Json::string("tool_use")
+                    tool_block["id"] = Json::string(anthropic_id)
+                    tool_block["name"] = Json::string(name)
+                    tool_block["input"] = input
+                    content_blocks.push(Json::object(tool_block))
+                    stop_reason = "tool_use"
+                  }
+                  _ => ()
+                }
+              }
+            _ => ()
+          }
+          // Finish reason override
+          match choice {
+            { "finish_reason": String("tool_calls"), .. } =>
+              stop_reason = "tool_use"
+            _ => ()
+          }
+        }
+        _ => ()
       }
-    _ => ""
+    _ => ()
   }
-  // Build Anthropic format
-  let content_block : Map[String, Json] = {}
-  content_block["type"] = Json::string("text")
-  content_block["text"] = Json::string(content_text)
+  if content_blocks.is_empty() {
+    let text_block : Map[String, Json] = {}
+    text_block["type"] = Json::string("text")
+    text_block["text"] = Json::string("")
+    content_blocks.push(Json::object(text_block))
+  }
   let result : Map[String, Json] = {}
   result["id"] = Json::string(id)
   result["type"] = Json::string("message")
   result["role"] = Json::string("assistant")
   result["model"] = Json::string(model)
-  result["content"] = Json::array([Json::object(content_block)])
-  result["stop_reason"] = Json::string("end_turn")
+  result["content"] = Json::array(content_blocks)
+  result["stop_reason"] = Json::string(stop_reason)
   result["stop_sequence"] = Json::null()
   result["usage"] = Json::object({
     "input_tokens": Json::number(0.0),
@@ -333,59 +480,3 @@ pub fn extract_error(json : Json) -> Json? {
   }
 }
 
-///|
-/// Parse data URL to extract media type and base64 data
-fn parse_data_url(url : String) -> (String, String)? {
-  if !url.has_prefix("data:") {
-    return None
-  }
-  // Find semicolon after "data:"
-  let mut semicolon_idx = -1
-  let mut idx = 5
-  for c in url {
-    if idx >= 5 && c == ';' {
-      semicolon_idx = idx
-      break
-    }
-    idx = idx + 1
-  }
-  if semicolon_idx < 0 {
-    return None
-  }
-  // Extract media type
-  let mut media_type = ""
-  idx = 0
-  for c in url {
-    if idx >= 5 && idx < semicolon_idx {
-      media_type = media_type + c.to_string()
-    }
-    idx = idx + 1
-  }
-  // Verify "base64," marker exists after semicolon
-  let base64_start = semicolon_idx + 1
-  if url.length() < base64_start + 7 {
-    return None
-  }
-  let mut base64_marker = ""
-  idx = 0
-  for c in url {
-    if idx >= base64_start && idx < base64_start + 7 {
-      base64_marker = base64_marker + c.to_string()
-    }
-    idx = idx + 1
-  }
-  if base64_marker != "base64," {
-    return None
-  }
-  // Extract base64 data (after "base64,")
-  let data_start = base64_start + 7
-  let mut data = ""
-  idx = 0
-  for c in url {
-    if idx >= data_start {
-      data = data + c.to_string()
-    }
-    idx = idx + 1
-  }
-  Some((media_type, data))
-}

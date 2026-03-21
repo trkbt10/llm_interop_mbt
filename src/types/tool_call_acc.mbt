@@ -45,6 +45,22 @@ pub fn process_tool_call_delta(
 }
 
 ///|
+/// Finalize accumulation into ModelResponse.
+/// Shared by all dialect accumulators (OpenAI CC, Anthropic, Harmony).
+/// Each dialect has its own "tool call" stop_reason string.
+pub fn finalize_accumulation(
+  is_tool_call : Bool,
+  tool_calls : Array[ToolCallAcc],
+  text : StringBuilder,
+) -> ModelResponse {
+  if is_tool_call && tool_calls.length() > 0 {
+    ModelResponse::ToolCalls(tool_calls_to_requests(tool_calls))
+  } else {
+    ModelResponse::Text(text.to_string())
+  }
+}
+
+///|
 /// Convert accumulated tool calls to ToolCallRequest array
 pub fn tool_calls_to_requests(
   tool_calls : Array[ToolCallAcc],

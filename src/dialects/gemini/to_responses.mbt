@@ -53,7 +53,7 @@ pub fn response_to_responses(
 ///|
 /// Build Responses API output array from Gemini parts
 fn build_responses_output_from_gemini(parts : Array[Json]) -> Array[Json] {
-  let output : Array[Json] = []
+  let tool_outputs : Array[Json] = []
   let text_parts : Array[Json] = []
   let mut call_index = 0
   for part in parts {
@@ -61,61 +61,27 @@ fn build_responses_output_from_gemini(parts : Array[Json]) -> Array[Json] {
       { "text": String(text), .. } =>
         text_parts.push({ "type": "output_text", "text": text })
       { "functionCall": { "name": String(name), "args": args, .. }, .. } => {
-        // Gemini doesn't have native IDs, generate synthetic one
-        let call_id = @interop_util.generate_gemini_tool_call_id(
+        let gemini_id = @interop_util.generate_gemini_tool_call_id(
           name, call_index,
         )
-        // Convert to Responses API format
-        let responses_call_id = @interop_util.gemini_to_openai_responses_call_id(
-          call_id,
+        let call_id = @interop_util.gemini_to_openai_responses_call_id(
+          gemini_id,
         )
-        if name == "web_search" {
-          output.push({
-            "type": "web_search_call",
-            "id": responses_call_id,
-            "status": "completed",
-            "action": build_web_search_action(args),
-          })
+        if name == @types.web_search_tool_name() {
+          tool_outputs.push(
+            @openai.build_responses_web_search_call(call_id, args),
+          )
         } else {
-          output.push({
-            "type": "function_call",
-            "id": responses_call_id,
-            "call_id": responses_call_id,
-            "name": name,
-            "arguments": args.stringify(),
-            "status": "completed",
-          })
+          tool_outputs.push(
+            @openai.build_responses_function_call(call_id, name, args),
+          )
         }
         call_index = call_index + 1
       }
       _ => ()
     }
   }
-  // Add message output if there's any text
-  if text_parts.length() > 0 {
-    let message_output : Array[Json] = [
-      {
-        "type": "message",
-        "role": "assistant",
-        "content": Json::array(text_parts),
-      },
-    ]
-    for o in output {
-      message_output.push(o)
-    }
-    return message_output
-  }
-  output
-}
-
-///|
-fn build_web_search_action(input : Json) -> Json {
-  let action : Map[String, Json] = { "type": Json::string("search") }
-  match input {
-    { "query": String(query), .. } => action["query"] = Json::string(query)
-    _ => ()
-  }
-  Json::object(action)
+  @openai.assemble_responses_output(text_parts, tool_outputs)
 }
 
 ///|
