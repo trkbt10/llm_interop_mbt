@@ -24,7 +24,11 @@ pub fn stream_completion_path(
   model : String,
   api_key : String,
 ) -> String {
-  base_path + "/models/" + model + ":streamGenerateContent?alt=sse&key=" + api_key
+  base_path +
+  "/models/" +
+  model +
+  ":streamGenerateContent?alt=sse&key=" +
+  api_key
 }
 
 ///|

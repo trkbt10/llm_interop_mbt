@@ -507,9 +507,7 @@ test "list_configured_models returns all models" {
 ///|
 test "extract_model_from_path extracts model correctly" {
   assert_eq(
-    @gemini.extract_model_from_path(
-      "/v1/models/gemini-pro:generateContent",
-    ),
+    @gemini.extract_model_from_path("/v1/models/gemini-pro:generateContent"),
     "gemini-pro",
   )
 }
@@ -567,10 +565,7 @@ test "prepare_upstream merges provider custom headers" {
     api_key: "sk-or-test",
     auth: ApiKey,
     api: OpenRouter,
-    headers: {
-      "HTTP-Referer": "https://myapp.com",
-      "X-Title": "My App",
-    },
+    headers: { "HTTP-Referer": "https://myapp.com", "X-Title": "My App" },
     auth_header: true,
     models: [],
     model_patterns: [],

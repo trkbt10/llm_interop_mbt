@@ -85,10 +85,7 @@ test "fixture: parse Claude text response" {
       return
     }
   }
-  let result = @anthropic.response_to_responses(
-    json,
-    response_id="resp_test",
-  )
+  let result = @anthropic.response_to_responses(json, response_id="resp_test")
   match result {
     { "status": String("completed"), "output": Array(output), .. } => {
       assert_true(output.length() > 0)
@@ -115,10 +112,7 @@ test "fixture: parse Claude tool_use and convert to Responses API" {
       return
     }
   }
-  let result = @anthropic.response_to_responses(
-    json,
-    response_id="resp_test",
-  )
+  let result = @anthropic.response_to_responses(json, response_id="resp_test")
   match result {
     { "output": Array(output), .. } => {
       // Should have message + function_call
@@ -156,10 +150,7 @@ test "fixture: parse Claude multi-tool and convert to Responses API" {
       return
     }
   }
-  let result = @anthropic.response_to_responses(
-    json,
-    response_id="resp_test",
-  )
+  let result = @anthropic.response_to_responses(json, response_id="resp_test")
   match result {
     { "output": Array(output), .. } => {
       // Count function calls

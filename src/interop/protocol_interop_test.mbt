@@ -168,9 +168,7 @@ test "parse OpenAI Responses API response and extract tool calls" {
 
 ///|
 test "parse Gemini response and extract tool calls" {
-  let response = @gemini.parse_response(
-    fixture_gemini_toolcall_response(),
-  )
+  let response = @gemini.parse_response(fixture_gemini_toolcall_response())
   match response {
     @types.ModelResponse::ToolCalls(calls) => {
       inspect(calls.length(), content="1")

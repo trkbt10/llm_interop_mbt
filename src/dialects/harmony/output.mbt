@@ -136,4 +136,3 @@ fn tool_trace_status_to_json(statuses : Array[@types.ToolCallStatus]) -> Json {
     @types.ToolCallStatus::Completed => Json::string("completed")
   }
 }
-

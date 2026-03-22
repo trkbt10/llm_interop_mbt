@@ -6,10 +6,7 @@
 
 ///|
 /// Transform Anthropic Messages request to OpenAI Chat Completions format
-pub fn request_to_chat(
-  body : String,
-  ctx : @types.TransformContext,
-) -> String {
+pub fn request_to_chat(body : String, ctx : @types.TransformContext) -> String {
   let json = @json.parse(body) catch { _ => return body }
   let result : Map[String, Json] = {}
   // Copy model
@@ -110,11 +107,7 @@ pub fn chat_request_to_anthropic(
           { "role": String("system"), "content": String(content), .. } =>
             result["system"] = Json::string(content)
           // Assistant with tool_calls → Anthropic tool_use content blocks
-          {
-            "role": String("assistant"),
-            "tool_calls": Array(tool_calls),
-            ..
-          } => {
+          { "role": String("assistant"), "tool_calls": Array(tool_calls), .. } => {
             let blocks : Array[Json] = []
             // Include text content if present
             match msg {
@@ -140,7 +133,9 @@ pub fn chat_request_to_anthropic(
                   ..
                 } => {
                   let input : Json = @json.parse(args_str) catch { _ => {} }
-                  let anthropic_id = @interop_util.openai_chat_to_anthropic_tool_use_id(tc_id)
+                  let anthropic_id = @interop_util.openai_chat_to_anthropic_tool_use_id(
+                    tc_id,
+                  )
                   let tb : Map[String, Json] = {}
                   tb["type"] = Json::string("tool_use")
                   tb["id"] = Json::string(anthropic_id)
@@ -163,7 +158,9 @@ pub fn chat_request_to_anthropic(
             "tool_call_id": String(tc_id),
             ..
           } => {
-            let anthropic_id = @interop_util.openai_chat_to_anthropic_tool_use_id(tc_id)
+            let anthropic_id = @interop_util.openai_chat_to_anthropic_tool_use_id(
+              tc_id,
+            )
             let block : Map[String, Json] = {}
             block["type"] = Json::string("tool_result")
             block["tool_use_id"] = Json::string(anthropic_id)
@@ -290,8 +287,12 @@ pub fn response_to_chat(body : String) -> String {
             "input": input,
             ..
           } => {
-            let openai_id = @interop_util.anthropic_to_openai_chat_call_id(tool_id)
-            tool_calls.push(@openai.build_tool_call_json(openai_id, name, input))
+            let openai_id = @interop_util.anthropic_to_openai_chat_call_id(
+              tool_id,
+            )
+            tool_calls.push(
+              @openai.build_tool_call_json(openai_id, name, input),
+            )
           }
           _ => ()
         }
@@ -351,7 +352,9 @@ pub fn chat_response_to_anthropic(body : String) -> String {
                     ..
                   } => {
                     let input : Json = @json.parse(args_str) catch { _ => {} }
-                    let anthropic_id = @interop_util.openai_chat_to_anthropic_tool_use_id(tc_id)
+                    let anthropic_id = @interop_util.openai_chat_to_anthropic_tool_use_id(
+                      tc_id,
+                    )
                     let tool_block : Map[String, Json] = {}
                     tool_block["type"] = Json::string("tool_use")
                     tool_block["id"] = Json::string(anthropic_id)
@@ -479,4 +482,3 @@ pub fn extract_error(json : Json) -> Json? {
     _ => None
   }
 }
-

@@ -48,9 +48,7 @@ pub fn message_to_json(message : @types.ModelMessage) -> Json {
 
 ///|
 /// Convert message array to Anthropic format JSON array (excludes System messages)
-pub fn messages_to_json(
-  messages : Array[@types.ModelMessage],
-) -> Array[Json] {
+pub fn messages_to_json(messages : Array[@types.ModelMessage]) -> Array[Json] {
   let result : Array[Json] = []
   for msg in messages {
     match msg {
@@ -138,9 +136,7 @@ fn web_search_tool_to_json() -> Json {
 
 ///|
 /// Convert tool definition array to Anthropic format JSON array
-pub fn tools_to_json(
-  tools : Array[@types.ToolDefinition],
-) -> Array[Json] {
+pub fn tools_to_json(tools : Array[@types.ToolDefinition]) -> Array[Json] {
   let result : Array[Json] = []
   for tool in tools {
     result.push(tool_to_json(tool))
@@ -237,9 +233,7 @@ pub fn parse_response(response_json : Json) -> @types.ModelResponse {
 
 ///|
 /// Parse tool calls from Anthropic response
-pub fn parse_tool_calls(
-  content : Json,
-) -> Array[@types.ToolCallRequest] {
+pub fn parse_tool_calls(content : Json) -> Array[@types.ToolCallRequest] {
   let result : Array[@types.ToolCallRequest] = []
   match content {
     Array(items) =>

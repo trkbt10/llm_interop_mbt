@@ -6,10 +6,7 @@
 
 ///|
 /// Convert Anthropic Messages API response JSON to Responses API response JSON
-pub fn response_to_responses(
-  response : Json,
-  response_id~ : String,
-) -> Json {
+pub fn response_to_responses(response : Json, response_id~ : String) -> Json {
   match response {
     { "content": Array(content_blocks), .. } => {
       let output = build_responses_output_from_anthropic(content_blocks)

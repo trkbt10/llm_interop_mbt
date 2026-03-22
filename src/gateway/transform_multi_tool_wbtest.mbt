@@ -1,16 +1,24 @@
 ///|
 /// Exhaustive multi-tool transform tests using REAL API response fixtures.
-
 fn load_fixture(path : String) -> String {
-  @utils.read_testdata(path) catch { _ => "" }
+  @utils.read_testdata(path) catch {
+    _ => ""
+  }
 }
 
+///|
 fn parse_oai(body : String) -> @types.ModelResponse {
-  let json = @json.parse(body) catch { _ => return @types.ModelResponse::ModelError("parse") }
+  let json = @json.parse(body) catch {
+    _ => return @types.ModelResponse::ModelError("parse")
+  }
   @openai.parse_chat_response(json)
 }
 
-fn xform_and_parse(body : String, from : GatewaySurface) -> @types.ModelResponse {
+///|
+fn xform_and_parse(
+  body : String,
+  from : GatewaySurface,
+) -> @types.ModelResponse {
   parse_oai(transform_response(body, from, OpenAI))
 }
 
@@ -20,7 +28,11 @@ fn xform_and_parse(body : String, from : GatewaySurface) -> @types.ModelResponse
 
 ///|
 test "multi/parse/openai: 2 tools" {
-  let r = parse_oai(load_fixture("testdata/openai/chat_completions/live_multi_toolcall_20250321.json"))
+  let r = parse_oai(
+    load_fixture(
+      "testdata/openai/chat_completions/live_multi_toolcall_20250321.json",
+    ),
+  )
   match r {
     @types.ModelResponse::ToolCalls(c) => {
       assert_eq(c.length(), 2)
@@ -37,7 +49,11 @@ test "multi/parse/openai: 2 tools" {
 
 ///|
 test "multi/parse/groq: 2 tools" {
-  let r = parse_oai(load_fixture("testdata/groq/chat_completions/live_multi_toolcall_20250321.json"))
+  let r = parse_oai(
+    load_fixture(
+      "testdata/groq/chat_completions/live_multi_toolcall_20250321.json",
+    ),
+  )
   match r {
     @types.ModelResponse::ToolCalls(c) => {
       assert_eq(c.length(), 2)
@@ -51,7 +67,12 @@ test "multi/parse/groq: 2 tools" {
 
 ///|
 test "multi/parse/gemini: 2 tools (via transform)" {
-  let r = xform_and_parse(load_fixture("testdata/gemini/generate_content/multi_toolcall_nonstream.json"), Gemini)
+  let r = xform_and_parse(
+    load_fixture(
+      "testdata/gemini/generate_content/multi_toolcall_nonstream.json",
+    ),
+    Gemini,
+  )
   match r {
     @types.ModelResponse::ToolCalls(c) => {
       assert_eq(c.length(), 2)
@@ -65,7 +86,10 @@ test "multi/parse/gemini: 2 tools (via transform)" {
 
 ///|
 test "multi/parse/anthropic: 1 tool mixed with text (via transform)" {
-  let r = xform_and_parse(load_fixture("testdata/anthropic/messages/toolcall_nonstream.json"), Anthropic)
+  let r = xform_and_parse(
+    load_fixture("testdata/anthropic/messages/toolcall_nonstream.json"),
+    Anthropic,
+  )
   match r {
     @types.ModelResponse::ToolCalls(c) => {
       assert_eq(c.length(), 1)
@@ -82,7 +106,9 @@ test "multi/parse/anthropic: 1 tool mixed with text (via transform)" {
 
 ///|
 test "multi/rt/openai→anthropic→openai" {
-  let body = load_fixture("testdata/openai/chat_completions/live_multi_toolcall_20250321.json")
+  let body = load_fixture(
+    "testdata/openai/chat_completions/live_multi_toolcall_20250321.json",
+  )
   let anth = transform_response(body, OpenAI, Anthropic)
   // Verify Anthropic intermediate
   let anth_json : Json = @json.parse(anth) catch { _ => fail("parse anth") }
@@ -90,7 +116,12 @@ test "multi/rt/openai→anthropic→openai" {
     { "content": Array(blocks), "stop_reason": String(sr), .. } => {
       assert_eq(sr, "tool_use")
       let mut tu = 0
-      for b in blocks { match b { { "type": String("tool_use"), .. } => tu = tu + 1; _ => () } }
+      for b in blocks {
+        match b {
+          { "type": String("tool_use"), .. } => tu = tu + 1
+          _ => ()
+        }
+      }
       assert_eq(tu, 2)
     }
     _ => fail("bad anthropic")
@@ -111,13 +142,20 @@ test "multi/rt/openai→anthropic→openai" {
 
 ///|
 test "multi/rt/openai→gemini→openai" {
-  let body = load_fixture("testdata/openai/chat_completions/live_multi_toolcall_20250321.json")
+  let body = load_fixture(
+    "testdata/openai/chat_completions/live_multi_toolcall_20250321.json",
+  )
   let gem = transform_response(body, OpenAI, Gemini)
   let gem_json : Json = @json.parse(gem) catch { _ => fail("parse gem") }
   match gem_json {
     { "candidates": [{ "content": { "parts": Array(parts), .. }, .. }], .. } => {
       let mut fc = 0
-      for p in parts { match p { { "functionCall": _, .. } => fc = fc + 1; _ => () } }
+      for p in parts {
+        match p {
+          { "functionCall": _, .. } => fc = fc + 1
+          _ => ()
+        }
+      }
       assert_eq(fc, 2)
     }
     _ => fail("bad gemini")
@@ -135,7 +173,9 @@ test "multi/rt/openai→gemini→openai" {
 
 ///|
 test "multi/rt/groq→anthropic→openai" {
-  let body = load_fixture("testdata/groq/chat_completions/live_multi_toolcall_20250321.json")
+  let body = load_fixture(
+    "testdata/groq/chat_completions/live_multi_toolcall_20250321.json",
+  )
   let anth = transform_response(body, OpenAI, Anthropic)
   let r = parse_oai(transform_response(anth, Anthropic, OpenAI))
   match r {
@@ -150,7 +190,9 @@ test "multi/rt/groq→anthropic→openai" {
 
 ///|
 test "multi/rt/groq→gemini→openai" {
-  let body = load_fixture("testdata/groq/chat_completions/live_multi_toolcall_20250321.json")
+  let body = load_fixture(
+    "testdata/groq/chat_completions/live_multi_toolcall_20250321.json",
+  )
   let gem = transform_response(body, OpenAI, Gemini)
   let r = parse_oai(transform_response(gem, Gemini, OpenAI))
   match r {
@@ -169,7 +211,9 @@ test "multi/rt/groq→gemini→openai" {
 
 ///|
 test "multi/rt/gemini→openai→gemini" {
-  let body = load_fixture("testdata/gemini/generate_content/multi_toolcall_nonstream.json")
+  let body = load_fixture(
+    "testdata/gemini/generate_content/multi_toolcall_nonstream.json",
+  )
   let oai = transform_response(body, Gemini, OpenAI)
   let back = transform_response(oai, OpenAI, Gemini)
   let json : Json = @json.parse(back) catch { _ => fail("parse") }
@@ -177,7 +221,10 @@ test "multi/rt/gemini→openai→gemini" {
     { "candidates": [{ "content": { "parts": Array(parts), .. }, .. }], .. } => {
       let names : Array[String] = []
       for p in parts {
-        match p { { "functionCall": { "name": String(n), .. }, .. } => names.push(n); _ => () }
+        match p {
+          { "functionCall": { "name": String(n), .. }, .. } => names.push(n)
+          _ => ()
+        }
       }
       assert_eq(names.length(), 2)
       assert_eq(names[0], "get_weather")
@@ -189,13 +236,20 @@ test "multi/rt/gemini→openai→gemini" {
 
 ///|
 test "multi/rt/gemini→anthropic→gemini" {
-  let body = load_fixture("testdata/gemini/generate_content/multi_toolcall_nonstream.json")
+  let body = load_fixture(
+    "testdata/gemini/generate_content/multi_toolcall_nonstream.json",
+  )
   let anth = transform_response(body, Gemini, Anthropic)
   let anth_json : Json = @json.parse(anth) catch { _ => fail("parse anth") }
   match anth_json {
     { "content": Array(blocks), .. } => {
       let mut tu = 0
-      for b in blocks { match b { { "type": String("tool_use"), .. } => tu = tu + 1; _ => () } }
+      for b in blocks {
+        match b {
+          { "type": String("tool_use"), .. } => tu = tu + 1
+          _ => ()
+        }
+      }
       assert_eq(tu, 2)
     }
     _ => fail("bad anthropic")
@@ -205,7 +259,12 @@ test "multi/rt/gemini→anthropic→gemini" {
   match json {
     { "candidates": [{ "content": { "parts": Array(parts), .. }, .. }], .. } => {
       let mut fc = 0
-      for p in parts { match p { { "functionCall": _, .. } => fc = fc + 1; _ => () } }
+      for p in parts {
+        match p {
+          { "functionCall": _, .. } => fc = fc + 1
+          _ => ()
+        }
+      }
       assert_eq(fc, 2)
     }
     _ => fail("bad gemini after anthropic roundtrip")
@@ -224,7 +283,12 @@ test "multi/cross/anthropic→gemini preserves tool" {
   match json {
     { "candidates": [{ "content": { "parts": Array(parts), .. }, .. }], .. } => {
       let mut fc = 0
-      for p in parts { match p { { "functionCall": _, .. } => fc = fc + 1; _ => () } }
+      for p in parts {
+        match p {
+          { "functionCall": _, .. } => fc = fc + 1
+          _ => ()
+        }
+      }
       assert_eq(fc, 1) // one tool_use in the Anthropic fixture
     }
     _ => fail("bad gemini from anthropic")

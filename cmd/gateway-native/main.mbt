@@ -313,10 +313,7 @@ async fn proxy_responses_api(
   }
   let response_json = @json.parse(response_text) catch { _ => Json::object({}) }
   let model_response = @openai.parse_openai_chat_response(response_json)
-  let response_id : String = match response_json {
-    { "id": String(id), .. } => id
-    _ => "resp_" + model
-  }
+  let response_id = @gw.extract_response_id(response_text, model)
   let result = @harmony.model_response_to_responses_json(
     model_response,
     response_id~,
@@ -414,7 +411,7 @@ async fn proxy_responses_api_stream(
   @gw.set_cors_headers(sse_headers)
   conn.send_response(200, "OK", extra_headers=sse_headers)
   // Create translator for Chat Completions SSE → Responses API SSE
-  let response_id = "resp_" + model
+  let response_id = @gw.fallback_response_id(model)
   let translator = @harmony.HarmonyToResponsesTranslator::new(
     response_id~,
     model~,

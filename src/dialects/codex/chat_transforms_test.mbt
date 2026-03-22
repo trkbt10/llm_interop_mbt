@@ -9,7 +9,10 @@
 test "chat_request_to_protocol: extracts last user message" {
   let body =
     #|{"model":"codex","messages":[{"role":"system","content":"You are helpful."},{"role":"user","content":"Say hello"}]}
-  let result = chat_request_to_protocol(body, @types.TransformContext::default())
+  let result = chat_request_to_protocol(
+    body,
+    @types.TransformContext::default(),
+  )
   let json = @json.parse(result) catch { _ => fail("invalid json") }
   match json {
     { "prompt": String(prompt), "model": String(model), .. } => {
@@ -25,7 +28,10 @@ test "chat_request_to_protocol: extracts last user message" {
 test "chat_request_to_protocol: single user message" {
   let body =
     #|{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}]}
-  let result = chat_request_to_protocol(body, @types.TransformContext::default())
+  let result = chat_request_to_protocol(
+    body,
+    @types.TransformContext::default(),
+  )
   let json = @json.parse(result) catch { _ => fail("invalid json") }
   match json {
     { "prompt": String(prompt), "model": String(model), .. } => {
@@ -40,7 +46,10 @@ test "chat_request_to_protocol: single user message" {
 test "chat_request_to_protocol: picks last user message from multi-turn" {
   let body =
     #|{"model":"codex","messages":[{"role":"user","content":"first"},{"role":"assistant","content":"ok"},{"role":"user","content":"second"}]}
-  let result = chat_request_to_protocol(body, @types.TransformContext::default())
+  let result = chat_request_to_protocol(
+    body,
+    @types.TransformContext::default(),
+  )
   let json = @json.parse(result) catch { _ => fail("invalid json") }
   match json {
     { "prompt": String(prompt), .. } => assert_eq(prompt, "second")
@@ -52,7 +61,10 @@ test "chat_request_to_protocol: picks last user message from multi-turn" {
 test "chat_request_to_protocol: system + user concatenated" {
   let body =
     #|{"model":"codex","messages":[{"role":"system","content":"Be concise"},{"role":"user","content":"Hello"}]}
-  let result = chat_request_to_protocol(body, @types.TransformContext::default())
+  let result = chat_request_to_protocol(
+    body,
+    @types.TransformContext::default(),
+  )
   let json = @json.parse(result) catch { _ => fail("invalid json") }
   match json {
     { "prompt": String(prompt), .. } => {
@@ -67,7 +79,10 @@ test "chat_request_to_protocol: system + user concatenated" {
 test "chat_request_to_protocol: preserves messages array" {
   let body =
     #|{"model":"codex","messages":[{"role":"user","content":"hi"}]}
-  let result = chat_request_to_protocol(body, @types.TransformContext::default())
+  let result = chat_request_to_protocol(
+    body,
+    @types.TransformContext::default(),
+  )
   let json = @json.parse(result) catch { _ => fail("invalid json") }
   match json {
     { "messages": Array(msgs), .. } => assert_eq(msgs.length(), 1)
@@ -79,7 +94,10 @@ test "chat_request_to_protocol: preserves messages array" {
 test "chat_request_to_protocol: extracts reasoning_effort" {
   let body =
     #|{"model":"o3-mini","messages":[{"role":"user","content":"hi"}],"reasoning_effort":"high"}
-  let result = chat_request_to_protocol(body, @types.TransformContext::default())
+  let result = chat_request_to_protocol(
+    body,
+    @types.TransformContext::default(),
+  )
   let json = @json.parse(result) catch { _ => fail("invalid json") }
   match json {
     { "model": String(model), "effort": String(effort), .. } => {
@@ -94,7 +112,10 @@ test "chat_request_to_protocol: extracts reasoning_effort" {
 test "chat_request_to_protocol: omits effort when not present" {
   let body =
     #|{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}]}
-  let result = chat_request_to_protocol(body, @types.TransformContext::default())
+  let result = chat_request_to_protocol(
+    body,
+    @types.TransformContext::default(),
+  )
   let s = result
   assert_true(not(s.contains("effort")))
 }
@@ -353,10 +374,7 @@ test "response_to_chat: is alias for events_to_chat" {
   let events_json = build_events_array_from_fixture() catch {
     err => fail("Failed to load fixture: " + err.to_string())
   }
-  assert_eq(
-    events_to_chat(events_json),
-    response_to_chat(events_json),
-  )
+  assert_eq(events_to_chat(events_json), response_to_chat(events_json))
 }
 
 // =============================================================================

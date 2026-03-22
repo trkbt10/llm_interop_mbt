@@ -70,11 +70,7 @@ pub fn chat_request_to_gemini(
           // Skip system messages (Gemini handles them differently)
           { "role": String("system"), .. } => ()
           // Assistant with tool_calls → model with functionCall parts
-          {
-            "role": String("assistant"),
-            "tool_calls": Array(tool_calls),
-            ..
-          } => {
+          { "role": String("assistant"), "tool_calls": Array(tool_calls), .. } => {
             let parts : Array[Json] = []
             // Include text content if present
             match msg {
@@ -276,9 +272,16 @@ pub fn response_to_chat(body : String) -> String {
             for part in parts {
               match part {
                 { "text": String(t), .. } => texts.push(t)
-                { "functionCall": { "name": String(name), "args": args, .. }, .. } => {
-                  let gemini_id = @interop_util.generate_gemini_tool_call_id(name, tool_call_counter)
-                  let openai_id = @interop_util.gemini_to_openai_chat_call_id(gemini_id)
+                {
+                  "functionCall": { "name": String(name), "args": args, .. },
+                  ..
+                } => {
+                  let gemini_id = @interop_util.generate_gemini_tool_call_id(
+                    name, tool_call_counter,
+                  )
+                  let openai_id = @interop_util.gemini_to_openai_chat_call_id(
+                    gemini_id,
+                  )
                   tool_calls.push(
                     @openai.build_tool_call_json(openai_id, name, args),
                   )
@@ -396,4 +399,3 @@ pub fn openai_error_to_gemini(body : String) -> String {
   result["error"] = Json::object(error)
   Json::object(result).stringify()
 }
-

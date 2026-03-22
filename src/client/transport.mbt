@@ -25,10 +25,30 @@ pub(all) struct TransportResponse {
 }
 
 ///|
-/// HTTP transport trait — implemented by host runtimes.
-/// Raises TransportError (not ClientError) so implementations don't depend on client internals.
+/// Streaming response — status code + chunk-by-chunk reader.
+pub(all) struct StreamingResponse {
+  status : Int
+  reader : &StreamReader
+}
+
+///|
+/// HTTP transport trait — full request-response.
+/// Implemented by host runtimes.
 pub(open) trait HttpTransport {
   async request(Self, TransportRequest) -> TransportResponse raise TransportError
+}
+
+///|
+/// Streaming HTTP transport trait — returns a reader for chunked response.
+/// Host runtimes implement this to support SSE streaming from LLM backends.
+pub(open) trait StreamingHttpTransport {
+  async request_stream(Self, TransportRequest) -> StreamingResponse raise TransportError
+}
+
+///|
+/// Reads chunks of response body. Returns None on EOF.
+pub(open) trait StreamReader {
+  async read(Self) -> Bytes? raise TransportError
 }
 
 ///|
@@ -41,4 +61,26 @@ pub fn transport_network_error(message : String) -> TransportError {
 /// Factory: create a TimeoutError for external packages implementing HttpTransport
 pub fn transport_timeout_error() -> TransportError {
   TimeoutError
+}
+
+///|
+/// Decode bytes to string, returning empty string on decode failure.
+fn bytes_to_string_lossy(bytes : Bytes) -> String {
+  @utf8.decode(bytes[:]) catch {
+    _ => ""
+  }
+}
+
+///|
+/// Read all remaining data from a stream reader into a string.
+async fn read_all_from_stream(reader : &StreamReader) -> String {
+  let buf = StringBuilder::new()
+  while true {
+    let chunk = reader.read() catch { _ => break }
+    match chunk {
+      None => break
+      Some(bytes) => buf.write_string(bytes_to_string_lossy(bytes))
+    }
+  }
+  buf.to_string()
 }

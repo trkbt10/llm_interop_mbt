@@ -45,9 +45,7 @@ pub fn message_to_json(message : @types.ModelMessage) -> Json {
 
 ///|
 /// Convert message array to OpenAI Chat Completions format JSON array
-pub fn messages_to_json(
-  messages : Array[@types.ModelMessage],
-) -> Array[Json] {
+pub fn messages_to_json(messages : Array[@types.ModelMessage]) -> Array[Json] {
   let result : Array[Json] = []
   for msg in messages {
     result.push(message_to_json(msg))
@@ -92,9 +90,7 @@ pub fn web_search_tool_to_json() -> Json {
 
 ///|
 /// Convert tool definition array to OpenAI Chat Completions format JSON array
-pub fn tools_to_json(
-  tools : Array[@types.ToolDefinition],
-) -> Array[Json] {
+pub fn tools_to_json(tools : Array[@types.ToolDefinition]) -> Array[Json] {
   let result : Array[Json] = []
   for tool in tools {
     result.push(tool_to_json(tool))
@@ -130,7 +126,11 @@ pub fn build_chat_choice(
   choice["index"] = Json::number(index.to_double())
   choice["message"] = Json::object(message)
   choice["finish_reason"] = Json::string(
-    if tool_calls.length() > 0 { "tool_calls" } else { "stop" },
+    if tool_calls.length() > 0 {
+      "tool_calls"
+    } else {
+      "stop"
+    },
   )
   Json::object(choice)
 }
@@ -260,9 +260,7 @@ pub fn parse_chat_response(json : Json) -> @types.ModelResponse {
 
 ///|
 /// Parse tool calls from OpenAI response
-pub fn parse_tool_calls(
-  tool_calls : Json,
-) -> Array[@types.ToolCallRequest] {
+pub fn parse_tool_calls(tool_calls : Json) -> Array[@types.ToolCallRequest] {
   let result : Array[@types.ToolCallRequest] = []
   match tool_calls {
     Array(calls) =>

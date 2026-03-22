@@ -8,7 +8,16 @@ test "response_to_chat: text response" {
   let result = response_to_chat(body)
   let json : Json = @json.parse(result) catch { _ => fail("parse error") }
   match json {
-    { "choices": [{ "message": { "content": String(content), .. }, "finish_reason": String(fr), .. }], .. } => {
+    {
+      "choices": [
+        {
+          "message": { "content": String(content), .. },
+          "finish_reason": String(fr),
+          ..
+        },
+      ],
+      ..
+    } => {
       assert_eq(content, "Hello world")
       assert_eq(fr, "stop")
     }
@@ -24,17 +33,24 @@ test "response_to_chat: tool_use response" {
   let json : Json = @json.parse(result) catch { _ => fail("parse error") }
   match json {
     {
-      "choices": [{
-        "message": { "tool_calls": Array(tcs), "content": Null, .. },
-        "finish_reason": String(fr),
-        ..
-      }],
+      "choices": [
+        {
+          "message": { "tool_calls": Array(tcs), "content": Null, .. },
+          "finish_reason": String(fr),
+          ..
+        },
+      ],
       ..
     } => {
       assert_eq(fr, "tool_calls")
       assert_eq(tcs.length(), 1)
       match tcs[0] {
-        { "id": String(id), "type": String(typ), "function": { "name": String(name), "arguments": String(args), .. }, .. } => {
+        {
+          "id": String(id),
+          "type": String(typ),
+          "function": { "name": String(name), "arguments": String(args), .. },
+          ..
+        } => {
           assert_eq(id, "call_01") // toolu_01 → call_01 via interop ID conversion
           assert_eq(typ, "function")
           assert_eq(name, "get_weather")
@@ -55,11 +71,17 @@ test "response_to_chat: mixed text and tool_use" {
   let json : Json = @json.parse(result) catch { _ => fail("parse error") }
   match json {
     {
-      "choices": [{
-        "message": { "content": String(content), "tool_calls": Array(tcs), .. },
-        "finish_reason": String(fr),
-        ..
-      }],
+      "choices": [
+        {
+          "message": {
+            "content": String(content),
+            "tool_calls": Array(tcs),
+            ..
+          },
+          "finish_reason": String(fr),
+          ..
+        },
+      ],
       ..
     } => {
       assert_eq(content, "Let me check")

@@ -132,10 +132,7 @@ pub fn build_responses_function_call(
 
 ///|
 /// Build a Responses API web_search_call output item.
-pub fn build_responses_web_search_call(
-  call_id : String,
-  input : Json,
-) -> Json {
+pub fn build_responses_web_search_call(call_id : String, input : Json) -> Json {
   {
     "type": "web_search_call",
     "id": call_id,
@@ -147,11 +144,7 @@ pub fn build_responses_web_search_call(
 ///|
 /// Build a Responses API message output wrapping text content.
 pub fn build_responses_message_output(text_parts : Array[Json]) -> Json {
-  {
-    "type": "message",
-    "role": "assistant",
-    "content": Json::array(text_parts),
-  }
+  { "type": "message", "role": "assistant", "content": Json::array(text_parts) }
 }
 
 ///|

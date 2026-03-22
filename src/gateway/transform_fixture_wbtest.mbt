@@ -8,7 +8,6 @@
 ///
 /// Each test loads a real fixture, runs it through the transform pipeline,
 /// and verifies the output is correctly parseable as ModelResponse.
-
 fn load(path : String) -> String {
   @utils.read_testdata(path) catch {
     e => {
@@ -35,7 +34,9 @@ test "fixture/openai-cc/text: parse directly" {
 
 ///|
 test "fixture/openai-cc/toolcall: parse directly" {
-  let body = load("testdata/openai/chat_completions/live_toolcall_20250321.json")
+  let body = load(
+    "testdata/openai/chat_completions/live_toolcall_20250321.json",
+  )
   let json : Json = @json.parse(body) catch { _ => fail("parse") }
   let resp = @openai.parse_chat_response(json)
   match resp {
@@ -49,7 +50,9 @@ test "fixture/openai-cc/toolcall: parse directly" {
 
 ///|
 test "fixture/openai-cc/toolcall: transform OpenAI→OpenAI preserves" {
-  let body = load("testdata/openai/chat_completions/live_toolcall_20250321.json")
+  let body = load(
+    "testdata/openai/chat_completions/live_toolcall_20250321.json",
+  )
   let transformed = transform_response(body, OpenAI, OpenAI)
   let json : Json = @json.parse(transformed) catch { _ => fail("parse") }
   let resp = @openai.parse_chat_response(json)
@@ -96,7 +99,8 @@ test "fixture/groq/toolcall: transform OpenAI→OpenAI preserves" {
   let json : Json = @json.parse(transformed) catch { _ => fail("parse") }
   let resp = @openai.parse_chat_response(json)
   match resp {
-    @types.ModelResponse::ToolCalls(calls) => assert_eq(calls[0].name, "get_weather")
+    @types.ModelResponse::ToolCalls(calls) =>
+      assert_eq(calls[0].name, "get_weather")
     _ => fail("expected ToolCalls after identity transform of Groq fixture")
   }
 }
@@ -112,11 +116,13 @@ test "fixture/anthropic/text: transform Anthropic→OpenAI and parse" {
   let json : Json = @json.parse(openai) catch { _ => fail("parse") }
   let resp = @openai.parse_chat_response(json)
   match resp {
-    @types.ModelResponse::Text(t) => {
+    @types.ModelResponse::Text(t) =>
       // Real fixture says "Four"
       assert_true(t.length() > 0)
-    }
-    _ => fail("expected Text from real Anthropic text fixture → OpenAI transform")
+    _ =>
+      fail(
+        "expected Text from real Anthropic text fixture → OpenAI transform",
+      )
   }
 }
 
@@ -131,7 +137,10 @@ test "fixture/anthropic/toolcall: transform Anthropic→OpenAI and parse" {
       assert_true(calls.length() > 0)
       assert_eq(calls[0].name, "get_weather")
     }
-    _ => fail("expected ToolCalls from real Anthropic toolcall fixture → OpenAI transform")
+    _ =>
+      fail(
+        "expected ToolCalls from real Anthropic toolcall fixture → OpenAI transform",
+      )
   }
 }
 
@@ -169,7 +178,8 @@ test "fixture/gemini/text: transform Gemini→OpenAI and parse" {
   let resp = @openai.parse_chat_response(json)
   match resp {
     @types.ModelResponse::Text(t) => assert_true(t.contains("Hello"))
-    _ => fail("expected Text from real Gemini text fixture → OpenAI transform")
+    _ =>
+      fail("expected Text from real Gemini text fixture → OpenAI transform")
   }
 }
 
@@ -184,13 +194,18 @@ test "fixture/gemini/toolcall: transform Gemini→OpenAI and parse" {
       assert_eq(calls.length(), 1)
       assert_eq(calls[0].name, "get_weather")
     }
-    _ => fail("expected ToolCalls from real Gemini toolcall fixture → OpenAI transform")
+    _ =>
+      fail(
+        "expected ToolCalls from real Gemini toolcall fixture → OpenAI transform",
+      )
   }
 }
 
 ///|
 test "fixture/gemini/multi_toolcall: transform Gemini→OpenAI and parse" {
-  let body = load("testdata/gemini/generate_content/multi_toolcall_nonstream.json")
+  let body = load(
+    "testdata/gemini/generate_content/multi_toolcall_nonstream.json",
+  )
   let openai = transform_response(body, Gemini, OpenAI)
   let json : Json = @json.parse(openai) catch { _ => fail("parse") }
   let resp = @openai.parse_chat_response(json)
@@ -200,7 +215,10 @@ test "fixture/gemini/multi_toolcall: transform Gemini→OpenAI and parse" {
       assert_eq(calls[0].name, "get_weather")
       assert_eq(calls[1].name, "get_time")
     }
-    _ => fail("expected ToolCalls with 2 calls from real Gemini multi-tool fixture")
+    _ =>
+      fail(
+        "expected ToolCalls with 2 calls from real Gemini multi-tool fixture",
+      )
   }
 }
 
@@ -259,7 +277,9 @@ test "fixture/live-openai-text: real gpt-4o-mini text response" {
 
 ///|
 test "fixture/live-openai-toolcall: real gpt-4o-mini tool_calls response" {
-  let body = load("testdata/openai/chat_completions/live_toolcall_20250321.json")
+  let body = load(
+    "testdata/openai/chat_completions/live_toolcall_20250321.json",
+  )
   let json : Json = @json.parse(body) catch { _ => fail("parse") }
   let resp = @openai.parse_chat_response(json)
   match resp {

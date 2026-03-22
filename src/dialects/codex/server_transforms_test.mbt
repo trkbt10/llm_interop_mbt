@@ -291,9 +291,7 @@ test "fixture: multi-turn stream token usage increases" {
 test "chat_response_to_events: normal response produces 6 events" {
   let response =
     #|{"id":"chatcmpl-123","object":"chat.completion","model":"gpt-4o","choices":[{"index":0,"message":{"role":"assistant","content":"Hello, world!"},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}
-  let events = chat_response_to_events(
-    response, "thr_1", "turn_1", "item_1",
-  )
+  let events = chat_response_to_events(response, "thr_1", "turn_1", "item_1")
   assert_eq(events.length(), 6)
   // 1. turn/started
   let e0 = @json.parse(events[0]) catch { _ => fail("invalid json") }
@@ -382,9 +380,7 @@ test "chat_response_to_events: normal response produces 6 events" {
 test "chat_response_to_events: error response produces 2 events" {
   let response =
     #|{"error":{"message":"Rate limit exceeded","type":"rate_limit_error"}}
-  let events = chat_response_to_events(
-    response, "thr_1", "turn_1", "item_1",
-  )
+  let events = chat_response_to_events(response, "thr_1", "turn_1", "item_1")
   assert_eq(events.length(), 2)
   // 1. turn/started
   let e0 = @json.parse(events[0]) catch { _ => fail("invalid json") }
@@ -417,9 +413,7 @@ test "chat_response_to_events: error response produces 2 events" {
 
 ///|
 test "chat_response_to_events: invalid JSON produces error events" {
-  let events = chat_response_to_events(
-    "not json", "thr_1", "turn_1", "item_1",
-  )
+  let events = chat_response_to_events("not json", "thr_1", "turn_1", "item_1")
   assert_eq(events.length(), 2)
   let e1 = @json.parse(events[1]) catch { _ => fail("invalid json") }
   match e1 {
@@ -436,9 +430,7 @@ test "chat_response_to_events: invalid JSON produces error events" {
 test "chat_response_to_events: token usage mapping" {
   let response =
     #|{"choices":[{"message":{"role":"assistant","content":"Hi"},"finish_reason":"stop"}],"usage":{"prompt_tokens":100,"completion_tokens":50,"total_tokens":150}}
-  let events = chat_response_to_events(
-    response, "thr_1", "turn_1", "item_1",
-  )
+  let events = chat_response_to_events(response, "thr_1", "turn_1", "item_1")
   // Verify token usage event (index 4)
   let usage_event = @json.parse(events[4]) catch { _ => fail("invalid json") }
   match usage_event {
@@ -470,9 +462,7 @@ test "chat_response_to_events: roundtrip with events_to_chat" {
   // Verify events produced by server_transforms can be consumed by chat_transforms
   let response =
     #|{"id":"chatcmpl-1","object":"chat.completion","model":"gpt-4o","choices":[{"index":0,"message":{"role":"assistant","content":"Test roundtrip"},"finish_reason":"stop"}],"usage":{"prompt_tokens":20,"completion_tokens":10,"total_tokens":30}}
-  let events = chat_response_to_events(
-    response, "thr_1", "turn_1", "item_1",
-  )
+  let events = chat_response_to_events(response, "thr_1", "turn_1", "item_1")
   // Parse events into a JSON array for events_to_chat
   let event_jsons : Array[Json] = []
   for e in events {

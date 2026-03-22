@@ -71,4 +71,3 @@ fn convert_responses_tools_to_gemini(tools : Array[Json]) -> Array[Json] {
   }
   result
 }
-

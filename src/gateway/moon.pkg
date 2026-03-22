@@ -3,9 +3,12 @@ import {
   "moonbitlang/x/fs",
   "trkbt10/llm_interop/types",
   "trkbt10/llm_interop/utils" @utils,
+  "trkbt10/llm_interop/interop/id" @interop_util,
   "trkbt10/llm_interop/dialects/openai" @openai,
   "trkbt10/llm_interop/dialects/anthropic" @anthropic,
   "trkbt10/llm_interop/dialects/gemini" @gemini,
+  "trkbt10/llm_interop/sse" @sse,
+  "trkbt10/llm_interop/dialects/harmony" @harmony,
   "trkbt10/llm_interop/dialects/codex" @codex,
   "trkbt10/llm_interop/dialects/claude_mcp" @claude_mcp,
 }

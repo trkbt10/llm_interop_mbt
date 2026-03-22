@@ -5,7 +5,7 @@ import {
 import {
   "trkbt10/llm_interop/types",
   "trkbt10/llm_interop/utils" @utils,
-  "trkbt10/llm_interop/interop/util" @util,
+  "trkbt10/llm_interop/interop/id" @util,
   "trkbt10/llm_interop/dialects/anthropic" @anthropic,
   "trkbt10/llm_interop/dialects/openai" @openai,
   "trkbt10/llm_interop/dialects/gemini" @gemini,

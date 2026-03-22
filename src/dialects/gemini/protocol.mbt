@@ -33,9 +33,7 @@ pub(all) struct GeminiContent {
 
 ///|
 /// Convert ModelMessage to GeminiContent
-pub fn message_to_content(
-  message : @types.ModelMessage,
-) -> GeminiContent? {
+pub fn message_to_content(message : @types.ModelMessage) -> GeminiContent? {
   match message {
     @types.ModelMessage::System(content) =>
       // Gemini treats system as user instruction

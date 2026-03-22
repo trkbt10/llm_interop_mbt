@@ -1,8 +1,9 @@
 import {
   "moonbitlang/core/json",
   "trkbt10/llm_interop/types",
+  "trkbt10/llm_interop/sse" @sse,
   "trkbt10/llm_interop/utils" @utils,
-  "trkbt10/llm_interop/interop/util" @interop_util,
+  "trkbt10/llm_interop/interop/id" @interop_util,
   "trkbt10/llm_interop/dialects/openai" @openai,
   "trkbt10/llm_interop/dialects/harmony" @harmony,
 }

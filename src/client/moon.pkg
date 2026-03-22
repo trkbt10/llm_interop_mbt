@@ -1,10 +1,11 @@
 import {
   "moonbitlang/async",
   "moonbitlang/core/json",
+  "moonbitlang/core/encoding/utf8",
   "trkbt10/llm_interop/types",
   "trkbt10/llm_interop/dialects/openai" @openai,
   "trkbt10/llm_interop/gateway" @gateway,
-  "trkbt10/llm_interop/sse",
+  "trkbt10/llm_interop/sse" @sse,
   "trkbt10/llm_interop/utils" @utils,
 }
 

@@ -22,7 +22,8 @@ test "stream_completion_path builds correct URL" {
 ///|
 test "resolve_completion matches generateContent" {
   let body = "{\"contents\":[]}"
-  match resolve_completion("POST", "/v1/models/gemini-pro:generateContent", body) {
+  match
+    resolve_completion("POST", "/v1/models/gemini-pro:generateContent", body) {
     Some((dialect, model, _)) => {
       inspect(dialect, content="gemini")
       inspect(model, content="gemini-pro")
@@ -34,11 +35,10 @@ test "resolve_completion matches generateContent" {
 ///|
 test "resolve_completion matches streamGenerateContent" {
   let body = "{\"contents\":[]}"
-  match resolve_completion(
-    "POST",
-    "/v1/models/gemini-pro:streamGenerateContent?alt=sse&key=abc",
-    body,
-  ) {
+  match
+    resolve_completion(
+      "POST", "/v1/models/gemini-pro:streamGenerateContent?alt=sse&key=abc", body,
+    ) {
     Some((dialect, model, _)) => {
       inspect(dialect, content="gemini")
       inspect(model, content="gemini-pro")
@@ -50,7 +50,8 @@ test "resolve_completion matches streamGenerateContent" {
 ///|
 test "resolve_completion rejects GET" {
   inspect(
-    resolve_completion("GET", "/v1/models/gemini-pro:generateContent", "{}") is None,
+    resolve_completion("GET", "/v1/models/gemini-pro:generateContent", "{}")
+    is None,
     content="true",
   )
 }

@@ -12,9 +12,7 @@ let default_server_port : Int = 18080
 ///|
 /// Load and parse gateway configuration from a file path.
 /// Single source of truth for config file resolution.
-pub fn load_config_from_file(
-  path : String,
-) -> GatewayConfig raise GatewayError {
+pub fn load_config_from_file(path : String) -> GatewayConfig raise GatewayError {
   let text = @fs.read_file_to_string(path) catch {
     _ => raise GatewayError::ConfigError("Failed to read config: " + path)
   }
