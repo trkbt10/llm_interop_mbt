@@ -49,6 +49,10 @@ pub fn messages_to_json(Array[@types.ModelMessage]) -> Array[Json]
 
 pub fn messages_to_responses_input(Array[@types.ModelMessage]) -> Array[Json]
 
+pub fn model_response_to_responses_json(@types.ModelResponse, response_id~ : String, model~ : String) -> Json
+
+pub fn model_response_to_responses_output(@types.ModelResponse) -> Array[Json]
+
 pub fn normalize_json_schema_for_openai(Json) -> Json
 
 pub fn ollama_default_base_url() -> String
@@ -99,8 +103,6 @@ pub struct ResponsesApiAccumulator {
   output_index_map : Map[String, Int]
   web_search_traces : Array[WebSearchTraceAcc]
   content_parts : Array[@types.ResponseContentPart]
-  mut has_non_text : Bool
-  mut completed : Bool
 }
 pub fn ResponsesApiAccumulator::feed(Self, @sse.SseEvent) -> Unit
 pub fn ResponsesApiAccumulator::finish(Self) -> @types.ModelResponse

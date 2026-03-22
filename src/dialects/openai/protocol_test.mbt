@@ -466,6 +466,54 @@ test "parse_responses_api_response handles output_image" {
 }
 
 ///|
+test "parse_responses_api_response preserves output_text boundaries in mixed content" {
+  let response : Json = {
+    "output": Json::array([
+      {
+        "type": "message",
+        "role": "assistant",
+        "content": Json::array([
+          { "type": "output_text", "text": "before", "annotations": [] },
+          {
+            "type": "output_image",
+            "image_url": "https://example.com/generated.png",
+          },
+          { "type": "output_text", "text": "after", "annotations": [] },
+        ]),
+      },
+    ]),
+  }
+  let result = parse_responses_api_response(response)
+  match result {
+    @types.ModelResponse::RichText(rich) => {
+      assert_eq(rich.content, "beforeafter")
+      match rich.content_parts {
+        Some(parts) => {
+          assert_eq(parts.length(), 3)
+          match parts[0] {
+            @types.ResponseContentPart::OutputText(text) =>
+              assert_eq(text, "before")
+            _ => fail("Expected leading OutputText")
+          }
+          match parts[1] {
+            @types.ResponseContentPart::OutputImage(url~) =>
+              assert_eq(url, "https://example.com/generated.png")
+            _ => fail("Expected OutputImage")
+          }
+          match parts[2] {
+            @types.ResponseContentPart::OutputText(text) =>
+              assert_eq(text, "after")
+            _ => fail("Expected trailing OutputText")
+          }
+        }
+        None => fail("Expected content_parts")
+      }
+    }
+    _ => fail("Expected RichText response")
+  }
+}
+
+///|
 test "parse_responses_api_response handles refusal" {
   let response : Json = {
     "output": Json::array([
