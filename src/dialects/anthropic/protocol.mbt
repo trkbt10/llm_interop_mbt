@@ -161,7 +161,9 @@ fn content_parts_to_anthropic_json(
         }
         result.push({ "type": "image", "source": Json::object(source) })
       }
-      // Anthropic Messages API does not support audio input (not in docs/upstream/anthropic-messages-api.md)
+      // Inference: docs/upstream/anthropic-messages-api.md:74-80,193-250
+      // documents text/image/document request blocks for MessageParam.content;
+      // audio input blocks are not part of the published ContentBlockParam union.
       @types.ContentPart::Audio(..) => ()
       // Ref: docs/upstream/anthropic-messages-api.md:250
       //   DocumentBlockParam = object { source, type, cache_control, context, citations, title }
@@ -188,7 +190,9 @@ fn content_parts_to_anthropic_json(
           "type": "document",
           "source": { "type": "file", "file_id": file_id },
         })
-      // Anthropic Messages API does not support video input (not in docs/upstream/anthropic-messages-api.md)
+      // Inference: docs/upstream/anthropic-messages-api.md:74-80,193-250
+      // documents text/image/document request blocks for MessageParam.content;
+      // video input blocks are not part of the published ContentBlockParam union.
       @types.ContentPart::Video(..) => ()
     }
   }
@@ -254,7 +258,8 @@ pub fn build_body(
     extract_system_message(messages)
   }
   let msgs = messages_to_json(messages)
-  // Anthropic API requires max_tokens
+  // Ref: docs/upstream/anthropic-messages-api.md:13-21 — max_tokens is a
+  // required request body field.
   let effective_max_tokens = max_tokens.unwrap_or(8192)
   let mut body : Json = {
     "model": model,
@@ -327,7 +332,8 @@ pub fn parse_response(response_json : Json) -> @types.ModelResponse {
               // CodeExecutionToolResultBlock: {"type":"code_execution_tool_result","content":{"stdout":"...","stderr":"...","return_code":N}}
               // Ref: docs/upstream/anthropic-messages-api.md:1911-1977 — CodeExecutionToolResultBlockParam
               // Ref: docs/upstream/anthropic-code-execution-tool.md:1796-1802 — stdout/stderr/return_code example
-              // Both stdout and stderr may be present; either may be empty.
+              // Ref: docs/upstream/anthropic-messages-api.md:1933-1947 —
+              // content may carry stdout, stderr, and return_code together.
               {
                 "type": String("code_execution_tool_result"),
                 "content": content_obj,

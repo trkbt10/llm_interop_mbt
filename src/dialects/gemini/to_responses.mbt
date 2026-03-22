@@ -86,7 +86,8 @@ fn build_responses_output_from_gemini(parts : Array[Json]) -> Array[Json] {
         }
         call_index = call_index + 1
       }
-      // NOTE: executableCode not in vendored snapshot; inferred from runtime API
+      // Inference: docs/upstream/gemini-generate-content.md:52-57,3433-3434
+      // documents code execution support, but not this concrete Part key.
       // Structure: {"executableCode":{"language":"PYTHON","code":"..."}}
       {
         "executableCode": { "language": String(lang), "code": String(code), .. },
@@ -96,7 +97,8 @@ fn build_responses_output_from_gemini(parts : Array[Json]) -> Array[Json] {
           "type": "output_text",
           "text": "```\{lang.to_lower()}\n\{code}\n```",
         })
-      // NOTE: codeExecutionResult not in vendored snapshot; inferred from runtime API
+      // Inference: docs/upstream/gemini-generate-content.md:52-57,3433-3434
+      // documents code execution support, but not this concrete Part key.
       // Structure: {"codeExecutionResult":{"outcome":"OUTCOME_OK","output":"..."}}
       {
         "codeExecutionResult": {

@@ -762,7 +762,7 @@ test "messages_to_responses_input handles document via input_file" {
 }
 
 ///|
-test "Chat Completions document renders as text not image_url" {
+test "Chat Completions document renders as file content part" {
   let msg = @types.ModelMessage::User(
     content="Read this",
     name=None,
@@ -779,17 +779,22 @@ test "Chat Completions document renders as text not image_url" {
   match json {
     { "role": "user", "content": Array(parts), .. } =>
       match parts[1] {
-        { "type": "text", "text": String(t), .. } =>
-          // Should be a text fallback, not image_url
-          assert_true(t.contains("application/pdf"))
-        _ => fail("Expected text fallback for PDF in Chat Completions")
+        {
+          "type": "file",
+          "file": { "file_data": String(data), "filename": String(name), .. },
+          ..
+        } => {
+          assert_eq(data, "base64pdf")
+          assert_eq(name, "report.pdf")
+        }
+        _ => fail("Expected file content part for PDF in Chat Completions")
       }
     _ => fail("Expected array content")
   }
 }
 
 ///|
-test "Chat Completions text/plain document also gets metadata fallback" {
+test "Chat Completions text/plain document uses file_data" {
   let msg = @types.ModelMessage::User(
     content="Read this",
     name=None,
@@ -806,14 +811,37 @@ test "Chat Completions text/plain document also gets metadata fallback" {
   match json {
     { "role": "user", "content": Array(parts), .. } =>
       match parts[1] {
-        { "type": "text", "text": String(t), .. } => {
-          // Should NOT contain raw base64 data
-          assert_true(not(t.contains("SGVsbG8")))
-          // Should contain metadata about the document
-          assert_true(t.contains("text/plain"))
-          assert_true(t.contains("readme.txt"))
+        {
+          "type": "file",
+          "file": { "file_data": String(data), "filename": String(name), .. },
+          ..
+        } => {
+          assert_eq(data, "SGVsbG8gV29ybGQ=")
+          assert_eq(name, "readme.txt")
         }
-        _ => fail("Expected text fallback")
+        _ => fail("Expected file content part")
+      }
+    _ => fail("Expected array content")
+  }
+}
+
+///|
+test "Chat Completions file ref uses file_id content part" {
+  let msg = @types.ModelMessage::User(
+    content="Read this file",
+    name=None,
+    content_parts=Some([
+      @types.ContentPart::Text("Read this file"),
+      @types.ContentPart::FileRef(file_id="file_123", media_type=None),
+    ]),
+  )
+  let json = message_to_json(msg)
+  match json {
+    { "role": "user", "content": Array(parts), .. } =>
+      match parts[1] {
+        { "type": "file", "file": { "file_id": String(id), .. }, .. } =>
+          assert_eq(id, "file_123")
+        _ => fail("Expected file_id content part")
       }
     _ => fail("Expected array content")
   }

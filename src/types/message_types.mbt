@@ -145,13 +145,16 @@ pub(all) enum ContentPart {
   /// - Anthropic: not supported
   Audio(data~ : String, format~ : String)
   /// Document content (base64-encoded PDF, plain text, etc.)
+  /// - OpenAI Chat: {"type":"file","file":{"file_data":"...","filename":"..."}}
+  ///   Ref: docs/upstream/openai-chat-completions.md:194-218
   /// - Anthropic: {"type":"document","source":{"type":"base64","media_type":"application/pdf","data":"..."},"title":"..."}
   ///   Ref: https://platform.claude.com/docs/en/api/messages — DocumentBlockParam
   /// - Gemini: {"inlineData":{"mimeType":"application/pdf","data":"..."}} (<=50MB)
   ///   Ref: https://ai.google.dev/gemini-api/docs/document-processing
-  /// - OpenAI: not natively supported (use file references instead)
   Document(data~ : String, media_type~ : String, title~ : String?)
   /// File reference (uploaded file ID or URI)
+  /// - OpenAI Chat: {"type":"file","file":{"file_id":"..."}}
+  ///   Ref: docs/upstream/openai-chat-completions.md:194-218
   /// - OpenAI Responses: {"type":"input_file","file_id":"..."}
   /// - Anthropic: {"type":"document","source":{"type":"file","file_id":"file_..."}}
   ///   Ref: Anthropic Files API
@@ -162,7 +165,8 @@ pub(all) enum ContentPart {
   /// - Gemini: {"inlineData":{"mimeType":"video/mp4","data":"..."}}
   ///   Ref: https://ai.google.dev/gemini-api/docs/video-understanding
   ///   Supported: mp4,mpeg,mov,avi,x-flv,mpg,webm,wmv,3gpp
-  /// - OpenAI: not natively supported
+  /// - OpenAI Chat: no native video content part in ChatCompletionContentPart
+  ///   Ref: docs/upstream/openai-chat-completions.md:126-218
   /// - Anthropic: not natively supported
   Video(data~ : String, media_type~ : String)
 } derive(Show, Eq)

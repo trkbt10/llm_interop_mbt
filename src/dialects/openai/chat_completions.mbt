@@ -95,29 +95,23 @@ fn content_parts_to_openai_json(
           "type": "input_audio",
           "input_audio": { "data": data, "format": format },
         })
-      // Chat Completions API has no native document type.
-      // ContentPart::Document.data is base64-encoded. Since this codebase has no
-      // base64 decoder, we cannot inline text/plain documents as readable text either.
-      // Both text and binary documents get a metadata fallback.
-      @types.ContentPart::Document(media_type~, title~, ..) => {
-        let label = match title {
-          Some(t) => t
-          None => "document"
+      // Ref: docs/upstream/openai-chat-completions.md:194-218 —
+      // FileContentPart accepts base64 file_data with an optional filename.
+      @types.ContentPart::Document(data~, title~, ..) => {
+        let file : Map[String, Json] = { "file_data": Json::string(data) }
+        match title {
+          Some(name) => file["filename"] = Json::string(name)
+          None => ()
         }
-        result.push({
-          "type": "text",
-          "text": "[Attached \{media_type}: \{label} — Chat Completions API cannot handle inline documents; use Responses API input_file or upload via Files API]",
-        })
+        result.push({ "type": "file", "file": Json::object(file) })
       }
-      // Chat Completions API file part was deprecated Sept 2025.
-      // Ref: https://platform.openai.com/docs/api-reference/chat/create — "file" type is no longer supported
-      // FileRef should be sent via Responses API input_file instead.
+      // Ref: docs/upstream/openai-chat-completions.md:194-218 —
+      // FileContentPart accepts uploaded file_id references.
       @types.ContentPart::FileRef(file_id~, ..) =>
-        result.push({
-          "type": "text",
-          "text": "[File reference: \{file_id} — use Responses API input_file for file uploads]",
-        })
-      // Chat Completions API has no native video type. Not representable.
+        result.push({ "type": "file", "file": { "file_id": file_id } })
+      // Ref: docs/upstream/openai-chat-completions.md:126-218 —
+      // ChatCompletionContentPart covers text, image_url, input_audio, and file;
+      // there is no native video content part in the published union.
       @types.ContentPart::Video(..) =>
         result.push({
           "type": "text",

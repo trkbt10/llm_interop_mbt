@@ -36,7 +36,10 @@ pub(all) struct GeminiContent {
 pub fn message_to_content(message : @types.ModelMessage) -> GeminiContent? {
   match message {
     @types.ModelMessage::System(content) =>
-      // Gemini treats system as user instruction
+      // Ref: docs/upstream/gemini-generate-content.md:52-63,650-682 —
+      // request contents use user/model roles, while system instructions live in
+      // the top-level systemInstruction field. This helper preserves the
+      // existing fallback of downgrading system prompts into user text.
       Some({ role: "user", parts: [GeminiPart::Text(content)] })
     @types.ModelMessage::User(content~, content_parts~, ..) =>
       match content_parts {
@@ -48,8 +51,15 @@ pub fn message_to_content(message : @types.ModelMessage) -> GeminiContent? {
               // Ref: Part.text — {"text":"..."}
               @types.ContentPart::Text(text) =>
                 gemini_parts.push(GeminiPart::Text(text))
-              // Gemini fileData only accepts uploaded file URIs (files/... or gs://...),
-              // not arbitrary HTTP(S) image URLs. Skip with a text placeholder.
+              // Ref: docs/upstream/gemini-files-api.md:1-17,33-55 —
+              // file prompting examples use uploaded file URIs via
+              // createPartFromUri.
+              // Ref: docs/upstream/gemini-video-understanding.md:241-280 —
+              // preview YouTube URLs are a documented fileUri exception.
+              // Inference: the vendored snapshot does not document generic
+              // remote image URLs as Part.fileData inputs, so ImageUrl falls
+              // back to a text placeholder instead of emitting an undocumented
+              // request shape.
               @types.ContentPart::ImageUrl(url~, ..) =>
                 gemini_parts.push(GeminiPart::Text("[Image: \{url}]"))
               // Ref: Part.inlineData — {"inlineData":{"mimeType":"image/*","data":"..."}}
@@ -409,9 +419,12 @@ fn extract_gemini_content_parts(
 /// Parse Gemini streaming chunk
 /// Parse a Gemini streaming chunk into text and tool calls.
 /// Extracts text from Part.text, Part.executableCode, and Part.codeExecutionResult.
-/// Ref: docs/upstream/gemini-generate-content.md (Part.text, Part.functionCall)
-/// NOTE: executableCode and codeExecutionResult are not in the vendored snapshot.
-/// Structure inferred from https://ai.google.dev/api/generate-content:
+/// Ref: docs/upstream/gemini-generate-content.md:52-57,3433-3434 —
+/// the GenerateContent schema documents text/function tools plus thinking/code
+/// execution features at the API level.
+/// Inference: this vendored snapshot does not spell out Part.executableCode or
+/// Part.codeExecutionResult in the Part schema, so we keep parsing the runtime
+/// shapes seen in streaming responses:
 ///   executableCode: {"language":"PYTHON","code":"..."}
 ///   codeExecutionResult: {"outcome":"OUTCOME_OK","output":"..."}
 pub fn parse_stream_chunk(
@@ -427,7 +440,8 @@ pub fn parse_stream_chunk(
             for part in parts {
               match part {
                 { "text": String(t), .. } => text_buf.write_string(t)
-                // NOTE: executableCode not in vendored snapshot; inferred from runtime API
+                // Inference: docs/upstream/gemini-generate-content.md:52-57,3433-3434
+                // documents code execution support, but not this concrete Part key.
                 // Structure: {"executableCode":{"language":"PYTHON","code":"..."}}
                 {
                   "executableCode": {
@@ -443,7 +457,8 @@ pub fn parse_stream_chunk(
                   text_buf.write_string(code)
                   text_buf.write_string("\n```\n")
                 }
-                // NOTE: codeExecutionResult not in vendored snapshot; inferred from runtime API
+                // Inference: docs/upstream/gemini-generate-content.md:52-57,3433-3434
+                // documents code execution support, but not this concrete Part key.
                 // Structure: {"codeExecutionResult":{"outcome":"OUTCOME_OK","output":"..."}}
                 {
                   "codeExecutionResult": {

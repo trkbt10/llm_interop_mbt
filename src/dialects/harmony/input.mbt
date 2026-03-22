@@ -241,8 +241,18 @@ fn extract_content_parts(content : Json) -> Array[@types.ContentPart]? {
             parts.push(@types.ContentPart::Audio(data~, format~))
             has_non_text = true
           }
-          // Ref: OpenAI Chat file type (deprecated Sept 2025) — {"type":"file","file_id":"..."}
-          // Still parsed for backward compatibility with older Chat API payloads
+          // Ref: docs/upstream/openai-chat-completions.md:194-218 —
+          // FileContentPart nests file_id/file_data/filename under `file`.
+          {
+            "type": String("file"),
+            "file": { "file_id": String(file_id), .. },
+            ..
+          } => {
+            parts.push(@types.ContentPart::FileRef(file_id~, media_type=None))
+            has_non_text = true
+          }
+          // Inference: keep accepting the older flattened
+          // {"type":"file","file_id":"..."} shape for backward compatibility.
           { "type": String("file"), "file_id": String(file_id), .. } => {
             parts.push(@types.ContentPart::FileRef(file_id~, media_type=None))
             has_non_text = true

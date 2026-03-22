@@ -329,6 +329,29 @@ test "responses_input_to_messages parses input_file video file_data" {
   }
 }
 
+///|
+test "responses_input_to_messages parses OpenAI Chat file content part" {
+  let input : Array[Json] = [
+    {
+      "role": "user",
+      "content": Json::array([
+        { "type": "text", "text": "Read this file" },
+        { "type": "file", "file": { "file_id": "file_123" } },
+      ]),
+    },
+  ]
+  let messages = responses_input_to_messages(input)
+  match messages[0] {
+    @types.ModelMessage::User(content_parts=Some(parts), ..) =>
+      match parts[1] {
+        @types.ContentPart::FileRef(file_id~, ..) =>
+          inspect(file_id, content="file_123")
+        _ => fail("Expected FileRef from OpenAI Chat file content part")
+      }
+    _ => fail("Expected User with content_parts")
+  }
+}
+
 // =============================================================================
 // ModelResponse -> Responses API JSON Tests
 // =============================================================================
