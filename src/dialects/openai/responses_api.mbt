@@ -130,6 +130,8 @@ pub fn tool_to_responses_api_json(tool : @types.ToolDefinition) -> Json {
         "description": tool.description,
         "parameters": tool.parameters,
       }
+    @types.ToolDefinitionKind::Builtin(builtin_type~, config~) =>
+      build_builtin_tool_json(builtin_type, config)
     @types.ToolDefinitionKind::WebSearchPreview(
       search_context_size~,
       user_location_country~
@@ -145,6 +147,19 @@ pub fn tool_to_responses_api_json(tool : @types.ToolDefinition) -> Json {
         "web_search_preview_2025_03_11", search_context_size, user_location_country,
       )
   }
+}
+
+///|
+fn build_builtin_tool_json(type_ : String, config : Json) -> Json {
+  let result : Map[String, Json] = { "type": Json::string(type_) }
+  match config {
+    Object(fields) =>
+      for key, value in fields {
+        result[key] = value
+      }
+    _ => ()
+  }
+  Json::object(result)
 }
 
 ///|
@@ -223,11 +238,21 @@ pub fn build_responses_message_output(content_parts : Array[Json]) -> Json {
 ///|
 /// Build a Responses API reasoning output item.
 /// Ref: ResponseReasoningItem — {"type":"reasoning","summary":[{"type":"summary_text","text":"..."}]}
-pub fn build_responses_reasoning_item(text : String) -> Json {
-  {
-    "type": "reasoning",
-    "summary": Json::array([{ "type": "summary_text", "text": text }]),
+pub fn build_responses_reasoning_item(
+  text : String,
+  encrypted_content? : String? = None,
+) -> Json {
+  let item : Map[String, Json] = { "type": Json::string("reasoning") }
+  if text.length() > 0 {
+    item["summary"] = Json::array([{ "type": "summary_text", "text": text }])
+  } else {
+    item["summary"] = Json::array([])
   }
+  match encrypted_content {
+    Some(value) => item["encrypted_content"] = Json::string(value)
+    None => ()
+  }
+  Json::object(item)
 }
 
 ///|
@@ -342,6 +367,14 @@ fn build_responses_output_from_tool_calls(
         )
       @types.ToolCallKind::WebSearch =>
         output.push(build_responses_web_search_call(call.id, call.arguments))
+      @types.ToolCallKind::Builtin(builtin_type~) =>
+        if builtin_type == @types.web_search_tool_name() {
+          output.push(build_responses_web_search_call(call.id, call.arguments))
+        } else {
+          output.push(
+            build_responses_function_call(call.id, call.name, call.arguments),
+          )
+        }
     }
   }
   output
@@ -406,7 +439,10 @@ fn build_responses_output_from_rich_content(
         message_parts.push({ "type": "refusal", "refusal": reason })
       @types.ResponseContentPart::Thinking(text~) =>
         reasoning_outputs.push(build_responses_reasoning_item(text))
-      @types.ResponseContentPart::RedactedThinking(..) => ()
+      @types.ResponseContentPart::RedactedThinking(data~) =>
+        reasoning_outputs.push(
+          build_responses_reasoning_item("", encrypted_content=Some(data)),
+        )
       @types.ResponseContentPart::CodeExecution(language~, code~) =>
         message_parts.push({
           "type": "output_text",
@@ -580,6 +616,11 @@ fn append_response_reasoning_item(
     _ => ()
   }
   if found {
+    match output {
+      { "encrypted_content": String(data), .. } =>
+        content_parts.push(@types.ResponseContentPart::RedactedThinking(data~))
+      _ => ()
+    }
     return true
   }
   let mut added_summary = false
@@ -596,7 +637,13 @@ fn append_response_reasoning_item(
       }
     _ => ()
   }
-  added_summary
+  match output {
+    { "encrypted_content": String(data), .. } => {
+      content_parts.push(@types.ResponseContentPart::RedactedThinking(data~))
+      true
+    }
+    _ => added_summary
+  }
 }
 
 ///|

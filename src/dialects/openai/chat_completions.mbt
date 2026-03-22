@@ -149,6 +149,20 @@ pub fn tool_to_json(tool : @types.ToolDefinition) -> Json {
           "parameters": tool.parameters,
         },
       }
+    @types.ToolDefinitionKind::Builtin(builtin_type~, ..) =>
+      match builtin_type {
+        "web_search_preview" | "web_search_preview_2025_03_11" =>
+          web_search_tool_to_json()
+        _ =>
+          {
+            "type": "function",
+            "function": {
+              "name": tool.name,
+              "description": tool.description,
+              "parameters": tool.parameters,
+            },
+          }
+      }
     @types.ToolDefinitionKind::WebSearchPreview(..)
     | @types.ToolDefinitionKind::WebSearchPreview20250311(..) =>
       web_search_tool_to_json()

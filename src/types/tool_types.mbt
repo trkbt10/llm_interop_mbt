@@ -2,6 +2,7 @@
 /// Tool kind
 pub(all) enum ToolDefinitionKind {
   Function
+  Builtin(builtin_type~ : String, config~ : Json)
   WebSearchPreview(
     search_context_size~ : String?,
     user_location_country~ : String?

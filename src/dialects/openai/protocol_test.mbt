@@ -132,6 +132,19 @@ test "tool_to_responses_api_json creates web search builtin format" {
   }
 }
 
+///|
+test "tool_to_responses_api_json preserves generic builtin config" {
+  let tool = @types.ToolDefinition::builtin(type_="code_interpreter", config={
+    "container": { "type": "auto" },
+  })
+  let json = tool_to_responses_api_json(tool)
+  match json {
+    { "type": "code_interpreter", "container": { "type": "auto", .. }, .. } =>
+      ()
+    _ => fail("Unexpected builtin tool format")
+  }
+}
+
 // =============================================================================
 // Request Body Builder Tests (OpenAI Format)
 // =============================================================================
@@ -722,6 +735,45 @@ test "parse_responses_api_response reads reasoning_text from content array" {
             }
           }
           assert_true(found_detailed)
+        }
+        None => fail("Expected content_parts")
+      }
+    _ => fail("Expected RichText")
+  }
+}
+
+///|
+test "reasoning item roundtrip preserves encrypted_content" {
+  let reasoning_json = build_responses_reasoning_item(
+    "",
+    encrypted_content=Some("enc_blob"),
+  )
+  let response : Json = {
+    "output": Json::array([
+      reasoning_json,
+      {
+        "type": "message",
+        "role": "assistant",
+        "content": Json::array([{ "type": "output_text", "text": "Done." }]),
+      },
+    ]),
+  }
+  let result = parse_responses_api_response(response)
+  match result {
+    @types.ModelResponse::RichText(rich) =>
+      match rich.content_parts {
+        Some(parts) => {
+          let mut found = false
+          for part in parts {
+            match part {
+              @types.ResponseContentPart::RedactedThinking(data~) =>
+                if data == "enc_blob" {
+                  found = true
+                }
+              _ => ()
+            }
+          }
+          assert_true(found)
         }
         None => fail("Expected content_parts")
       }

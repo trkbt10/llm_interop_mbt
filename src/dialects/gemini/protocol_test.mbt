@@ -151,6 +151,20 @@ test "tools_to_json wraps in functionDeclarations" {
 }
 
 ///|
+test "tools_to_json includes codeExecution builtin" {
+  let tools = [
+    @types.ToolDefinition::new(name="tool1", description="First tool", parameters={}),
+    @types.ToolDefinition::builtin(type_="codeExecution"),
+  ]
+  let json = tools_to_json(tools)
+  match json {
+    { "functionDeclarations": Array(decls), "codeExecution": Object(_), .. } =>
+      inspect(decls.length(), content="1")
+    _ => fail("Expected mixed Gemini tool object")
+  }
+}
+
+///|
 test "build_body creates valid body" {
   let messages = [
     @types.ModelMessage::User(
@@ -185,6 +199,29 @@ test "build_body creates valid body" {
       inspect(temp, content="0.7")
     }
     _ => fail("Unexpected body format")
+  }
+}
+
+///|
+test "build_body lifts system messages into systemInstruction" {
+  let messages = [
+    @types.ModelMessage::System("You are a cat."),
+    @types.ModelMessage::User(content="Say hi", name=None, content_parts=None),
+  ]
+  let body = build_body(messages, [])
+  match body {
+    {
+      "contents": Array(contents),
+      "systemInstruction": { "role": "user", "parts": Array(parts), .. },
+      ..
+    } => {
+      inspect(contents.length(), content="1")
+      match parts[0] {
+        { "text": "You are a cat.", .. } => ()
+        _ => fail("Expected systemInstruction text part")
+      }
+    }
+    _ => fail("Expected systemInstruction in request body")
   }
 }
 

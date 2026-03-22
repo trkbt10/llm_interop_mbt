@@ -105,9 +105,13 @@ pub struct AnthropicToResponsesTranslator {
   mut has_emitted_created : Bool
   mut current_tool_call_id : String
   mut current_tool_name : String
+  mut current_tool_mode : String
+  tool_input_buffer : StringBuilder
   text_buffer : StringBuilder
   thinking_buffer : StringBuilder
+  redacted_thinking_buffer : StringBuilder
   mut in_thinking_block : Bool
+  mut in_redacted_thinking_block : Bool
 }
 pub fn AnthropicToResponsesTranslator::get_text(Self) -> String
 pub fn AnthropicToResponsesTranslator::new(response_id~ : String) -> Self

@@ -230,15 +230,11 @@ test "fixture: convert OpenAI Responses web search request to Anthropic" {
   match result {
     { "tools": Array(tools), .. } =>
       match tools[0] {
-        {
-          "name": String(name),
-          "input_schema": {
-            "properties": { "query": { "type": String("string"), .. }, .. },
-            ..
-          },
-          ..
-        } => assert_eq(name, "web_search")
-        _ => fail("Expected Anthropic synthetic web_search tool")
+        { "type": String(type_), "name": String(name), .. } => {
+          assert_eq(type_, "web_search_20260209")
+          assert_eq(name, "web_search")
+        }
+        _ => fail("Expected Anthropic versioned web_search tool")
       }
     _ => fail("Expected Anthropic tools")
   }

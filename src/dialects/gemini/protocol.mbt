@@ -149,6 +149,43 @@ pub fn messages_to_contents(
 }
 
 ///|
+fn extract_system_instruction(
+  messages : Array[@types.ModelMessage],
+) -> GeminiContent? {
+  let text = StringBuilder::new()
+  for msg in messages {
+    match msg {
+      @types.ModelMessage::System(content) => {
+        if text.to_string().length() > 0 {
+          text.write_char('\n')
+        }
+        text.write_string(content)
+      }
+      _ => ()
+    }
+  }
+  if text.to_string().length() > 0 {
+    Some({ role: "user", parts: [GeminiPart::Text(text.to_string())] })
+  } else {
+    None
+  }
+}
+
+///|
+fn non_system_messages(
+  messages : Array[@types.ModelMessage],
+) -> Array[@types.ModelMessage] {
+  let result : Array[@types.ModelMessage] = []
+  for msg in messages {
+    match msg {
+      @types.ModelMessage::System(_) => ()
+      _ => result.push(msg)
+    }
+  }
+  result
+}
+
+///|
 /// Convert GeminiPart to JSON
 fn gemini_part_to_json(part : GeminiPart) -> Json {
   match part {
@@ -188,9 +225,37 @@ pub fn tool_to_json(tool : @types.ToolDefinition) -> Json {
         "description": tool.description,
         "parameters": tool.parameters,
       }
+    @types.ToolDefinitionKind::Builtin(builtin_type~, config~) =>
+      build_builtin_tool_json(builtin_type, config)
     @types.ToolDefinitionKind::WebSearchPreview(..)
     | @types.ToolDefinitionKind::WebSearchPreview20250311(..) =>
       web_search_tool_to_json()
+  }
+}
+
+///|
+fn build_builtin_tool_json(type_ : String, config : Json) -> Json {
+  match type_ {
+    "codeExecution" =>
+      match config {
+        Object(fields) => { "codeExecution": Json::object(fields) }
+        _ => { "codeExecution": Json::object({}) }
+      }
+    _ =>
+      {
+        "name": tool_name_from_builtin(type_),
+        "description": "",
+        "parameters": Json::object({}),
+      }
+  }
+}
+
+///|
+fn tool_name_from_builtin(type_ : String) -> String {
+  match type_ {
+    "web_search_preview" | "web_search_preview_2025_03_11" =>
+      @types.web_search_tool_name()
+    _ => type_
   }
 }
 
@@ -206,8 +271,33 @@ fn web_search_tool_to_json() -> Json {
 ///|
 /// Convert tool definitions array to Gemini tools format
 pub fn tools_to_json(tools : Array[@types.ToolDefinition]) -> Json {
-  let function_declarations = tools.map(tool_to_json)
-  { "functionDeclarations": Json::array(function_declarations) }
+  let function_declarations : Array[Json] = []
+  let mut code_execution : Json? = None
+  for tool in tools {
+    match tool.kind {
+      @types.ToolDefinitionKind::Builtin(builtin_type~, config~) =>
+        if builtin_type == "codeExecution" {
+          code_execution = Some(
+            match config {
+              Object(fields) => Json::object(fields)
+              _ => Json::object({})
+            },
+          )
+        } else {
+          function_declarations.push(tool_to_json(tool))
+        }
+      _ => function_declarations.push(tool_to_json(tool))
+    }
+  }
+  let result : Map[String, Json] = {}
+  if function_declarations.length() > 0 {
+    result["functionDeclarations"] = Json::array(function_declarations)
+  }
+  match code_execution {
+    Some(config) => result["codeExecution"] = config
+    None => ()
+  }
+  Json::object(result)
 }
 
 // =============================================================================
@@ -224,9 +314,18 @@ pub fn build_body(
   top_p? : Double? = None,
   top_k? : Int? = None,
 ) -> Json {
-  let contents = messages_to_contents(messages)
+  let contents = messages_to_contents(non_system_messages(messages))
   let contents_json = contents.map(content_to_json)
   let mut body : Json = { "contents": Json::array(contents_json) }
+  match extract_system_instruction(messages) {
+    Some(content) =>
+      body = @utils.set_json_field(
+        body,
+        "systemInstruction",
+        content_to_json(content),
+      )
+    None => ()
+  }
   // Generation config
   let mut has_gen_config = false
   let mut gen_config : Json = {}

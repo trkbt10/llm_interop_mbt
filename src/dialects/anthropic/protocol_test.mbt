@@ -62,6 +62,35 @@ test "tool_to_json creates correct format" {
   }
 }
 
+///|
+test "tool_to_json maps web search builtin to versioned server tool" {
+  let tool = @types.ToolDefinition::web_search_preview()
+  let json = tool_to_json(tool)
+  match json {
+    { "type": "web_search_20260209", "name": "web_search", .. } => ()
+    _ => fail("Expected Anthropic server web search tool")
+  }
+}
+
+///|
+test "tool_to_json preserves generic builtin server tool config" {
+  let tool = @types.ToolDefinition::builtin(
+    type_="code_execution_20250825",
+    name="code_execution",
+    config={ "allowed_callers": Json::array([Json::string("direct")]) },
+  )
+  let json = tool_to_json(tool)
+  match json {
+    {
+      "type": "code_execution_20250825",
+      "name": "code_execution",
+      "allowed_callers": Array(callers),
+      ..
+    } => inspect(callers.length(), content="1")
+    _ => fail("Expected Anthropic builtin tool config")
+  }
+}
+
 // =============================================================================
 // Request Body Builder Tests (Anthropic Format)
 // =============================================================================
@@ -227,6 +256,88 @@ test "parse_response captures thinking blocks" {
       }
     }
     _ => fail("Expected RichText response")
+  }
+}
+
+///|
+test "parse_response captures server web search traces" {
+  let response : Json = {
+    "content": Json::array([
+      {
+        "type": "server_tool_use",
+        "id": "srvtoolu_01SEARCH",
+        "name": "web_search",
+        "input": { "query": "MoonBit 2026" },
+      },
+      {
+        "type": "web_search_tool_result",
+        "tool_use_id": "srvtoolu_01SEARCH",
+        "content": Json::array([]),
+      },
+      { "type": "text", "text": "Here are the results." },
+    ]),
+    "stop_reason": "end_turn",
+  }
+  let result = parse_response(response)
+  match result {
+    @types.ModelResponse::RichText(rich) => {
+      inspect(rich.content, content="Here are the results.")
+      inspect(rich.tool_traces.length(), content="1")
+      assert_eq(rich.tool_traces[0].kind, @types.ToolCallKind::WebSearch)
+      assert_true(
+        rich.tool_traces[0].statuses.contains(@types.ToolCallStatus::Completed),
+      )
+      match rich.tool_traces[0].arguments {
+        { "query": "MoonBit 2026", .. } => ()
+        _ => fail("Expected preserved web search query")
+      }
+    }
+    _ => fail("Expected RichText response")
+  }
+}
+
+///|
+test "parse_response captures server code execution request and result" {
+  let response : Json = {
+    "content": Json::array([
+      {
+        "type": "server_tool_use",
+        "id": "srvtoolu_01CODE",
+        "name": "code_execution",
+        "input": { "code": "print(42)", "language": "python" },
+      },
+      {
+        "type": "code_execution_tool_result",
+        "tool_use_id": "srvtoolu_01CODE",
+        "content": { "stdout": "42", "stderr": "", "return_code": 0 },
+      },
+    ]),
+    "stop_reason": "end_turn",
+  }
+  let result = parse_response(response)
+  match result {
+    @types.ModelResponse::RichText(rich) =>
+      match rich.content_parts {
+        Some(parts) => {
+          inspect(parts.length(), content="2")
+          match parts[0] {
+            @types.ResponseContentPart::CodeExecution(language~, code~) => {
+              assert_eq(language, "python")
+              assert_eq(code, "print(42)")
+            }
+            _ => fail("Expected CodeExecution part")
+          }
+          match parts[1] {
+            @types.ResponseContentPart::CodeResult(outcome~, output~) => {
+              assert_eq(outcome, "success")
+              assert_true(output.contains("42"))
+            }
+            _ => fail("Expected CodeResult part")
+          }
+        }
+        None => fail("Expected content_parts")
+      }
+    _ => fail("Expected RichText")
   }
 }
 

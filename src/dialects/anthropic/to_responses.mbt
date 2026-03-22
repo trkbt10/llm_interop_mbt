@@ -39,7 +39,7 @@ fn build_responses_output_from_anthropic(
   // Ref: https://platform.claude.com/docs/en/api/messages
   //   TextBlock → output_text
   //   ThinkingBlock → reasoning (Ref: ResponseReasoningItem)
-  //   RedactedThinkingBlock → not representable in Responses API, skipped
+  //   RedactedThinkingBlock → reasoning.encrypted_content
   //   ToolUseBlock → function_call / web_search_call
   //   CodeExecutionToolResultBlock → output_text (text representation)
   let reasoning_outputs : Array[Json] = []
@@ -55,8 +55,14 @@ fn build_responses_output_from_anthropic(
         reasoning_outputs.push(
           @openai.build_responses_reasoning_item(thinking_text),
         )
-      // RedactedThinkingBlock: no Responses API equivalent
-      { "type": String("redacted_thinking"), .. } => ()
+      // RedactedThinkingBlock → encrypted reasoning item
+      { "type": String("redacted_thinking"), "data": String(data), .. } =>
+        reasoning_outputs.push(
+          @openai.build_responses_reasoning_item(
+            "",
+            encrypted_content=Some(data),
+          ),
+        )
       // CodeExecutionToolResultBlock
       // Ref: docs/upstream/anthropic-messages-api.md:1911-1977
       //   CodeExecutionToolResultBlockParam = object { content, tool_use_id, type }
@@ -64,6 +70,35 @@ fn build_responses_output_from_anthropic(
       //   {"type":"bash_code_execution_tool_result","content":{"stdout":"...","stderr":"","return_code":0}}
       {
         "type": String("code_execution_tool_result"),
+        "content": content_obj,
+        ..
+      } => {
+        let stdout = match content_obj {
+          { "stdout": String(s), .. } => s
+          _ => ""
+        }
+        let stderr = match content_obj {
+          { "stderr": String(s), .. } => s
+          _ => ""
+        }
+        let output = if stdout.length() > 0 && stderr.length() > 0 {
+          "Code execution output:\n\{stdout}\n[stderr]\n\{stderr}"
+        } else if stderr.length() > 0 {
+          "Code execution [stderr]:\n\{stderr}"
+        } else if stdout.length() > 0 {
+          "Code execution output:\n\{stdout}"
+        } else {
+          "Code execution completed (no output)"
+        }
+        text_parts.push({ "type": "output_text", "text": output })
+      }
+      {
+        "type": String("bash_code_execution_tool_result"),
+        "content": content_obj,
+        ..
+      }
+      | {
+        "type": String("text_editor_code_execution_tool_result"),
         "content": content_obj,
         ..
       } => {
@@ -105,6 +140,19 @@ fn build_responses_output_from_anthropic(
           )
         }
       }
+      {
+        "type": String("server_tool_use"),
+        "id": String(id),
+        "name": String(name),
+        "input": input,
+        ..
+      } =>
+        if name == @types.web_search_tool_name() {
+          let call_id = @interop_util.anthropic_to_openai_responses_call_id(id)
+          tool_outputs.push(
+            @openai.build_responses_web_search_call(call_id, input),
+          )
+        }
       _ => ()
     }
   }

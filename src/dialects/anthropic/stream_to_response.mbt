@@ -55,6 +55,18 @@ pub fn non_streaming_to_synthetic_events(json : Json) -> Array[@sse.SseEvent] {
                 },
               },
             })
+          { "type": String("server_tool_use"), "input": input, .. } =>
+            events.push({
+              event: "content_block_delta",
+              data: {
+                "type": "content_block_delta",
+                "index": i,
+                "delta": {
+                  "type": "input_json_delta",
+                  "partial_json": input.stringify(),
+                },
+              },
+            })
           // Ref: docs/upstream/anthropic-messages-api.md:3971-3979 — ThinkingBlock
           { "type": String("thinking"), "thinking": String(thinking_text), .. } =>
             events.push({
@@ -79,6 +91,16 @@ pub fn non_streaming_to_synthetic_events(json : Json) -> Array[@sse.SseEvent] {
           //   {"type":"bash_code_execution_tool_result","content":{"stdout":"...","stderr":"","return_code":0}}
           {
             "type": String("code_execution_tool_result"),
+            "content": content_obj,
+            ..
+          }
+          | {
+            "type": String("bash_code_execution_tool_result"),
+            "content": content_obj,
+            ..
+          }
+          | {
+            "type": String("text_editor_code_execution_tool_result"),
             "content": content_obj,
             ..
           } =>

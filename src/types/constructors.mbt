@@ -94,6 +94,24 @@ pub fn ToolDefinition::new(
 }
 
 ///|
+/// Create generic builtin tool definition
+pub fn ToolDefinition::builtin(
+  type_~ : String,
+  name? : String = "",
+  description? : String = "",
+  config? : Json = Json::object({}),
+) -> ToolDefinition {
+  {
+    kind: ToolDefinitionKind::Builtin(builtin_type=type_, config~),
+    name,
+    description,
+    parameters: Json::object({}),
+    schema: None,
+    metadata: {},
+  }
+}
+
+///|
 /// Create OpenAI web_search_preview tool
 pub fn ToolDefinition::web_search_preview(
   search_context_size? : String? = None,

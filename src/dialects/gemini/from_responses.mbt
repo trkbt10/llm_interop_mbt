@@ -11,7 +11,15 @@ pub fn responses_request_to_gemini(request : Json) -> Json {
     { "input": Array(items), .. } => items
     _ => []
   }
-  let messages = @harmony.responses_input_to_messages(input)
+  let messages : Array[@types.ModelMessage] = []
+  match request {
+    { "instructions": String(instructions), .. } =>
+      messages.push(@types.ModelMessage::System(instructions))
+    _ => ()
+  }
+  for message in @harmony.responses_input_to_messages(input) {
+    messages.push(message)
+  }
   // Get max_tokens
   let max_tokens : Int? = match request {
     { "max_output_tokens": Number(n, ..), .. } => Some(n.to_int())

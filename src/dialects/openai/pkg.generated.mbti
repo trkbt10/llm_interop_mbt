@@ -25,7 +25,7 @@ pub fn build_responses_function_call(String, String, Json) -> Json
 
 pub fn build_responses_message_output(Array[Json]) -> Json
 
-pub fn build_responses_reasoning_item(String) -> Json
+pub fn build_responses_reasoning_item(String, encrypted_content? : String?) -> Json
 
 pub fn build_responses_web_search_call(String, Json) -> Json
 

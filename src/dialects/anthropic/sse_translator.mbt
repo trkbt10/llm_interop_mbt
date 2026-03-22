@@ -13,9 +13,13 @@ pub struct AnthropicToResponsesTranslator {
   mut has_emitted_created : Bool
   mut current_tool_call_id : String
   mut current_tool_name : String
+  mut current_tool_mode : String
+  tool_input_buffer : StringBuilder
   text_buffer : StringBuilder
   thinking_buffer : StringBuilder
+  redacted_thinking_buffer : StringBuilder
   mut in_thinking_block : Bool
+  mut in_redacted_thinking_block : Bool
 }
 
 ///|
@@ -29,9 +33,13 @@ pub fn AnthropicToResponsesTranslator::new(
     has_emitted_created: false,
     current_tool_call_id: "",
     current_tool_name: "",
+    current_tool_mode: "",
+    tool_input_buffer: StringBuilder::new(),
     text_buffer: StringBuilder::new(),
     thinking_buffer: StringBuilder::new(),
+    redacted_thinking_buffer: StringBuilder::new(),
     in_thinking_block: false,
+    in_redacted_thinking_block: false,
   }
 }
 
@@ -70,6 +78,8 @@ pub fn AnthropicToResponsesTranslator::translate(
           let call_id = @interop_util.anthropic_to_openai_responses_call_id(id)
           self.current_tool_call_id = call_id
           self.current_tool_name = name
+          self.current_tool_mode = "function"
+          self.tool_input_buffer.reset()
           self.output_index = self.output_index + 1
           events.push(
             (
@@ -87,6 +97,51 @@ pub fn AnthropicToResponsesTranslator::translate(
               },
             ),
           )
+        }
+        {
+          "content_block": {
+            "type": String("server_tool_use"),
+            "id": String(id),
+            "name": String(name),
+            ..
+          },
+          ..
+        } => {
+          let call_id = @interop_util.anthropic_to_openai_responses_call_id(id)
+          self.current_tool_call_id = call_id
+          self.current_tool_name = name
+          self.tool_input_buffer.reset()
+          self.output_index = self.output_index + 1
+          if name == @types.web_search_tool_name() {
+            self.current_tool_mode = "web_search"
+            events.push(
+              (
+                "response.output_item.added",
+                {
+                  "type": "response.output_item.added",
+                  "output_index": self.output_index,
+                  "item": {
+                    "type": "web_search_call",
+                    "id": call_id,
+                    "status": "in_progress",
+                    "action": { "type": "search" },
+                  },
+                },
+              ),
+            )
+            events.push(
+              (
+                "response.web_search_call.in_progress",
+                {
+                  "type": "response.web_search_call.in_progress",
+                  "item_id": call_id,
+                  "output_index": self.output_index,
+                },
+              ),
+            )
+          } else {
+            self.current_tool_mode = "server_tool"
+          }
         }
         _ => ()
       }
@@ -117,16 +172,19 @@ pub fn AnthropicToResponsesTranslator::translate(
           ..
         } =>
           if partial.length() > 0 {
-            events.push(
-              (
-                "response.function_call_arguments.delta",
-                {
-                  "type": "response.function_call_arguments.delta",
-                  "delta": partial,
-                  "output_index": self.output_index,
-                },
-              ),
-            )
+            self.tool_input_buffer.write_string(partial)
+            if self.current_tool_mode == "function" {
+              events.push(
+                (
+                  "response.function_call_arguments.delta",
+                  {
+                    "type": "response.function_call_arguments.delta",
+                    "delta": partial,
+                    "output_index": self.output_index,
+                  },
+                ),
+              )
+            }
           }
         // Ref: docs/upstream/anthropic-messages-api.md:3971-3979 — ThinkingBlock
         // Accumulate thinking_delta; emit single reasoning item on content_block_stop
@@ -140,6 +198,17 @@ pub fn AnthropicToResponsesTranslator::translate(
         } => {
           self.thinking_buffer.write_string(text)
           self.in_thinking_block = true
+        }
+        {
+          "delta": {
+            "type": String("redacted_thinking_delta"),
+            "data": String(data),
+            ..
+          },
+          ..
+        } => {
+          self.redacted_thinking_buffer.write_string(data)
+          self.in_redacted_thinking_block = true
         }
         // Ref: docs/upstream/anthropic-code-execution-tool.md:1796-1802 — code_execution_result
         {
@@ -204,24 +273,79 @@ pub fn AnthropicToResponsesTranslator::translate(
         }
         self.thinking_buffer.reset()
         self.in_thinking_block = false
+      } else if self.in_redacted_thinking_block {
+        let encrypted = self.redacted_thinking_buffer.to_string()
+        if encrypted.length() > 0 {
+          events.push(
+            (
+              "response.output_item.done",
+              {
+                "type": "response.output_item.done",
+                "output_index": self.output_index,
+                "item": {
+                  "type": "reasoning",
+                  "summary": Json::array([]),
+                  "encrypted_content": encrypted,
+                },
+              },
+            ),
+          )
+        }
+        self.redacted_thinking_buffer.reset()
+        self.in_redacted_thinking_block = false
       } else if self.current_tool_call_id.length() > 0 {
-        // Tool call completed
-        events.push(
-          (
-            "response.output_item.done",
-            {
-              "type": "response.output_item.done",
-              "output_index": self.output_index,
-            },
-          ),
-        )
+        if self.current_tool_mode == "web_search" {
+          let input : Json = @json.parse(self.tool_input_buffer.to_string()) catch {
+            _ => Json::object({})
+          }
+          events.push(
+            (
+              "response.web_search_call.completed",
+              {
+                "type": "response.web_search_call.completed",
+                "item_id": self.current_tool_call_id,
+                "output_index": self.output_index,
+              },
+            ),
+          )
+          events.push(
+            (
+              "response.output_item.done",
+              {
+                "type": "response.output_item.done",
+                "output_index": self.output_index,
+                "item": {
+                  "type": "web_search_call",
+                  "id": self.current_tool_call_id,
+                  "status": "completed",
+                  "action": @types.build_web_search_action(input),
+                },
+              },
+            ),
+          )
+        } else if self.current_tool_mode == "function" {
+          // Tool call completed
+          events.push(
+            (
+              "response.output_item.done",
+              {
+                "type": "response.output_item.done",
+                "output_index": self.output_index,
+              },
+            ),
+          )
+        }
         self.current_tool_call_id = ""
         self.current_tool_name = ""
+        self.current_tool_mode = ""
+        self.tool_input_buffer.reset()
       }
     "message_delta" =>
       match event.data {
         { "delta": { "stop_reason": String(stop_reason), .. }, .. } =>
-          if stop_reason == "end_turn" || stop_reason == "stop" {
+          if stop_reason == "end_turn" ||
+            stop_reason == "stop" ||
+            stop_reason == "pause_turn" {
             // Emit text done if we have accumulated text
             let text = self.text_buffer.to_string()
             if text.length() > 0 {

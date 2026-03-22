@@ -165,3 +165,99 @@ test "AnthropicToResponsesTranslator coalesces thinking deltas into one reasonin
     _ => fail("Expected reasoning output item")
   }
 }
+
+///|
+test "AnthropicToResponsesTranslator emits web_search_call for server_tool_use" {
+  let translator = AnthropicToResponsesTranslator::new(
+    response_id="resp_web_search",
+  )
+  let start_event : @sse.SseEvent = {
+    event: "content_block_start",
+    data: {
+      "type": "content_block_start",
+      "index": 0,
+      "content_block": {
+        "type": "server_tool_use",
+        "id": "srvtoolu_01SEARCH",
+        "name": "web_search",
+      },
+    },
+  }
+  let delta_event : @sse.SseEvent = {
+    event: "content_block_delta",
+    data: {
+      "type": "content_block_delta",
+      "index": 0,
+      "delta": {
+        "type": "input_json_delta",
+        "partial_json": "{\"query\":\"MoonBit\"}",
+      },
+    },
+  }
+  let stop_event : @sse.SseEvent = {
+    event: "content_block_stop",
+    data: { "type": "content_block_stop", "index": 0 },
+  }
+  let start_events = translator.translate(start_event)
+  let _ = translator.translate(delta_event)
+  let stop_events = translator.translate(stop_event)
+  assert_eq(start_events[1].0, "response.output_item.added")
+  match start_events[1].1 {
+    { "item": { "type": String("web_search_call"), .. }, .. } => ()
+    _ => fail("Expected web_search_call output item")
+  }
+  assert_eq(stop_events[1].0, "response.output_item.done")
+  match stop_events[1].1 {
+    {
+      "item": {
+        "type": String("web_search_call"),
+        "action": { "query": String(query), .. },
+        ..
+      },
+      ..
+    } => assert_eq(query, "MoonBit")
+    _ => fail("Expected completed web_search_call item")
+  }
+}
+
+///|
+test "AnthropicToResponsesTranslator emits encrypted reasoning for redacted thinking" {
+  let translator = AnthropicToResponsesTranslator::new(
+    response_id="resp_redacted",
+  )
+  let start_event : @sse.SseEvent = {
+    event: "content_block_start",
+    data: {
+      "type": "content_block_start",
+      "index": 0,
+      "content_block": { "type": "redacted_thinking", "data": "" },
+    },
+  }
+  let delta_event : @sse.SseEvent = {
+    event: "content_block_delta",
+    data: {
+      "type": "content_block_delta",
+      "index": 0,
+      "delta": { "type": "redacted_thinking_delta", "data": "enc_blob" },
+    },
+  }
+  let stop_event : @sse.SseEvent = {
+    event: "content_block_stop",
+    data: { "type": "content_block_stop", "index": 0 },
+  }
+  let _ = translator.translate(start_event)
+  let _ = translator.translate(delta_event)
+  let stop_events = translator.translate(stop_event)
+  assert_eq(stop_events.length(), 1)
+  match stop_events[0].1 {
+    {
+      "item": {
+        "type": String("reasoning"),
+        "encrypted_content": String(data),
+        ..
+      },
+      ..
+    } => assert_eq(data, "enc_blob")
+    _ => fail("Expected encrypted reasoning item")
+  }
+}

@@ -213,6 +213,8 @@ pub fn tool_to_json(tool : @types.ToolDefinition) -> Json {
         "description": tool.description,
         "input_schema": tool.parameters,
       }
+    @types.ToolDefinitionKind::Builtin(builtin_type~, config~) =>
+      build_builtin_tool_json(builtin_type, tool.name, config)
     @types.ToolDefinitionKind::WebSearchPreview(..)
     | @types.ToolDefinitionKind::WebSearchPreview20250311(..) =>
       web_search_tool_to_json()
@@ -220,12 +222,146 @@ pub fn tool_to_json(tool : @types.ToolDefinition) -> Json {
 }
 
 ///|
-fn web_search_tool_to_json() -> Json {
-  {
-    "name": @types.web_search_tool_name(),
-    "description": @types.web_search_tool_description(),
-    "input_schema": @types.web_search_tool_parameters_schema(),
+fn build_builtin_tool_json(
+  type_ : String,
+  name : String,
+  config : Json,
+) -> Json {
+  let result : Map[String, Json] = { "type": Json::string(type_) }
+  if name.length() > 0 {
+    result["name"] = Json::string(name)
   }
+  match config {
+    Object(fields) =>
+      for key, value in fields {
+        result[key] = value
+      }
+    _ => ()
+  }
+  Json::object(result)
+}
+
+///|
+fn web_search_tool_to_json() -> Json {
+  build_builtin_tool_json(
+    "web_search_20260209",
+    @types.web_search_tool_name(),
+    Json::object({}),
+  )
+}
+
+///|
+fn build_code_execution_input_part(
+  name : String,
+  input : Json,
+) -> @types.ResponseContentPart? {
+  match name {
+    "code_execution" => {
+      let code = match input {
+        { "code": String(value), .. } => value
+        _ => input.stringify()
+      }
+      let language = match input {
+        { "language": String(value), .. } => value
+        _ => "python"
+      }
+      Some(@types.ResponseContentPart::CodeExecution(language~, code~))
+    }
+    "bash_code_execution" => {
+      let command = match input {
+        { "command": String(value), .. } => value
+        _ => input.stringify()
+      }
+      Some(
+        @types.ResponseContentPart::CodeExecution(language="bash", code=command),
+      )
+    }
+    "text_editor_code_execution" =>
+      Some(
+        @types.ResponseContentPart::CodeExecution(
+          language="text_editor",
+          code=input.stringify(),
+        ),
+      )
+    _ => None
+  }
+}
+
+///|
+fn build_code_execution_result_part(
+  content_obj : Json,
+) -> @types.ResponseContentPart {
+  let stdout = match content_obj {
+    { "stdout": String(s), .. } => s
+    _ => ""
+  }
+  let stderr = match content_obj {
+    { "stderr": String(s), .. } => s
+    _ => ""
+  }
+  let rc = match content_obj {
+    { "return_code": Number(n, ..), .. } => n.to_int()
+    _ => if stderr.length() > 0 { 1 } else { 0 }
+  }
+  let outcome = if rc == 0 { "success" } else { "failed" }
+  let output = if stdout.length() > 0 && stderr.length() > 0 {
+    "\{stdout}\n[stderr]\n\{stderr}"
+  } else if stderr.length() > 0 {
+    "[stderr]\n\{stderr}"
+  } else if stdout.length() > 0 {
+    stdout
+  } else {
+    "Code execution completed (no output)"
+  }
+  @types.ResponseContentPart::CodeResult(outcome~, output~)
+}
+
+///|
+fn upsert_tool_trace(
+  tool_traces : Array[@types.ToolCallTrace],
+  id : String,
+  name : String,
+  kind : @types.ToolCallKind,
+  status : @types.ToolCallStatus,
+  arguments : Json,
+) -> Unit {
+  let effective_arguments = match arguments {
+    Object(fields) if fields.is_empty() => None
+    _ => Some(arguments)
+  }
+  for i in 0..<tool_traces.length() {
+    if tool_traces[i].id == id {
+      let statuses = tool_traces[i].statuses
+      if statuses.length() == 0 || statuses[statuses.length() - 1] != status {
+        statuses.push(status)
+      }
+      let next_arguments = match effective_arguments {
+        Some(value) => value
+        None => tool_traces[i].arguments
+      }
+      tool_traces[i] = @types.ToolCallTrace::new(
+        id~,
+        name~,
+        kind~,
+        statuses~,
+        arguments=next_arguments,
+      )
+      return
+    }
+  }
+  let next_arguments = match effective_arguments {
+    Some(value) => value
+    None => Json::object({})
+  }
+  tool_traces.push(
+    @types.ToolCallTrace::new(
+      id~,
+      name~,
+      kind~,
+      statuses=[status],
+      arguments=next_arguments,
+    ),
+  )
 }
 
 ///|
@@ -305,6 +441,7 @@ pub fn parse_response(response_json : Json) -> @types.ModelResponse {
         Array(blocks) => {
           let text = StringBuilder::new()
           let content_parts : Array[@types.ResponseContentPart] = []
+          let tool_traces : Array[@types.ToolCallTrace] = []
           let mut has_non_text = false
           for block in blocks {
             match block {
@@ -329,6 +466,49 @@ pub fn parse_response(response_json : Json) -> @types.ModelResponse {
                 )
                 has_non_text = true
               }
+              {
+                "type": String("server_tool_use"),
+                "id": String(id),
+                "name": String(name),
+                "input": input,
+                ..
+              } => {
+                let trace_id = @interop_util.anthropic_to_openai_responses_call_id(
+                  id,
+                )
+                match name {
+                  "web_search" => {
+                    upsert_tool_trace(
+                      tool_traces,
+                      trace_id,
+                      name,
+                      @types.ToolCallKind::WebSearch,
+                      @types.ToolCallStatus::InProgress,
+                      input,
+                    )
+                    has_non_text = true
+                  }
+                  "web_fetch" => {
+                    upsert_tool_trace(
+                      tool_traces,
+                      trace_id,
+                      name,
+                      @types.ToolCallKind::Builtin(builtin_type=name),
+                      @types.ToolCallStatus::InProgress,
+                      input,
+                    )
+                    has_non_text = true
+                  }
+                  _ =>
+                    match build_code_execution_input_part(name, input) {
+                      Some(part) => {
+                        content_parts.push(part)
+                        has_non_text = true
+                      }
+                      None => ()
+                    }
+                }
+              }
               // CodeExecutionToolResultBlock: {"type":"code_execution_tool_result","content":{"stdout":"...","stderr":"...","return_code":N}}
               // Ref: docs/upstream/anthropic-messages-api.md:1911-1977 — CodeExecutionToolResultBlockParam
               // Ref: docs/upstream/anthropic-code-execution-tool.md:1796-1802 — stdout/stderr/return_code example
@@ -339,40 +519,69 @@ pub fn parse_response(response_json : Json) -> @types.ModelResponse {
                 "content": content_obj,
                 ..
               } => {
-                let stdout = match content_obj {
-                  { "stdout": String(s), .. } => s
-                  _ => ""
-                }
-                let stderr = match content_obj {
-                  { "stderr": String(s), .. } => s
-                  _ => ""
-                }
-                let rc = match content_obj {
-                  { "return_code": Number(n, ..), .. } => n.to_int()
-                  _ => -1
-                }
-                let outcome = if rc == 0 { "success" } else { "failed" }
-                // Combine stdout and stderr; include both when available
-                let output = if stdout.length() > 0 && stderr.length() > 0 {
-                  "\{stdout}\n[stderr]\n\{stderr}"
-                } else if stderr.length() > 0 {
-                  "[stderr]\n\{stderr}"
-                } else {
-                  stdout
-                }
                 content_parts.push(
-                  @types.ResponseContentPart::CodeResult(outcome~, output~),
+                  build_code_execution_result_part(content_obj),
+                )
+                has_non_text = true
+              }
+              {
+                "type": String("bash_code_execution_tool_result"),
+                "content": content_obj,
+                ..
+              }
+              | {
+                "type": String("text_editor_code_execution_tool_result"),
+                "content": content_obj,
+                ..
+              } => {
+                content_parts.push(
+                  build_code_execution_result_part(content_obj),
+                )
+                has_non_text = true
+              }
+              {
+                "type": String("web_search_tool_result"),
+                "tool_use_id": String(tool_use_id),
+                ..
+              } => {
+                upsert_tool_trace(
+                  tool_traces,
+                  @interop_util.anthropic_to_openai_responses_call_id(
+                    tool_use_id,
+                  ),
+                  @types.web_search_tool_name(),
+                  @types.ToolCallKind::WebSearch,
+                  @types.ToolCallStatus::Completed,
+                  Json::object({}),
+                )
+                has_non_text = true
+              }
+              {
+                "type": String("web_fetch_tool_result"),
+                "tool_use_id": String(tool_use_id),
+                ..
+              } => {
+                upsert_tool_trace(
+                  tool_traces,
+                  @interop_util.anthropic_to_openai_responses_call_id(
+                    tool_use_id,
+                  ),
+                  "web_fetch",
+                  @types.ToolCallKind::Builtin(builtin_type="web_fetch"),
+                  @types.ToolCallStatus::Completed,
+                  Json::object({}),
                 )
                 has_non_text = true
               }
               _ => ()
             }
           }
-          if has_non_text {
+          if has_non_text || tool_traces.length() > 0 {
             @types.ModelResponse::RichText(
               @types.RichTextResponse::new(
                 content=text.to_string(),
                 content_parts=Some(content_parts),
+                tool_traces~,
               ),
             )
           } else {

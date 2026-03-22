@@ -109,6 +109,7 @@ pub(all) struct ToolCallAcc {
 pub(all) enum ToolCallKind {
   Function
   WebSearch
+  Builtin(builtin_type~ : String)
 }
 pub impl Eq for ToolCallKind
 pub impl Show for ToolCallKind
@@ -148,12 +149,14 @@ pub(all) struct ToolDefinition {
   schema : Json?
   metadata : Map[String, String]
 }
+pub fn ToolDefinition::builtin(type_~ : String, name? : String, description? : String, config? : Json) -> Self
 pub fn ToolDefinition::new(name~ : String, description~ : String, parameters~ : Json) -> Self
 pub fn ToolDefinition::web_search_preview(search_context_size? : String?, user_location_country? : String?) -> Self
 pub fn ToolDefinition::web_search_preview_2025_03_11(search_context_size? : String?, user_location_country? : String?) -> Self
 
 pub(all) enum ToolDefinitionKind {
   Function
+  Builtin(builtin_type~ : String, config~ : Json)
   WebSearchPreview(search_context_size~ : String?, user_location_country~ : String?)
   WebSearchPreview20250311(search_context_size~ : String?, user_location_country~ : String?)
 }

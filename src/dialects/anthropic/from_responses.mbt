@@ -15,7 +15,15 @@ pub fn responses_request_to_anthropic(request : Json) -> Json {
     { "input": Array(items), .. } => items
     _ => []
   }
-  let messages = @harmony.responses_input_to_messages(input)
+  let messages : Array[@types.ModelMessage] = []
+  match request {
+    { "instructions": String(instructions), .. } =>
+      messages.push(@types.ModelMessage::System(instructions))
+    _ => ()
+  }
+  for message in @harmony.responses_input_to_messages(input) {
+    messages.push(message)
+  }
   let msgs_json = messages_to_json(messages)
   // Extract system message
   let system = extract_system_message(messages)
@@ -82,7 +90,14 @@ fn convert_responses_tools_to_anthropic(tools : Array[Json]) -> Array[Json] {
       }
       { "type": String("web_search_preview"), .. }
       | { "type": String("web_search_preview_2025_03_11"), .. } =>
-        result.push(web_search_tool_to_json())
+        result.push(
+          tool_to_json(
+            @types.ToolDefinition::builtin(
+              type_="web_search_20260209",
+              name=@types.web_search_tool_name(),
+            ),
+          ),
+        )
       _ => ()
     }
   }

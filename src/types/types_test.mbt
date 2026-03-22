@@ -48,6 +48,27 @@ test "ToolDefinition::web_search_preview creates builtin instance" {
 }
 
 ///|
+test "ToolDefinition::builtin creates provider builtin instance" {
+  let tool = ToolDefinition::builtin(
+    type_="code_execution_20250825",
+    name="code_execution",
+    config={ "allowed_callers": Json::array([Json::string("direct")]) },
+  )
+  inspect(tool.name, content="code_execution")
+  match tool.kind {
+    ToolDefinitionKind::Builtin(builtin_type~, config~) => {
+      assert_eq(builtin_type, "code_execution_20250825")
+      match config {
+        { "allowed_callers": Array(values), .. } =>
+          assert_eq(values.length(), 1)
+        _ => fail("Expected config payload")
+      }
+    }
+    _ => fail("Expected Builtin kind")
+  }
+}
+
+///|
 test "build_json_schema creates valid schema" {
   let schema = build_json_schema(
     type_="object",

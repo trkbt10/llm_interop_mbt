@@ -74,12 +74,11 @@ test "responses_to_anthropic: converts web search builtin tool" {
   match result {
     { "tools": Array(tools), .. } =>
       match tools[0] {
-        {
-          "name": String(name),
-          "input_schema": { "properties": Object(_), .. },
-          ..
-        } => assert_eq(name, "web_search")
-        _ => fail("Expected web_search tool")
+        { "type": String(type_), "name": String(name), .. } => {
+          assert_eq(type_, "web_search_20260209")
+          assert_eq(name, "web_search")
+        }
+        _ => fail("Expected versioned web_search tool")
       }
     _ => fail("Missing tools in result")
   }
@@ -228,6 +227,69 @@ test "anthropic_to_responses: converts web_search tool_use to web_search_call" {
   }
 }
 
+///|
+test "anthropic_to_responses: converts server_tool_use web_search to web_search_call" {
+  let response : Json = {
+    "id": "msg_srv_web_1",
+    "type": "message",
+    "role": "assistant",
+    "content": Json::array([
+      {
+        "type": "server_tool_use",
+        "id": "srvtoolu_01WEB123",
+        "name": "web_search",
+        "input": { "query": "MoonBit" },
+      },
+    ]),
+    "model": "claude-sonnet-4-20250514",
+    "stop_reason": "pause_turn",
+  }
+  let result = @anthropic.response_to_responses(
+    response,
+    response_id="resp_srv_web_1",
+  )
+  match result {
+    { "output": Array(output), .. } =>
+      match output[0] {
+        {
+          "type": String("web_search_call"),
+          "action": { "query": String(query), .. },
+          ..
+        } => assert_eq(query, "MoonBit")
+        _ => fail("Expected web_search_call")
+      }
+    _ => fail("Response format mismatch")
+  }
+}
+
+///|
+test "anthropic_to_responses: converts redacted thinking to encrypted reasoning" {
+  let response : Json = {
+    "id": "msg_redacted_1",
+    "type": "message",
+    "role": "assistant",
+    "content": Json::array([
+      { "type": "redacted_thinking", "data": "enc_blob" },
+      { "type": "text", "text": "Done" },
+    ]),
+    "model": "claude-sonnet-4-20250514",
+    "stop_reason": "end_turn",
+  }
+  let result = @anthropic.response_to_responses(
+    response,
+    response_id="resp_redacted_1",
+  )
+  match result {
+    { "output": Array(output), .. } =>
+      match output[0] {
+        { "type": String("reasoning"), "encrypted_content": String(data), .. } =>
+          assert_eq(data, "enc_blob")
+        _ => fail("Expected encrypted reasoning item")
+      }
+    _ => fail("Response format mismatch")
+  }
+}
+
 // =============================================================================
 // Responses API -> Gemini Conversion
 // =============================================================================
@@ -243,6 +305,30 @@ test "responses_to_gemini: converts basic request" {
   match result {
     { "contents": Array(contents), .. } => assert_true(contents.length() > 0)
     _ => fail("Missing contents")
+  }
+}
+
+///|
+test "responses_to_gemini: maps instructions to systemInstruction" {
+  let request : Json = {
+    "model": "gemini-2.0-flash",
+    "instructions": "You are a cat.",
+    "input": Json::array([{ "role": "user", "content": "Say hi" }]),
+  }
+  let result = @gemini.responses_request_to_gemini(request)
+  match result {
+    {
+      "systemInstruction": { "parts": Array(parts), .. },
+      "contents": Array(contents),
+      ..
+    } => {
+      assert_eq(contents.length(), 1)
+      match parts[0] {
+        { "text": String(text), .. } => assert_eq(text, "You are a cat.")
+        _ => fail("Expected system instruction text")
+      }
+    }
+    _ => fail("Expected systemInstruction in Gemini request")
   }
 }
 

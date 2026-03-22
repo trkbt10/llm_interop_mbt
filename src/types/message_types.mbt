@@ -3,6 +3,7 @@
 pub(all) enum ToolCallKind {
   Function
   WebSearch
+  Builtin(builtin_type~ : String)
 } derive(Show, Eq)
 
 ///|
