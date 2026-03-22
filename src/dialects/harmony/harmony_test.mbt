@@ -197,6 +197,28 @@ test "responses_input_to_messages: custom_tool_call_output becomes ToolResult" {
 }
 
 ///|
+test "responses_input_to_messages: mcp_approval_response becomes ToolResult wrapper" {
+  let input : Array[Json] = [
+    {
+      "type": "mcp_approval_response",
+      "approval_request_id": "mcp_req_123",
+      "approve": true,
+      "reason": "approved",
+    },
+  ]
+  let messages = responses_input_to_messages(input)
+  assert_eq(messages.length(), 1)
+  match messages[0] {
+    @types.ModelMessage::ToolResult(tool_call_id~, content~) => {
+      assert_eq(tool_call_id, "mcp_req_123")
+      assert_true(content.contains("mcp_approval_response"))
+      assert_true(content.contains("approved"))
+    }
+    _ => fail("Expected ToolResult wrapper")
+  }
+}
+
+///|
 test "responses_input_to_messages: multiple parallel tool calls" {
   let input : Array[Json] = [
     { "role": "user", "content": "Get time and weather" },
@@ -897,6 +919,41 @@ test "responses_request_to_chat_completions: maps web search tool to function to
         } => assert_eq(name, "web_search")
         _ => fail("Expected mapped function tool")
       }
+    _ => fail("Expected tools in request")
+  }
+}
+
+///|
+test "responses_request_to_chat_completions: wraps builtin tools as function tools" {
+  let request : Json = {
+    "model": Json::string(test_model_harmony),
+    "input": Json::array([{ "role": "user", "content": "Use the sandbox" }]),
+    "tools": Json::array([
+      { "type": "container_exec" },
+      { "type": "mcp", "name": "docs_lookup", "description": "Lookup docs" },
+    ]),
+  }
+  let chat_request = responses_request_to_chat_completions(request)
+  match chat_request {
+    { "tools": Array(tools), .. } => {
+      assert_eq(tools.length(), 2)
+      match tools[0] {
+        {
+          "type": String("function"),
+          "function": { "name": String(name), .. },
+          ..
+        } => assert_eq(name, "container_exec")
+        _ => fail("Expected synthetic function for builtin tool")
+      }
+      match tools[1] {
+        {
+          "type": String("function"),
+          "function": { "name": String(name), .. },
+          ..
+        } => assert_eq(name, "docs_lookup")
+        _ => fail("Expected named synthetic function")
+      }
+    }
     _ => fail("Expected tools in request")
   }
 }

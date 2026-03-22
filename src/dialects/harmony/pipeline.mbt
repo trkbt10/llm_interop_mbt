@@ -201,10 +201,34 @@ fn convert_responses_tools_to_chat(tools : Array[Json]) -> Array[Json] {
       }
       // Already in Chat Completions format (has nested "function" key)
       { "type": String("function"), "function": _, .. } => result.push(tool)
-      // Skip non-function tools (container_exec, code_interpreter, etc.)
-      // that backends don't understand
+      { "type": String(type_), .. } =>
+        result.push(wrap_builtin_tool_as_chat_function(tool, type_))
       _ => ()
     }
   }
   result
+}
+
+///|
+fn wrap_builtin_tool_as_chat_function(tool : Json, type_ : String) -> Json {
+  let name = match tool {
+    { "name": String(value), .. } if value.length() > 0 => value
+    _ => type_
+  }
+  let description = match tool {
+    { "description": String(value), .. } if value.length() > 0 => value
+    _ => "Interop wrapper for Responses built-in tool \{type_}"
+  }
+  let parameters = match tool {
+    { "parameters": params, .. } => params
+    _ => { "type": "object", "properties": {} }
+  }
+  {
+    "type": "function",
+    "function": {
+      "name": name,
+      "description": description,
+      "parameters": parameters,
+    },
+  }
 }

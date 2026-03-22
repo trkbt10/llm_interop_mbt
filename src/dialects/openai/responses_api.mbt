@@ -121,11 +121,15 @@ pub fn messages_to_responses_input(
           _ => input_items.push({ "role": "assistant", "content": content })
         }
       @types.ModelMessage::ToolResult(tool_call_id~, content~) =>
-        input_items.push({
-          "type": "function_call_output",
-          "call_id": tool_call_id,
-          "output": content,
-        })
+        match parse_embedded_responses_tool_result_item(tool_call_id, content) {
+          Some(item) => input_items.push(item)
+          None =>
+            input_items.push({
+              "type": "function_call_output",
+              "call_id": tool_call_id,
+              "output": content,
+            })
+        }
     }
   }
   input_items
@@ -176,6 +180,61 @@ fn build_builtin_tool_json(type_ : String, config : Json) -> Json {
     _ => ()
   }
   Json::object(result)
+}
+
+///|
+fn parse_embedded_responses_tool_result_item(
+  tool_call_id : String,
+  content : String,
+) -> Json? {
+  let parsed : Json = @json.parse(content) catch { _ => return None }
+  match parsed {
+    { "type": String(type_), .. } =>
+      if is_raw_responses_tool_result_item_type(type_) {
+        Some(ensure_tool_result_item_id(parsed, type_, tool_call_id))
+      } else {
+        None
+      }
+    _ => None
+  }
+}
+
+///|
+fn is_raw_responses_tool_result_item_type(type_ : String) -> Bool {
+  [
+    "function_call_output", "custom_tool_call_output", "computer_call_output", "local_shell_call_output",
+    "shell_call_output", "apply_patch_call_output", "mcp_approval_response",
+  ].contains(type_)
+}
+
+///|
+fn ensure_tool_result_item_id(
+  item : Json,
+  type_ : String,
+  tool_call_id : String,
+) -> Json {
+  match item {
+    Object(fields) => {
+      let result : Map[String, Json] = fields
+      match type_ {
+        "mcp_approval_response" =>
+          if !result.contains("approval_request_id") &&
+            tool_call_id.length() > 0 {
+            result["approval_request_id"] = Json::string(tool_call_id)
+          }
+        "computer_call_output" | "local_shell_call_output" =>
+          if !result.contains("id") && tool_call_id.length() > 0 {
+            result["id"] = Json::string(tool_call_id)
+          }
+        _ =>
+          if !result.contains("call_id") && tool_call_id.length() > 0 {
+            result["call_id"] = Json::string(tool_call_id)
+          }
+      }
+      Json::object(result)
+    }
+    _ => item
+  }
 }
 
 ///|

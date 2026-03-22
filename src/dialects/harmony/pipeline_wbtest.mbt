@@ -126,7 +126,7 @@ test "function tool: Responses API flat → Chat Completions nested" {
 }
 
 ///|
-test "non-function tools are filtered out" {
+test "non-function tools are wrapped as synthetic functions" {
   let request : Json = {
     "model": "gpt-oss-20b",
     "input": [{ "role": "user", "content": "hi" }],
@@ -146,14 +146,27 @@ test "non-function tools are filtered out" {
     { "tools": Array(t), .. } => t
     _ => panic()
   }
-  // Only the function tool should remain
-  assert_eq(tools.length(), 1)
+  assert_eq(tools.length(), 3)
   assert_eq(
     match tools[0] {
       { "function": { "name": String(n), .. }, .. } => n
       _ => ""
     },
     "shell",
+  )
+  assert_eq(
+    match tools[1] {
+      { "function": { "name": String(n), .. }, .. } => n
+      _ => ""
+    },
+    "container_exec",
+  )
+  assert_eq(
+    match tools[2] {
+      { "function": { "name": String(n), .. }, .. } => n
+      _ => ""
+    },
+    "code_interpreter",
   )
 }
 
@@ -303,12 +316,17 @@ test "instructions + input_text content blocks + tools combined" {
     },
     true,
   )
-  // Only function tool, container_exec filtered
+  // Function tool is preserved and builtin tool is wrapped.
   let tools = match result {
     { "tools": Array(t), .. } => t
     _ => panic()
   }
-  assert_eq(tools.length(), 1)
+  assert_eq(tools.length(), 2)
+  match tools[1] {
+    { "type": String("function"), "function": { "name": String(name), .. }, .. } =>
+      assert_eq(name, "container_exec")
+    _ => fail("Expected synthetic function wrapper for builtin tool")
+  }
 }
 
 ///|

@@ -113,7 +113,25 @@ pub fn responses_input_to_messages(
         )
       }
       { "type": String(type_), .. } =>
-        if is_supported_builtin_responses_input_item_type(type_) {
+        if is_builtin_responses_input_output_item_type(type_) {
+          // Preserve provider-native tool result items by wrapping the raw JSON.
+          // OpenAI Responses can reconstruct these from ToolResult content later.
+          if pending_tool_calls.length() > 0 {
+            messages.push(
+              @types.ModelMessage::Assistant(
+                content="",
+                tool_calls=Some(pending_tool_calls),
+              ),
+            )
+            pending_tool_calls = []
+          }
+          messages.push(
+            @types.ModelMessage::ToolResult(
+              tool_call_id=extract_responses_tool_item_id(item),
+              content=item.stringify(),
+            ),
+          )
+        } else if is_supported_builtin_responses_input_call_item_type(type_) {
           let id = extract_responses_tool_item_id(item)
           let name = match item {
             { "name": String(value), .. } => value
@@ -157,9 +175,17 @@ fn extract_responses_tool_item_id(item : Json) -> String {
 }
 
 ///|
-fn is_supported_builtin_responses_input_item_type(type_ : String) -> Bool {
+fn is_supported_builtin_responses_input_call_item_type(type_ : String) -> Bool {
   @openai.is_builtin_responses_tool_item_type(type_) &&
-  type_ != "mcp_approval_response"
+  not(is_builtin_responses_input_output_item_type(type_))
+}
+
+///|
+fn is_builtin_responses_input_output_item_type(type_ : String) -> Bool {
+  [
+    "computer_call_output", "local_shell_call_output", "shell_call_output", "apply_patch_call_output",
+    "mcp_approval_response",
+  ].contains(type_)
 }
 
 ///|

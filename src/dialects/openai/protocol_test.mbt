@@ -182,6 +182,71 @@ test "messages_to_responses_input preserves builtin assistant tool items" {
   }
 }
 
+///|
+test "messages_to_responses_input re-emits wrapped builtin tool results" {
+  let messages = [
+    @types.ModelMessage::ToolResult(
+      tool_call_id="mcp_req_123",
+      content=(
+        #|{"type":"mcp_approval_response","approve":true,"reason":"approved"}
+      ),
+    ),
+  ]
+  let input = messages_to_responses_input(messages)
+  match input[0] {
+    {
+      "type": String("mcp_approval_response"),
+      "approval_request_id": String(id),
+      "approve": True,
+      "reason": String(reason),
+      ..
+    } => {
+      assert_eq(id, "mcp_req_123")
+      assert_eq(reason, "approved")
+    }
+    _ => fail("Expected raw builtin tool result item")
+  }
+}
+
+///|
+test "messages_to_responses_input restores builtin tool result identifier fields" {
+  let messages = [
+    @types.ModelMessage::ToolResult(
+      tool_call_id="shell_item_123",
+      content="{\"type\":\"local_shell_call_output\",\"output\":\"ok\"}",
+    ),
+    @types.ModelMessage::ToolResult(
+      tool_call_id="call_456",
+      content="{\"type\":\"apply_patch_call_output\",\"status\":\"completed\"}",
+    ),
+  ]
+  let input = messages_to_responses_input(messages)
+  match input[0] {
+    {
+      "type": String("local_shell_call_output"),
+      "id": String(id),
+      "output": String(output),
+      ..
+    } => {
+      assert_eq(id, "shell_item_123")
+      assert_eq(output, "ok")
+    }
+    _ => fail("Expected local shell output item")
+  }
+  match input[1] {
+    {
+      "type": String("apply_patch_call_output"),
+      "call_id": String(id),
+      "status": String(status),
+      ..
+    } => {
+      assert_eq(id, "call_456")
+      assert_eq(status, "completed")
+    }
+    _ => fail("Expected apply patch output item")
+  }
+}
+
 // =============================================================================
 // Request Body Builder Tests (OpenAI Format)
 // =============================================================================
