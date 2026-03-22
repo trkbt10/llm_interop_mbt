@@ -124,6 +124,10 @@ pub fn GeminiToResponsesTranslator::translate(
     None => ()
   }
   // Check for finish
+  // Ref: docs/upstream/gemini-generate-content.md:2948-2950
+  //   STOP — Natural stop point of the model or provided stop sequence.
+  //   MAX_TOKENS — The maximum number of tokens as specified in the request was reached.
+  //   SAFETY — The response candidate content was flagged for safety reasons.
   match event.data {
     { "candidates": Array(candidates), .. } =>
       if candidates.length() > 0 {
@@ -133,6 +137,33 @@ pub fn GeminiToResponsesTranslator::translate(
             self.close_current_message(events)
             self.close_tool_calls(events)
             events.push(("response.completed", self.build_completed_event()))
+          }
+          // SAFETY / RECITATION / OTHER: emit error-completed response
+          { "finishReason": String(reason), .. } => {
+            self.close_current_message(events)
+            self.close_tool_calls(events)
+            let response : Map[String, Json] = {}
+            response["id"] = Json::string(self.response_id)
+            response["status"] = Json::string("failed")
+            response["output"] = Json::array(self.completed_output.copy())
+            response["error"] = Json::object({
+              "type": Json::string("content_filter"),
+              "message": Json::string(
+                "Response blocked: finishReason=\{reason}",
+              ),
+            })
+            if self.model.length() > 0 {
+              response["model"] = Json::string(self.model)
+            }
+            events.push(
+              (
+                "response.completed",
+                {
+                  "type": "response.completed",
+                  "response": Json::object(response),
+                },
+              ),
+            )
           }
           _ => ()
         }

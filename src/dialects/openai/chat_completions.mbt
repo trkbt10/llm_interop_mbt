@@ -11,10 +11,26 @@ pub fn message_to_json(message : @types.ModelMessage) -> Json {
   match message {
     @types.ModelMessage::System(content) =>
       { "role": "system", "content": content }
-    @types.ModelMessage::User(content~, name~) =>
-      match name {
-        Some(n) => { "role": "user", "content": content, "name": n }
-        None => { "role": "user", "content": content }
+    @types.ModelMessage::User(content~, name~, content_parts~) =>
+      match content_parts {
+        Some(parts) => {
+          // Multimodal: emit content as array of parts
+          let content_json = content_parts_to_openai_json(parts)
+          match name {
+            Some(n) =>
+              {
+                "role": "user",
+                "content": Json::array(content_json),
+                "name": n,
+              }
+            None => { "role": "user", "content": Json::array(content_json) }
+          }
+        }
+        None =>
+          match name {
+            Some(n) => { "role": "user", "content": content, "name": n }
+            None => { "role": "user", "content": content }
+          }
       }
     @types.ModelMessage::Assistant(content~, tool_calls~) =>
       match tool_calls {
@@ -41,6 +57,75 @@ pub fn message_to_json(message : @types.ModelMessage) -> Json {
     @types.ModelMessage::ToolResult(tool_call_id~, content~) =>
       { "role": "tool", "tool_call_id": tool_call_id, "content": content }
   }
+}
+
+///|
+/// Convert ContentPart array to OpenAI Chat Completions content array format.
+/// Ref: https://platform.openai.com/docs/api-reference/chat/create — messages[].content
+fn content_parts_to_openai_json(
+  parts : Array[@types.ContentPart],
+) -> Array[Json] {
+  let result : Array[Json] = []
+  for part in parts {
+    match part {
+      // Ref: ChatCompletionContentPartText — {"type":"text","text":"..."}
+      @types.ContentPart::Text(text) =>
+        result.push({ "type": "text", "text": text })
+      // Ref: ChatCompletionContentPartImage — {"type":"image_url","image_url":{"url":"...","detail":"..."}}
+      @types.ContentPart::ImageUrl(url~, detail~) => {
+        let image_url : Map[String, Json] = { "url": Json::string(url) }
+        match detail {
+          Some(d) => image_url["detail"] = Json::string(d)
+          None => ()
+        }
+        result.push({
+          "type": "image_url",
+          "image_url": Json::object(image_url),
+        })
+      }
+      // Ref: ChatCompletionContentPartImage — data URL variant
+      @types.ContentPart::ImageBase64(data~, media_type~) =>
+        result.push({
+          "type": "image_url",
+          "image_url": { "url": "data:\{media_type};base64,\{data}" },
+        })
+      // Ref: ChatCompletionContentPartInputAudio — {"type":"input_audio","input_audio":{"data":"...","format":"wav|mp3"}}
+      @types.ContentPart::Audio(data~, format~) =>
+        result.push({
+          "type": "input_audio",
+          "input_audio": { "data": data, "format": format },
+        })
+      // Chat Completions API has no native document type.
+      // ContentPart::Document.data is base64-encoded. Since this codebase has no
+      // base64 decoder, we cannot inline text/plain documents as readable text either.
+      // Both text and binary documents get a metadata fallback.
+      @types.ContentPart::Document(media_type~, title~, ..) => {
+        let label = match title {
+          Some(t) => t
+          None => "document"
+        }
+        result.push({
+          "type": "text",
+          "text": "[Attached \{media_type}: \{label} — Chat Completions API cannot handle inline documents; use Responses API input_file or upload via Files API]",
+        })
+      }
+      // Chat Completions API file part was deprecated Sept 2025.
+      // Ref: https://platform.openai.com/docs/api-reference/chat/create — "file" type is no longer supported
+      // FileRef should be sent via Responses API input_file instead.
+      @types.ContentPart::FileRef(file_id~, ..) =>
+        result.push({
+          "type": "text",
+          "text": "[File reference: \{file_id} — use Responses API input_file for file uploads]",
+        })
+      // Chat Completions API has no native video type. Not representable.
+      @types.ContentPart::Video(..) =>
+        result.push({
+          "type": "text",
+          "text": "[Video content — not supported by Chat Completions API; use Gemini or upload via Files API]",
+        })
+    }
+  }
+  result
 }
 
 ///|
@@ -233,6 +318,53 @@ pub fn parse_chat_response(json : Json) -> @types.ModelResponse {
               }
               _ => ()
             }
+          }
+          // Ref: ChatCompletionMessage.refusal — non-null when model refuses
+          match message {
+            { "refusal": String(reason), .. } if reason.length() > 0 =>
+              return @types.ModelResponse::RichText(
+                @types.RichTextResponse::new(
+                  content="",
+                  content_parts=Some([
+                    @types.ResponseContentPart::Refusal(reason),
+                  ]),
+                ),
+              )
+            _ => ()
+          }
+          // Check for audio output
+          // Ref: ChatCompletionAudio — {"id":"...","data":"base64...","transcript":"...","expires_at":N}
+          match message {
+            {
+              "audio": {
+                "data": String(audio_data),
+                "transcript": String(transcript),
+                ..
+              },
+              ..
+            } => {
+              let text = match message {
+                { "content": String(c), .. } => c
+                _ => transcript
+              }
+              let parts : Array[@types.ResponseContentPart] = []
+              if text.length() > 0 {
+                parts.push(@types.ResponseContentPart::OutputText(text))
+              }
+              parts.push(
+                @types.ResponseContentPart::AudioOutput(
+                  data=audio_data,
+                  transcript~,
+                ),
+              )
+              return @types.ModelResponse::RichText(
+                @types.RichTextResponse::new(
+                  content=text,
+                  content_parts=Some(parts),
+                ),
+              )
+            }
+            _ => ()
           }
           // Extract text response
           match message {

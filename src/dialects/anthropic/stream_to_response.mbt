@@ -32,6 +32,7 @@ pub fn non_streaming_to_synthetic_events(json : Json) -> Array[@sse.SseEvent] {
             "content_block": block,
           },
         })
+        // Ref: docs/upstream/anthropic-messages-api.md:3958-3981 — response content block types
         match block {
           { "type": String("text"), "text": String(text), .. } =>
             events.push({
@@ -51,6 +52,44 @@ pub fn non_streaming_to_synthetic_events(json : Json) -> Array[@sse.SseEvent] {
                 "delta": {
                   "type": "input_json_delta",
                   "partial_json": input.stringify(),
+                },
+              },
+            })
+          // Ref: docs/upstream/anthropic-messages-api.md:3971-3979 — ThinkingBlock
+          { "type": String("thinking"), "thinking": String(thinking_text), .. } =>
+            events.push({
+              event: "content_block_delta",
+              data: {
+                "type": "content_block_delta",
+                "index": i,
+                "delta": { "type": "thinking_delta", "thinking": thinking_text },
+              },
+            })
+          // Ref: docs/upstream/anthropic-messages-api.md:3981 — RedactedThinkingBlock
+          { "type": String("redacted_thinking"), "data": String(data), .. } =>
+            events.push({
+              event: "content_block_delta",
+              data: {
+                "type": "content_block_delta",
+                "index": i,
+                "delta": { "type": "redacted_thinking_delta", "data": data },
+              },
+            })
+          // Ref: docs/upstream/anthropic-code-execution-tool.md:1796-1802
+          //   {"type":"bash_code_execution_tool_result","content":{"stdout":"...","stderr":"","return_code":0}}
+          {
+            "type": String("code_execution_tool_result"),
+            "content": content_obj,
+            ..
+          } =>
+            events.push({
+              event: "content_block_delta",
+              data: {
+                "type": "content_block_delta",
+                "index": i,
+                "delta": {
+                  "type": "code_execution_result_delta",
+                  "content": content_obj,
                 },
               },
             })

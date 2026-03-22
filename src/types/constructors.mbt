@@ -69,10 +69,11 @@ pub fn ToolCallTrace::new(
 /// Create rich text response
 pub fn RichTextResponse::new(
   content~ : String,
+  content_parts? : Array[ResponseContentPart]? = None,
   annotations? : Array[ResponseAnnotation] = [],
   tool_traces? : Array[ToolCallTrace] = [],
 ) -> RichTextResponse {
-  { content, annotations, tool_traces }
+  { content, content_parts, annotations, tool_traces }
 }
 
 ///|

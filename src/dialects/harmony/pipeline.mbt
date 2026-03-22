@@ -22,7 +22,7 @@ pub fn responses_request_to_chat_completions(
   let input_messages = match request {
     { "input": Array(items), .. } => responses_input_to_messages(items)
     { "input": String(text), .. } =>
-      [@types.ModelMessage::User(content=text, name=None)]
+      [@types.ModelMessage::User(content=text, name=None, content_parts=None)]
     _ => []
   }
   for m in input_messages {

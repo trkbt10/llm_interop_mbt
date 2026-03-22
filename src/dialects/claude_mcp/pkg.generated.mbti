@@ -19,6 +19,8 @@ pub fn build_ping_result(Int) -> String
 
 pub fn build_tools_call_result(Int, String, Bool) -> String
 
+pub fn build_tools_call_result_from_items(Int, Array[@mcp.McpContentItem], Bool) -> String
+
 pub fn build_tools_list_result(Int, Array[@mcp.McpToolDefinition]) -> String
 
 pub fn chat_request_to_prompt(String, @types.TransformContext) -> String

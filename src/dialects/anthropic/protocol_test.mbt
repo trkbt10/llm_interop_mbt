@@ -70,7 +70,7 @@ test "tool_to_json creates correct format" {
 test "build_body creates valid body" {
   let messages = [
     @types.ModelMessage::System("You are Claude"),
-    @types.ModelMessage::User(content="Hello", name=None),
+    @types.ModelMessage::User(content="Hello", name=None, content_parts=None),
   ]
   let tools : Array[@types.ToolDefinition] = []
   let body = build_body(
@@ -134,5 +134,184 @@ test "parse_response parses tool_use response" {
       inspect(calls[0].name, content="search")
     }
     _ => fail("Expected ToolCalls response")
+  }
+}
+
+///|
+test "message_to_json converts User with document content_parts" {
+  let msg = @types.ModelMessage::User(
+    content="Summarize this PDF",
+    name=None,
+    content_parts=Some([
+      @types.ContentPart::Text("Summarize this PDF"),
+      @types.ContentPart::Document(
+        data="base64pdf",
+        media_type="application/pdf",
+        title=Some("report.pdf"),
+      ),
+    ]),
+  )
+  let json = message_to_json(msg)
+  match json {
+    { "role": "user", "content": Array(parts), .. } => {
+      inspect(parts.length(), content="2")
+      match parts[0] {
+        { "type": "text", "text": "Summarize this PDF", .. } => ()
+        _ => fail("Expected text part")
+      }
+      match parts[1] {
+        { "type": "document", "source": { "type": "base64", .. }, .. } => ()
+        _ => fail("Expected document part")
+      }
+    }
+    _ => fail("Expected array content")
+  }
+}
+
+///|
+test "message_to_json converts User with file reference" {
+  let msg = @types.ModelMessage::User(
+    content="Read this file",
+    name=None,
+    content_parts=Some([
+      @types.ContentPart::Text("Read this file"),
+      @types.ContentPart::FileRef(
+        file_id="file_abc123",
+        media_type=Some("application/pdf"),
+      ),
+    ]),
+  )
+  let json = message_to_json(msg)
+  match json {
+    { "role": "user", "content": Array(parts), .. } =>
+      match parts[1] {
+        {
+          "type": "document",
+          "source": { "type": "file", "file_id": "file_abc123", .. },
+          ..
+        } => ()
+        _ => fail("Expected document with file source")
+      }
+    _ => fail("Expected array content")
+  }
+}
+
+///|
+test "parse_response captures thinking blocks" {
+  let response : Json = {
+    "content": Json::array([
+      { "type": "thinking", "thinking": "Let me analyze this step by step..." },
+      { "type": "text", "text": "The answer is 42." },
+    ]),
+    "stop_reason": "end_turn",
+  }
+  let result = parse_response(response)
+  match result {
+    @types.ModelResponse::RichText(rich) => {
+      inspect(rich.content, content="The answer is 42.")
+      match rich.content_parts {
+        Some(parts) => {
+          inspect(parts.length(), content="2")
+          match parts[0] {
+            @types.ResponseContentPart::Thinking(text~) =>
+              inspect(text, content="Let me analyze this step by step...")
+            _ => fail("Expected Thinking part")
+          }
+          match parts[1] {
+            @types.ResponseContentPart::OutputText(t) =>
+              inspect(t, content="The answer is 42.")
+            _ => fail("Expected OutputText part")
+          }
+        }
+        None => fail("Expected content_parts")
+      }
+    }
+    _ => fail("Expected RichText response")
+  }
+}
+
+///|
+test "parse_response text-only returns Text not RichText" {
+  let response : Json = {
+    "content": Json::array([{ "type": "text", "text": "Simple answer" }]),
+    "stop_reason": "end_turn",
+  }
+  let result = parse_response(response)
+  match result {
+    @types.ModelResponse::Text(content) =>
+      inspect(content, content="Simple answer")
+    _ => fail("Expected plain Text response")
+  }
+}
+
+///|
+test "parse_response captures code_execution_tool_result with stderr" {
+  let response : Json = {
+    "content": Json::array([
+      {
+        "type": "code_execution_tool_result",
+        "tool_use_id": "toolu_123",
+        "content": {
+          "stdout": "",
+          "stderr": "NameError: name 'foo' is not defined",
+          "return_code": 1,
+        },
+      },
+      { "type": "text", "text": "The code failed." },
+    ]),
+    "stop_reason": "end_turn",
+  }
+  let result = parse_response(response)
+  match result {
+    @types.ModelResponse::RichText(rich) =>
+      match rich.content_parts {
+        Some(parts) =>
+          match parts[0] {
+            @types.ResponseContentPart::CodeResult(outcome~, output~) => {
+              inspect(outcome, content="failed")
+              assert_true(output.contains("stderr"))
+              assert_true(output.contains("NameError"))
+            }
+            _ => fail("Expected CodeResult")
+          }
+        None => fail("Expected content_parts")
+      }
+    _ => fail("Expected RichText")
+  }
+}
+
+///|
+test "parse_response captures code_execution with both stdout and stderr" {
+  let response : Json = {
+    "content": Json::array([
+      {
+        "type": "code_execution_tool_result",
+        "tool_use_id": "toolu_456",
+        "content": {
+          "stdout": "42",
+          "stderr": "DeprecationWarning: ...",
+          "return_code": 0,
+        },
+      },
+    ]),
+    "stop_reason": "end_turn",
+  }
+  let result = parse_response(response)
+  match result {
+    @types.ModelResponse::RichText(rich) =>
+      match rich.content_parts {
+        Some(parts) =>
+          match parts[0] {
+            @types.ResponseContentPart::CodeResult(outcome~, output~) => {
+              inspect(outcome, content="success")
+              assert_true(output.contains("42"))
+              assert_true(output.contains("stderr"))
+              assert_true(output.contains("DeprecationWarning"))
+            }
+            _ => fail("Expected CodeResult")
+          }
+        None => fail("Expected content_parts")
+      }
+    _ => fail("Expected RichText")
   }
 }

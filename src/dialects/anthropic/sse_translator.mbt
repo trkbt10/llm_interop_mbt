@@ -14,6 +14,8 @@ pub struct AnthropicToResponsesTranslator {
   mut current_tool_call_id : String
   mut current_tool_name : String
   text_buffer : StringBuilder
+  thinking_buffer : StringBuilder
+  mut in_thinking_block : Bool
 }
 
 ///|
@@ -28,6 +30,8 @@ pub fn AnthropicToResponsesTranslator::new(
     current_tool_call_id: "",
     current_tool_name: "",
     text_buffer: StringBuilder::new(),
+    thinking_buffer: StringBuilder::new(),
+    in_thinking_block: false,
   }
 }
 
@@ -124,11 +128,84 @@ pub fn AnthropicToResponsesTranslator::translate(
               ),
             )
           }
+        // Ref: docs/upstream/anthropic-messages-api.md:3971-3979 — ThinkingBlock
+        // Accumulate thinking_delta; emit single reasoning item on content_block_stop
+        {
+          "delta": {
+            "type": String("thinking_delta"),
+            "thinking": String(text),
+            ..
+          },
+          ..
+        } => {
+          self.thinking_buffer.write_string(text)
+          self.in_thinking_block = true
+        }
+        // Ref: docs/upstream/anthropic-code-execution-tool.md:1796-1802 — code_execution_result
+        {
+          "delta": {
+            "type": String("code_execution_result_delta"),
+            "content": content_obj,
+            ..
+          },
+          ..
+        } => {
+          let stdout = match content_obj {
+            { "stdout": String(s), .. } => s
+            _ => ""
+          }
+          let stderr = match content_obj {
+            { "stderr": String(s), .. } => s
+            _ => ""
+          }
+          let output = if stdout.length() > 0 && stderr.length() > 0 {
+            "Code execution output:\n\{stdout}\n[stderr]\n\{stderr}"
+          } else if stderr.length() > 0 {
+            "Code execution [stderr]:\n\{stderr}"
+          } else if stdout.length() > 0 {
+            "Code execution output:\n\{stdout}"
+          } else {
+            "Code execution completed (no output)"
+          }
+          self.text_buffer.write_string(output)
+          events.push(
+            (
+              "response.output_text.delta",
+              {
+                "type": "response.output_text.delta",
+                "delta": output,
+                "output_index": self.output_index,
+              },
+            ),
+          )
+        }
         _ => ()
       }
     "content_block_stop" =>
-      // Tool call completed
-      if self.current_tool_call_id.length() > 0 {
+      if self.in_thinking_block {
+        // Emit accumulated thinking as a single reasoning item
+        let thinking_text = self.thinking_buffer.to_string()
+        if thinking_text.length() > 0 {
+          events.push(
+            (
+              "response.output_item.done",
+              {
+                "type": "response.output_item.done",
+                "output_index": self.output_index,
+                "item": {
+                  "type": "reasoning",
+                  "summary": Json::array([
+                    { "type": "summary_text", "text": thinking_text },
+                  ]),
+                },
+              },
+            ),
+          )
+        }
+        self.thinking_buffer.reset()
+        self.in_thinking_block = false
+      } else if self.current_tool_call_id.length() > 0 {
+        // Tool call completed
         events.push(
           (
             "response.output_item.done",

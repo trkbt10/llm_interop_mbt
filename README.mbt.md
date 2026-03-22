@@ -296,6 +296,7 @@ llm_interop provides dialect adapters for multiple LLM API surfaces. Any inbound
 - [Codex App Server Protocol](docs/codex-appserver.md) -- Codex CLI integration protocol
 - [Claude Code MCP Server](docs/claudecode-mcp-server.md) -- MCP server for Claude Code
 - [Claude MCP Serve Tools](docs/claude-mcp-serve-tools.md) -- MCP tool serving specification
+- [Upstream API Spec Snapshots](docs/upstream/README.md) -- Local Markdown snapshots of official OpenAI, Anthropic, and Gemini docs
 
 ### Examples
 

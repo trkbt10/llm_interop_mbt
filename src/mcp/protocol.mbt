@@ -47,23 +47,65 @@ pub(all) struct McpToolCallResult {
 } derive(Show, Eq)
 
 ///|
-/// Content item within a tools/call result
-pub(all) struct McpContentItem {
-  kind : String // "text", "image", "resource"
-  text : String
+/// Content item within a tools/call result.
+/// NOTE: MCP spec is not vendored in docs/upstream/ (snapshot 取り込み漏れ).
+/// External ref: https://modelcontextprotocol.io/specification/2025-03-26/server/tools
+///
+/// MCP 2025-03-26 defines 4 content types in tools/call result:
+///   TextContent:      {"type":"text","text":"..."}
+///   ImageContent:     {"type":"image","data":"base64...","mimeType":"image/png"}
+///   AudioContent:     {"type":"audio","data":"base64...","mimeType":"audio/wav"}
+///   EmbeddedResource: {"type":"resource","resource":{"uri":"...","mimeType":"...","text":"..."}}
+pub(all) enum McpContentItem {
+  /// Ref: TextContent — {"type":"text","text":"..."}
+  Text(String)
+  /// Ref: ImageContent — {"type":"image","data":"base64...","mimeType":"..."}
+  Image(data~ : String, mime_type~ : String)
+  /// Ref: AudioContent — {"type":"audio","data":"base64...","mimeType":"..."}
+  Audio(data~ : String, mime_type~ : String)
+  /// Ref: EmbeddedResource — {"type":"resource","resource":{"uri":"...","mimeType":"...","text":"..."}}
+  Resource(uri~ : String, mime_type~ : String?, text~ : String?)
 } derive(Show, Eq)
 
 ///|
 /// Parses an `McpContentItem` from a JSON value within a tools/call result.
+/// Ref: https://modelcontextprotocol.io/specification/2025-03-26/server/tools
 pub fn McpContentItem::from_json(json : Json) -> McpContentItem? {
   match json {
-    { "type": String(kind), .. } => {
-      let text = match json {
-        { "text": String(t), .. } => t
+    // TextContent: {"type":"text","text":"..."}
+    { "type": String("text"), "text": String(text), .. } => Some(Text(text))
+    // ImageContent: {"type":"image","data":"base64...","mimeType":"image/png"}
+    {
+      "type": String("image"),
+      "data": String(data),
+      "mimeType": String(mime_type),
+      ..
+    } => Some(Image(data~, mime_type~))
+    // AudioContent: {"type":"audio","data":"base64...","mimeType":"audio/wav"}
+    {
+      "type": String("audio"),
+      "data": String(data),
+      "mimeType": String(mime_type),
+      ..
+    } => Some(Audio(data~, mime_type~))
+    // EmbeddedResource: {"type":"resource","resource":{...}}
+    { "type": String("resource"), "resource": resource_obj, .. } => {
+      let uri = match resource_obj {
+        { "uri": String(u), .. } => u
         _ => ""
       }
-      Some({ kind, text })
+      let mime_type = match resource_obj {
+        { "mimeType": String(m), .. } => Some(m)
+        _ => None
+      }
+      let text = match resource_obj {
+        { "text": String(t), .. } => Some(t)
+        _ => None
+      }
+      Some(Resource(uri~, mime_type~, text~))
     }
+    // Fallback: unknown type with text field
+    { "type": String(_), "text": String(text), .. } => Some(Text(text))
     _ => None
   }
 }
@@ -166,12 +208,58 @@ pub fn parse_tools_call_result(json : Json) -> McpToolCallResult? {
 pub fn extract_text_content(result : McpToolCallResult) -> String {
   let buf = StringBuilder::new()
   for item in result.content {
-    if item.kind == "text" {
-      if buf.to_string().length() > 0 {
-        buf.write_string("\n")
+    match item {
+      Text(text) => {
+        if buf.to_string().length() > 0 {
+          buf.write_string("\n")
+        }
+        buf.write_string(text)
       }
-      buf.write_string(item.text)
+      Resource(text=Some(text), ..) => {
+        if buf.to_string().length() > 0 {
+          buf.write_string("\n")
+        }
+        buf.write_string(text)
+      }
+      _ => ()
     }
   }
   buf.to_string()
+}
+
+///|
+/// Convert McpContentItem to JSON (for server response building).
+/// Ref: https://modelcontextprotocol.io/specification/2025-03-26/server/tools
+pub fn McpContentItem::to_json(self : McpContentItem) -> Json {
+  match self {
+    Text(text) => { "type": "text", "text": text }
+    Image(data~, mime_type~) => {
+      let obj : Map[String, Json] = {
+        "type": Json::string("image"),
+        "data": Json::string(data),
+        "mimeType": Json::string(mime_type),
+      }
+      Json::object(obj)
+    }
+    Audio(data~, mime_type~) => {
+      let obj : Map[String, Json] = {
+        "type": Json::string("audio"),
+        "data": Json::string(data),
+        "mimeType": Json::string(mime_type),
+      }
+      Json::object(obj)
+    }
+    Resource(uri~, mime_type~, text~) => {
+      let resource : Map[String, Json] = { "uri": Json::string(uri) }
+      match mime_type {
+        Some(m) => resource["mimeType"] = Json::string(m)
+        None => ()
+      }
+      match text {
+        Some(t) => resource["text"] = Json::string(t)
+        None => ()
+      }
+      { "type": "resource", "resource": Json::object(resource) }
+    }
+  }
 }

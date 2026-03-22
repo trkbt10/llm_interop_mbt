@@ -19,11 +19,14 @@ pub fn parse_tools_list_response(Json) -> Array[McpToolDefinition]
 // Errors
 
 // Types and methods
-pub(all) struct McpContentItem {
-  kind : String
-  text : String
+pub(all) enum McpContentItem {
+  Text(String)
+  Image(data~ : String, mime_type~ : String)
+  Audio(data~ : String, mime_type~ : String)
+  Resource(uri~ : String, mime_type~ : String?, text~ : String?)
 }
 pub fn McpContentItem::from_json(Json) -> Self?
+pub fn McpContentItem::to_json(Self) -> Json
 pub impl Eq for McpContentItem
 pub impl Show for McpContentItem
 

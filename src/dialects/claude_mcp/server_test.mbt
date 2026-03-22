@@ -228,7 +228,10 @@ test "build_tools_call_result: roundtrip with parse_tools_call_result" {
     Some(r) => {
       assert_eq(r.is_error, false)
       assert_eq(r.content.length(), 1)
-      assert_eq(r.content[0].text, "test content")
+      match r.content[0] {
+        @mcp.McpContentItem::Text(text) => assert_eq(text, "test content")
+        _ => fail("Expected Text")
+      }
     }
     None => fail("parse failed")
   }
@@ -246,7 +249,10 @@ test "build_tools_call_result: matches fixture success structure" {
     Some(r) => {
       assert_eq(r.is_error, false)
       assert_true(r.content.length() > 0)
-      assert_eq(r.content[0].kind, "text")
+      match r.content[0] {
+        @mcp.McpContentItem::Text(_) => ()
+        _ => fail("Expected Text content")
+      }
     }
     None => fail("failed to parse fixture")
   }
@@ -260,8 +266,11 @@ test "build_tools_call_result: matches fixture success structure" {
     Some(r) => {
       assert_eq(r.is_error, false)
       assert_eq(r.content.length(), 1)
-      assert_eq(r.content[0].kind, "text")
-      assert_eq(r.content[0].text, "Hello, world!\nThis is a test file.")
+      match r.content[0] {
+        @mcp.McpContentItem::Text(text) =>
+          assert_eq(text, "Hello, world!\nThis is a test file.")
+        _ => fail("Expected Text content")
+      }
     }
     None => fail("failed to parse our response")
   }
@@ -277,7 +286,10 @@ test "build_tools_call_result: matches fixture error structure" {
   match fixture_result {
     Some(r) => {
       assert_eq(r.is_error, true)
-      assert_true(r.content[0].text.contains("ENOENT"))
+      match r.content[0] {
+        @mcp.McpContentItem::Text(text) => assert_true(text.contains("ENOENT"))
+        _ => fail("Expected Text")
+      }
     }
     None => fail("failed to parse fixture")
   }
@@ -290,7 +302,10 @@ test "build_tools_call_result: matches fixture error structure" {
   match our_result {
     Some(r) => {
       assert_eq(r.is_error, true)
-      assert_true(r.content[0].text.contains("ENOENT"))
+      match r.content[0] {
+        @mcp.McpContentItem::Text(text) => assert_true(text.contains("ENOENT"))
+        _ => fail("Expected Text")
+      }
     }
     None => fail("failed to parse our error response")
   }

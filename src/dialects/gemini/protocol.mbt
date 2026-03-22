@@ -38,8 +38,55 @@ pub fn message_to_content(message : @types.ModelMessage) -> GeminiContent? {
     @types.ModelMessage::System(content) =>
       // Gemini treats system as user instruction
       Some({ role: "user", parts: [GeminiPart::Text(content)] })
-    @types.ModelMessage::User(content~, ..) =>
-      Some({ role: "user", parts: [GeminiPart::Text(content)] })
+    @types.ModelMessage::User(content~, content_parts~, ..) =>
+      match content_parts {
+        Some(parts) => {
+          let gemini_parts : Array[GeminiPart] = []
+          // Ref: https://ai.google.dev/api/generate-content — Part
+          for part in parts {
+            match part {
+              // Ref: Part.text — {"text":"..."}
+              @types.ContentPart::Text(text) =>
+                gemini_parts.push(GeminiPart::Text(text))
+              // Gemini fileData only accepts uploaded file URIs (files/... or gs://...),
+              // not arbitrary HTTP(S) image URLs. Skip with a text placeholder.
+              @types.ContentPart::ImageUrl(url~, ..) =>
+                gemini_parts.push(GeminiPart::Text("[Image: \{url}]"))
+              // Ref: Part.inlineData — {"inlineData":{"mimeType":"image/*","data":"..."}}
+              @types.ContentPart::ImageBase64(data~, media_type~) =>
+                gemini_parts.push(
+                  GeminiPart::InlineData(mime_type=media_type, data~),
+                )
+              // Ref: Part.inlineData — {"inlineData":{"mimeType":"audio/*","data":"..."}}
+              // Ref: https://ai.google.dev/gemini-api/docs/audio
+              @types.ContentPart::Audio(data~, format~) => {
+                let mime = "audio/\{format}"
+                gemini_parts.push(GeminiPart::InlineData(mime_type=mime, data~))
+              }
+              // Ref: Part.inlineData — {"inlineData":{"mimeType":"application/pdf","data":"..."}}
+              // Ref: https://ai.google.dev/gemini-api/docs/document-processing
+              @types.ContentPart::Document(data~, media_type~, ..) =>
+                gemini_parts.push(
+                  GeminiPart::InlineData(mime_type=media_type, data~),
+                )
+              // Ref: Part.fileData — {"fileData":{"fileUri":"files/...","mimeType":"..."}}
+              // Ref: https://ai.google.dev/gemini-api/docs/files
+              @types.ContentPart::FileRef(file_id~, media_type~) =>
+                gemini_parts.push(
+                  GeminiPart::FileData(file_uri=file_id, mime_type=media_type),
+                )
+              // Ref: Part.inlineData — {"inlineData":{"mimeType":"video/*","data":"..."}}
+              // Ref: https://ai.google.dev/gemini-api/docs/video-understanding
+              @types.ContentPart::Video(data~, media_type~) =>
+                gemini_parts.push(
+                  GeminiPart::InlineData(mime_type=media_type, data~),
+                )
+            }
+          }
+          Some({ role: "user", parts: gemini_parts })
+        }
+        None => Some({ role: "user", parts: [GeminiPart::Text(content)] })
+      }
     @types.ModelMessage::Assistant(content~, tool_calls~) =>
       match tool_calls {
         Some(calls) if calls.length() > 0 => {
@@ -246,9 +293,19 @@ pub fn parse_response(response_json : Json) -> @types.ModelResponse {
           if tool_calls.length() > 0 {
             return @types.ModelResponse::ToolCalls(tool_calls)
           }
-          // Extract text
+          // Extract text and structured content parts
           let text = extract_gemini_text(parts)
-          @types.ModelResponse::Text(text)
+          let response_parts = extract_gemini_content_parts(parts)
+          match response_parts {
+            Some(rparts) =>
+              @types.ModelResponse::RichText(
+                @types.RichTextResponse::new(
+                  content=text,
+                  content_parts=Some(rparts),
+                ),
+              )
+            None => @types.ModelResponse::Text(text)
+          }
         }
         { "finishReason": String("SAFETY"), .. } =>
           @types.ModelResponse::ModelError("Response blocked by safety filters")
@@ -300,12 +357,63 @@ fn extract_gemini_text(parts : Array[Json]) -> String {
   text.to_string()
 }
 
+///|
+/// Extract structured content parts from Gemini response parts
+/// Returns None if response is text-only, Some(parts) if code execution etc. present
+fn extract_gemini_content_parts(
+  parts : Array[Json],
+) -> Array[@types.ResponseContentPart]? {
+  let result : Array[@types.ResponseContentPart] = []
+  let mut has_non_text = false
+  for part in parts {
+    match part {
+      { "text": String(t), .. } =>
+        result.push(@types.ResponseContentPart::OutputText(t))
+      {
+        "executableCode": {
+          "language": String(language),
+          "code": String(code),
+          ..
+        },
+        ..
+      } => {
+        result.push(@types.ResponseContentPart::CodeExecution(language~, code~))
+        has_non_text = true
+      }
+      {
+        "codeExecutionResult": {
+          "outcome": String(outcome),
+          "output": String(output),
+          ..
+        },
+        ..
+      } => {
+        result.push(@types.ResponseContentPart::CodeResult(outcome~, output~))
+        has_non_text = true
+      }
+      _ => ()
+    }
+  }
+  if has_non_text {
+    Some(result)
+  } else {
+    None
+  }
+}
+
 // =============================================================================
 // Streaming Support
 // =============================================================================
 
 ///|
 /// Parse Gemini streaming chunk
+/// Parse a Gemini streaming chunk into text and tool calls.
+/// Extracts text from Part.text, Part.executableCode, and Part.codeExecutionResult.
+/// Ref: docs/upstream/gemini-generate-content.md (Part.text, Part.functionCall)
+/// NOTE: executableCode and codeExecutionResult are not in the vendored snapshot.
+/// Structure inferred from https://ai.google.dev/api/generate-content:
+///   executableCode: {"language":"PYTHON","code":"..."}
+///   codeExecutionResult: {"outcome":"OUTCOME_OK","output":"..."}
 pub fn parse_stream_chunk(
   chunk_json : Json,
 ) -> (String, Array[@types.ToolCallRequest])? {
@@ -314,9 +422,47 @@ pub fn parse_stream_chunk(
       if candidates.length() > 0 {
         match candidates[0] {
           { "content": { "parts": Array(parts), .. }, .. } => {
-            let text = extract_gemini_text(parts)
+            let text_buf = StringBuilder::new()
+            // Ref: Part.text
+            for part in parts {
+              match part {
+                { "text": String(t), .. } => text_buf.write_string(t)
+                // NOTE: executableCode not in vendored snapshot; inferred from runtime API
+                // Structure: {"executableCode":{"language":"PYTHON","code":"..."}}
+                {
+                  "executableCode": {
+                    "language": String(lang),
+                    "code": String(code),
+                    ..
+                  },
+                  ..
+                } => {
+                  text_buf.write_string("```")
+                  text_buf.write_string(lang.to_lower())
+                  text_buf.write_char('\n')
+                  text_buf.write_string(code)
+                  text_buf.write_string("\n```\n")
+                }
+                // NOTE: codeExecutionResult not in vendored snapshot; inferred from runtime API
+                // Structure: {"codeExecutionResult":{"outcome":"OUTCOME_OK","output":"..."}}
+                {
+                  "codeExecutionResult": {
+                    "outcome": String(outcome),
+                    "output": String(output),
+                    ..
+                  },
+                  ..
+                } => {
+                  text_buf.write_string("Execution [")
+                  text_buf.write_string(outcome)
+                  text_buf.write_string("]: ")
+                  text_buf.write_string(output)
+                }
+                _ => ()
+              }
+            }
             let tool_calls = parse_function_calls(parts)
-            Some((text, tool_calls))
+            Some((text_buf.to_string(), tool_calls))
           }
           _ => None
         }

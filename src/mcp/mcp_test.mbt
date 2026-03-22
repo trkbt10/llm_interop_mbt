@@ -1,6 +1,7 @@
 ///|
 /// Exhaustive tests for pure MCP protocol layer
 /// Verifies MCP layer is application-agnostic
+/// Ref: https://modelcontextprotocol.io/specification/2025-03-26
 
 // =============================================================================
 // build_initialize_request
@@ -205,7 +206,6 @@ test "McpToolDefinition::from_json: full" {
     Some(t) => {
       assert_eq(t.name, "Read")
       assert_eq(t.description, "Reads a file from the filesystem")
-      // inputSchema should be preserved
       match t.input_schema {
         { "type": String("object"), .. } => ()
         _ => fail("inputSchema not preserved")
@@ -233,7 +233,6 @@ test "McpToolDefinition::from_json: missing inputSchema" {
   match McpToolDefinition::from_json(json) {
     Some(t) => {
       assert_eq(t.name, "Test")
-      // inputSchema should default to empty object
       match t.input_schema {
         Object(obj) => assert_eq(obj.length(), 0)
         _ => fail("Default inputSchema should be empty object")
@@ -259,42 +258,87 @@ test "McpToolDefinition::from_json: invalid (not object)" {
 }
 
 // =============================================================================
-// McpContentItem::from_json
+// McpContentItem::from_json — all 4 MCP content types
+// Ref: https://modelcontextprotocol.io/specification/2025-03-26/server/tools
 // =============================================================================
 
 ///|
-test "McpContentItem::from_json: text" {
+test "McpContentItem::from_json: TextContent" {
   let json : Json = { "type": "text", "text": "hello world" }
   match McpContentItem::from_json(json) {
-    Some(c) => {
-      assert_eq(c.kind, "text")
-      assert_eq(c.text, "hello world")
-    }
-    None => fail("Failed to parse")
+    Some(Text(text)) => assert_eq(text, "hello world")
+    _ => fail("Failed to parse TextContent")
   }
 }
 
 ///|
-test "McpContentItem::from_json: image" {
-  let json : Json = { "type": "image", "data": "base64..." }
+test "McpContentItem::from_json: ImageContent" {
+  // Ref: {"type":"image","data":"base64...","mimeType":"image/png"}
+  let json : Json = {
+    "type": "image",
+    "data": "iVBORw0KGgo=",
+    "mimeType": "image/png",
+  }
   match McpContentItem::from_json(json) {
-    Some(c) => {
-      assert_eq(c.kind, "image")
-      assert_eq(c.text, "") // No text field for image
+    Some(Image(data~, mime_type~)) => {
+      assert_eq(data, "iVBORw0KGgo=")
+      assert_eq(mime_type, "image/png")
     }
-    None => fail("Failed to parse image")
+    _ => fail("Failed to parse ImageContent")
   }
 }
 
 ///|
-test "McpContentItem::from_json: resource" {
-  let json : Json = { "type": "resource", "text": "resource content" }
+test "McpContentItem::from_json: AudioContent" {
+  // Ref: {"type":"audio","data":"base64...","mimeType":"audio/wav"}
+  let json : Json = {
+    "type": "audio",
+    "data": "UklGR...",
+    "mimeType": "audio/wav",
+  }
   match McpContentItem::from_json(json) {
-    Some(c) => {
-      assert_eq(c.kind, "resource")
-      assert_eq(c.text, "resource content")
+    Some(Audio(data~, mime_type~)) => {
+      assert_eq(data, "UklGR...")
+      assert_eq(mime_type, "audio/wav")
     }
-    None => fail("Failed to parse resource")
+    _ => fail("Failed to parse AudioContent")
+  }
+}
+
+///|
+test "McpContentItem::from_json: EmbeddedResource" {
+  // Ref: {"type":"resource","resource":{"uri":"resource://example","mimeType":"text/plain","text":"content"}}
+  let json : Json = {
+    "type": "resource",
+    "resource": {
+      "uri": "resource://example",
+      "mimeType": "text/plain",
+      "text": "resource content",
+    },
+  }
+  match McpContentItem::from_json(json) {
+    Some(Resource(uri~, mime_type~, text~)) => {
+      assert_eq(uri, "resource://example")
+      assert_eq(mime_type, Some("text/plain"))
+      assert_eq(text, Some("resource content"))
+    }
+    _ => fail("Failed to parse EmbeddedResource")
+  }
+}
+
+///|
+test "McpContentItem::from_json: EmbeddedResource minimal" {
+  let json : Json = {
+    "type": "resource",
+    "resource": { "uri": "file:///tmp/data" },
+  }
+  match McpContentItem::from_json(json) {
+    Some(Resource(uri~, mime_type~, text~)) => {
+      assert_eq(uri, "file:///tmp/data")
+      assert_eq(mime_type, None)
+      assert_eq(text, None)
+    }
+    _ => fail("Failed to parse minimal resource")
   }
 }
 
@@ -307,8 +351,76 @@ test "McpContentItem::from_json: invalid (no type)" {
 test "McpContentItem::from_json: empty text" {
   let json : Json = { "type": "text", "text": "" }
   match McpContentItem::from_json(json) {
-    Some(c) => assert_eq(c.text, "")
-    None => fail("Should parse empty text")
+    Some(Text(text)) => assert_eq(text, "")
+    _ => fail("Should parse empty text")
+  }
+}
+
+///|
+test "McpContentItem::from_json: image missing mimeType falls through to text fallback" {
+  // Image without mimeType doesn't match ImageContent pattern,
+  // falls to fallback that checks for text field
+  let json : Json = { "type": "image", "data": "base64..." }
+  // No mimeType → doesn't match Image pattern
+  // No text field → returns None
+  assert_eq(McpContentItem::from_json(json), None)
+}
+
+// =============================================================================
+// McpContentItem::to_json roundtrip
+// =============================================================================
+
+///|
+test "McpContentItem::to_json roundtrip: Text" {
+  let item = McpContentItem::Text("hello")
+  let json = item.to_json()
+  match McpContentItem::from_json(json) {
+    Some(Text(text)) => assert_eq(text, "hello")
+    _ => fail("Roundtrip failed for Text")
+  }
+}
+
+///|
+test "McpContentItem::to_json roundtrip: Image" {
+  let item = McpContentItem::Image(data="abc", mime_type="image/png")
+  let json = item.to_json()
+  match McpContentItem::from_json(json) {
+    Some(Image(data~, mime_type~)) => {
+      assert_eq(data, "abc")
+      assert_eq(mime_type, "image/png")
+    }
+    _ => fail("Roundtrip failed for Image")
+  }
+}
+
+///|
+test "McpContentItem::to_json roundtrip: Audio" {
+  let item = McpContentItem::Audio(data="xyz", mime_type="audio/wav")
+  let json = item.to_json()
+  match McpContentItem::from_json(json) {
+    Some(Audio(data~, mime_type~)) => {
+      assert_eq(data, "xyz")
+      assert_eq(mime_type, "audio/wav")
+    }
+    _ => fail("Roundtrip failed for Audio")
+  }
+}
+
+///|
+test "McpContentItem::to_json roundtrip: Resource" {
+  let item = McpContentItem::Resource(
+    uri="file:///test",
+    mime_type=Some("text/plain"),
+    text=Some("content"),
+  )
+  let json = item.to_json()
+  match McpContentItem::from_json(json) {
+    Some(Resource(uri~, mime_type~, text~)) => {
+      assert_eq(uri, "file:///test")
+      assert_eq(mime_type, Some("text/plain"))
+      assert_eq(text, Some("content"))
+    }
+    _ => fail("Roundtrip failed for Resource")
   }
 }
 
@@ -383,21 +495,23 @@ test "parse_tools_call_result: success single text" {
     Some(result) => {
       assert_eq(result.is_error, false)
       assert_eq(result.content.length(), 1)
-      assert_eq(result.content[0].kind, "text")
-      assert_eq(result.content[0].text, "file contents")
+      match result.content[0] {
+        Text(text) => assert_eq(text, "file contents")
+        _ => fail("Expected Text")
+      }
     }
     None => fail("Failed to parse")
   }
 }
 
 ///|
-test "parse_tools_call_result: success multiple items" {
+test "parse_tools_call_result: mixed content types" {
   let json : Json = {
     "result": {
       "content": [
-        { "type": "text", "text": "line1" },
-        { "type": "text", "text": "line2" },
-        { "type": "image", "data": "..." },
+        { "type": "text", "text": "description" },
+        { "type": "image", "data": "base64img", "mimeType": "image/png" },
+        { "type": "audio", "data": "base64audio", "mimeType": "audio/wav" },
       ],
     },
   }
@@ -405,8 +519,22 @@ test "parse_tools_call_result: success multiple items" {
     Some(result) => {
       assert_eq(result.is_error, false)
       assert_eq(result.content.length(), 3)
+      match result.content[1] {
+        Image(data~, mime_type~) => {
+          assert_eq(data, "base64img")
+          assert_eq(mime_type, "image/png")
+        }
+        _ => fail("Expected Image")
+      }
+      match result.content[2] {
+        Audio(data~, mime_type~) => {
+          assert_eq(data, "base64audio")
+          assert_eq(mime_type, "audio/wav")
+        }
+        _ => fail("Expected Audio")
+      }
     }
-    None => fail("Failed to parse multi-item result")
+    None => fail("Failed to parse multi-type result")
   }
 }
 
@@ -421,7 +549,10 @@ test "parse_tools_call_result: error" {
   match parse_tools_call_result(json) {
     Some(result) => {
       assert_eq(result.is_error, true)
-      assert_eq(result.content[0].text, "Permission denied")
+      match result.content[0] {
+        Text(text) => assert_eq(text, "Permission denied")
+        _ => fail("Expected Text")
+      }
     }
     None => fail("Failed to parse error result")
   }
@@ -476,7 +607,7 @@ test "parse_tools_call_result: isError absent means false" {
 ///|
 test "extract_text_content: single text" {
   let result : McpToolCallResult = {
-    content: [{ kind: "text", text: "hello" }],
+    content: [McpContentItem::Text("hello")],
     is_error: false,
   }
   assert_eq(extract_text_content(result), "hello")
@@ -486,9 +617,9 @@ test "extract_text_content: single text" {
 test "extract_text_content: multiple text joined" {
   let result : McpToolCallResult = {
     content: [
-      { kind: "text", text: "line1" },
-      { kind: "text", text: "line2" },
-      { kind: "text", text: "line3" },
+      McpContentItem::Text("line1"),
+      McpContentItem::Text("line2"),
+      McpContentItem::Text("line3"),
     ],
     is_error: false,
   }
@@ -499,14 +630,29 @@ test "extract_text_content: multiple text joined" {
 test "extract_text_content: filters non-text" {
   let result : McpToolCallResult = {
     content: [
-      { kind: "text", text: "before" },
-      { kind: "image", text: "" },
-      { kind: "resource", text: "resource data" },
-      { kind: "text", text: "after" },
+      McpContentItem::Text("before"),
+      McpContentItem::Image(data="img", mime_type="image/png"),
+      McpContentItem::Text("after"),
     ],
     is_error: false,
   }
   assert_eq(extract_text_content(result), "before\nafter")
+}
+
+///|
+test "extract_text_content: includes resource text" {
+  let result : McpToolCallResult = {
+    content: [
+      McpContentItem::Text("intro"),
+      McpContentItem::Resource(
+        uri="file:///tmp",
+        mime_type=Some("text/plain"),
+        text=Some("resource data"),
+      ),
+    ],
+    is_error: false,
+  }
+  assert_eq(extract_text_content(result), "intro\nresource data")
 }
 
 ///|
@@ -518,7 +664,7 @@ test "extract_text_content: empty" {
 ///|
 test "extract_text_content: only non-text" {
   let result : McpToolCallResult = {
-    content: [{ kind: "image", text: "data" }],
+    content: [McpContentItem::Image(data="data", mime_type="image/png")],
     is_error: false,
   }
   assert_eq(extract_text_content(result), "")
@@ -527,7 +673,7 @@ test "extract_text_content: only non-text" {
 ///|
 test "extract_text_content: multiline text item" {
   let result : McpToolCallResult = {
-    content: [{ kind: "text", text: "line1\nline2\nline3" }],
+    content: [McpContentItem::Text("line1\nline2\nline3")],
     is_error: false,
   }
   assert_eq(extract_text_content(result), "line1\nline2\nline3")

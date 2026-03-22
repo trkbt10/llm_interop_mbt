@@ -88,7 +88,9 @@ async test "chat_gateway: OpenAI CC text response" {
     "openai",
     @gateway.OpenAICompletions,
   )
-  let messages = [@types.ModelMessage::User(content="Hi", name=None)]
+  let messages = [
+    @types.ModelMessage::User(content="Hi", name=None, content_parts=None),
+  ]
   let result = chat_gateway(
     { ..provider, base_url: "https://api.openai.com/v1", api_key: "sk-test" },
     transport,
@@ -116,7 +118,13 @@ async test "chat_gateway: OpenAI CC tool_calls response" {
   let result = chat_gateway(
     { ..provider, base_url: "https://api.openai.com/v1", api_key: "sk-test" },
     transport,
-    [@types.ModelMessage::User(content="weather?", name=None)],
+    [
+      @types.ModelMessage::User(
+        content="weather?",
+        name=None,
+        content_parts=None,
+      ),
+    ],
     [],
     "gpt-4",
   )
@@ -146,7 +154,7 @@ async test "chat_gateway: Anthropic text response via transform pipeline" {
       api_key: "sk-ant-test",
     },
     transport,
-    [@types.ModelMessage::User(content="Hi", name=None)],
+    [@types.ModelMessage::User(content="Hi", name=None, content_parts=None)],
     [],
     "claude-sonnet-4-20250514",
   )
@@ -175,7 +183,13 @@ async test "chat_gateway: Anthropic tool_use response via transform pipeline" {
       api_key: "sk-ant-test",
     },
     transport,
-    [@types.ModelMessage::User(content="search for test", name=None)],
+    [
+      @types.ModelMessage::User(
+        content="search for test",
+        name=None,
+        content_parts=None,
+      ),
+    ],
     [],
     "claude-sonnet-4-20250514",
   )
@@ -204,7 +218,7 @@ async test "chat_gateway: Gemini text response via transform pipeline" {
       api_key: "key",
     },
     transport,
-    [@types.ModelMessage::User(content="Hi", name=None)],
+    [@types.ModelMessage::User(content="Hi", name=None, content_parts=None)],
     [],
     "gemini-pro",
   )
@@ -230,7 +244,7 @@ async test "chat_gateway: Gemini functionCall response via transform pipeline" {
       api_key: "key",
     },
     transport,
-    [@types.ModelMessage::User(content="read", name=None)],
+    [@types.ModelMessage::User(content="read", name=None, content_parts=None)],
     [],
     "gemini-pro",
   )
@@ -255,7 +269,7 @@ async test "chat_gateway: OpenAI Responses API text response" {
   let result = chat_gateway(
     { ..provider, base_url: "https://api.openai.com/v1", api_key: "sk-test" },
     transport,
-    [@types.ModelMessage::User(content="Hi", name=None)],
+    [@types.ModelMessage::User(content="Hi", name=None, content_parts=None)],
     [],
     "gpt-4",
   )
@@ -291,7 +305,13 @@ async test "chat_gateway: Anthropic request includes tools after transform" {
       api_key: "sk-ant-test",
     },
     transport,
-    [@types.ModelMessage::User(content="weather?", name=None)],
+    [
+      @types.ModelMessage::User(
+        content="weather?",
+        name=None,
+        content_parts=None,
+      ),
+    ],
     [tool],
     "claude-sonnet-4-20250514",
   )
@@ -329,7 +349,7 @@ async test "chat_gateway: Gemini request includes tools after transform" {
       api_key: "key",
     },
     transport,
-    [@types.ModelMessage::User(content="search", name=None)],
+    [@types.ModelMessage::User(content="search", name=None, content_parts=None)],
     [tool],
     "gemini-pro",
   )
@@ -366,7 +386,13 @@ async test "chat_gateway: OpenAI CC with tools in request" {
   let result = chat_gateway(
     { ..provider, base_url: "https://api.openai.com/v1", api_key: "sk" },
     transport,
-    [@types.ModelMessage::User(content="weather?", name=None)],
+    [
+      @types.ModelMessage::User(
+        content="weather?",
+        name=None,
+        content_parts=None,
+      ),
+    ],
     [tool],
     "gpt-4",
   )
@@ -390,7 +416,13 @@ async test "chat_gateway: OpenAI Responses API tool_calls response" {
   let result = chat_gateway(
     { ..provider, base_url: "https://api.openai.com/v1", api_key: "sk" },
     transport,
-    [@types.ModelMessage::User(content="weather?", name=None)],
+    [
+      @types.ModelMessage::User(
+        content="weather?",
+        name=None,
+        content_parts=None,
+      ),
+    ],
     [],
     "gpt-4",
   )
@@ -415,7 +447,7 @@ async test "chat_gateway: Anthropic mixed text+tool_use response" {
   let result = chat_gateway(
     { ..provider, base_url: "https://api.anthropic.com", api_key: "sk" },
     transport,
-    [@types.ModelMessage::User(content="search", name=None)],
+    [@types.ModelMessage::User(content="search", name=None, content_parts=None)],
     [],
     "claude",
   )
@@ -441,7 +473,7 @@ async test "chat_gateway: Gemini mixed text+functionCall response" {
       api_key: "k",
     },
     transport,
-    [@types.ModelMessage::User(content="search", name=None)],
+    [@types.ModelMessage::User(content="search", name=None, content_parts=None)],
     [],
     "gemini-pro",
   )
@@ -464,7 +496,7 @@ async test "chat_gateway: 500 raises ApiError" {
   let _result = chat_gateway(
     { ..provider, base_url: "https://api.openai.com/v1", api_key: "sk" },
     transport,
-    [@types.ModelMessage::User(content="Hi", name=None)],
+    [@types.ModelMessage::User(content="Hi", name=None, content_parts=None)],
     [],
     "gpt-4",
   ) catch {
@@ -506,7 +538,7 @@ async test "chat_gateway/multi-tool/openai: 2 tools, names args IDs" {
   let result = chat_gateway(
     { ..provider, base_url: "https://api.openai.com/v1", api_key: "sk" },
     transport,
-    [@types.ModelMessage::User(content="multi", name=None)],
+    [@types.ModelMessage::User(content="multi", name=None, content_parts=None)],
     [],
     "gpt-4o-mini",
   )
@@ -537,7 +569,7 @@ async test "chat_gateway/multi-tool/groq: 2 tools via OpenAI CC" {
   let result = chat_gateway(
     { ..provider, base_url: "https://api.groq.com/openai", api_key: "gsk" },
     transport,
-    [@types.ModelMessage::User(content="multi", name=None)],
+    [@types.ModelMessage::User(content="multi", name=None, content_parts=None)],
     [],
     "llama-3.3-70b-versatile",
   )
@@ -569,7 +601,7 @@ async test "chat_gateway/multi-tool/gemini: 2 tools via transform pipeline" {
       api_key: "k",
     },
     transport,
-    [@types.ModelMessage::User(content="multi", name=None)],
+    [@types.ModelMessage::User(content="multi", name=None, content_parts=None)],
     [],
     "gemini-2.0-flash",
   )
@@ -597,7 +629,13 @@ async test "chat_gateway/multi-tool/anthropic mixed: text + 1 tool via transform
   let result = chat_gateway(
     { ..provider, base_url: "https://api.anthropic.com", api_key: "sk" },
     transport,
-    [@types.ModelMessage::User(content="weather", name=None)],
+    [
+      @types.ModelMessage::User(
+        content="weather",
+        name=None,
+        content_parts=None,
+      ),
+    ],
     [],
     "claude-sonnet-4-20250514",
   )
@@ -622,7 +660,7 @@ async test "chat_gateway: 429 returns RateLimited" {
   let result = chat_gateway(
     { ..provider, base_url: "https://api.openai.com/v1", api_key: "sk-test" },
     transport,
-    [@types.ModelMessage::User(content="Hi", name=None)],
+    [@types.ModelMessage::User(content="Hi", name=None, content_parts=None)],
     [],
     "gpt-4",
   )

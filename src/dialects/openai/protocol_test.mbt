@@ -26,7 +26,11 @@ test "message_to_json converts System message" {
 
 ///|
 test "message_to_json converts User message" {
-  let msg = @types.ModelMessage::User(content="Hello", name=None)
+  let msg = @types.ModelMessage::User(
+    content="Hello",
+    name=None,
+    content_parts=None,
+  )
   let json = message_to_json(msg)
   match json {
     { "role": "user", "content": "Hello", .. } => ()
@@ -136,7 +140,7 @@ test "tool_to_responses_api_json creates web search builtin format" {
 test "build_chat_body creates valid body" {
   let messages = [
     @types.ModelMessage::System("You are helpful"),
-    @types.ModelMessage::User(content="Hello", name=None),
+    @types.ModelMessage::User(content="Hello", name=None, content_parts=None),
   ]
   let tools : Array[@types.ToolDefinition] = []
   let body = build_chat_body(
@@ -163,7 +167,11 @@ test "build_chat_body creates valid body" {
 ///|
 test "build_responses_api_body creates valid body" {
   let messages = [
-    @types.ModelMessage::User(content="What time is it?", name=None),
+    @types.ModelMessage::User(
+      content="What time is it?",
+      name=None,
+      content_parts=None,
+    ),
   ]
   let tools = [
     @types.ToolDefinition::new(name="datetime", description="Get time", parameters={}),
@@ -182,7 +190,13 @@ test "build_responses_api_body creates valid body" {
 
 ///|
 test "build_responses_api_body includes web search builtin tool" {
-  let messages = [@types.ModelMessage::User(content="What's new?", name=None)]
+  let messages = [
+    @types.ModelMessage::User(
+      content="What's new?",
+      name=None,
+      content_parts=None,
+    ),
+  ]
   let tools = [
     @types.ToolDefinition::web_search_preview_2025_03_11(
       search_context_size=Some("medium"),
@@ -325,5 +339,434 @@ test "parse_responses_api_response preserves annotations and web search traces" 
       assert_eq(rich.tool_traces[0].kind, @types.ToolCallKind::WebSearch)
     }
     _ => fail("Expected RichText response")
+  }
+}
+
+///|
+test "message_to_json converts User with content_parts (multimodal)" {
+  let msg = @types.ModelMessage::User(
+    content="What is this?",
+    name=None,
+    content_parts=Some([
+      @types.ContentPart::Text("What is this?"),
+      @types.ContentPart::ImageUrl(
+        url="https://example.com/cat.png",
+        detail=Some("auto"),
+      ),
+    ]),
+  )
+  let json = message_to_json(msg)
+  match json {
+    { "role": "user", "content": Array(parts), .. } => {
+      inspect(parts.length(), content="2")
+      match parts[0] {
+        { "type": "text", "text": "What is this?", .. } => ()
+        _ => fail("Expected text part")
+      }
+      match parts[1] {
+        { "type": "image_url", "image_url": { "url": String(url), .. }, .. } =>
+          inspect(url, content="https://example.com/cat.png")
+        _ => fail("Expected image_url part")
+      }
+    }
+    _ => fail("Expected array content")
+  }
+}
+
+///|
+test "message_to_json converts User with base64 image" {
+  let msg = @types.ModelMessage::User(
+    content="Describe",
+    name=None,
+    content_parts=Some([
+      @types.ContentPart::Text("Describe"),
+      @types.ContentPart::ImageBase64(data="abc123", media_type="image/png"),
+    ]),
+  )
+  let json = message_to_json(msg)
+  match json {
+    { "role": "user", "content": Array(parts), .. } =>
+      match parts[1] {
+        { "type": "image_url", "image_url": { "url": String(url), .. }, .. } =>
+          assert_true(url.has_prefix("data:image/png;base64,"))
+        _ => fail("Expected image_url with data URL")
+      }
+    _ => fail("Expected array content")
+  }
+}
+
+///|
+test "messages_to_responses_input handles multimodal User" {
+  let messages = [
+    @types.ModelMessage::User(
+      content="Look at this",
+      name=None,
+      content_parts=Some([
+        @types.ContentPart::Text("Look at this"),
+        @types.ContentPart::ImageUrl(
+          url="https://example.com/img.jpg",
+          detail=None,
+        ),
+      ]),
+    ),
+  ]
+  let input = messages_to_responses_input(messages)
+  match input[0] {
+    { "role": "user", "content": Array(blocks), .. } => {
+      inspect(blocks.length(), content="2")
+      match blocks[0] {
+        { "type": "input_text", "text": "Look at this", .. } => ()
+        _ => fail("Expected input_text block")
+      }
+      match blocks[1] {
+        { "type": "input_image", "image_url": String(url), .. } =>
+          inspect(url, content="https://example.com/img.jpg")
+        _ => fail("Expected input_image block")
+      }
+    }
+    _ => fail("Expected user with array content")
+  }
+}
+
+///|
+test "parse_responses_api_response handles output_image" {
+  let response : Json = {
+    "output": Json::array([
+      {
+        "type": "message",
+        "role": "assistant",
+        "content": Json::array([
+          { "type": "output_text", "text": "Here is the image:" },
+          {
+            "type": "output_image",
+            "image_url": "https://example.com/generated.png",
+          },
+        ]),
+      },
+    ]),
+  }
+  let result = parse_responses_api_response(response)
+  match result {
+    @types.ModelResponse::RichText(rich) => {
+      inspect(rich.content, content="Here is the image:")
+      match rich.content_parts {
+        Some(parts) => {
+          inspect(parts.length(), content="2")
+          match parts[1] {
+            @types.ResponseContentPart::OutputImage(url~) =>
+              inspect(url, content="https://example.com/generated.png")
+            _ => fail("Expected OutputImage part")
+          }
+        }
+        None => fail("Expected content_parts")
+      }
+    }
+    _ => fail("Expected RichText response")
+  }
+}
+
+///|
+test "parse_responses_api_response handles refusal" {
+  let response : Json = {
+    "output": Json::array([
+      {
+        "type": "message",
+        "role": "assistant",
+        "content": Json::array([
+          { "type": "refusal", "refusal": "I cannot help with that." },
+        ]),
+      },
+    ]),
+  }
+  let result = parse_responses_api_response(response)
+  match result {
+    @types.ModelResponse::RichText(rich) =>
+      match rich.content_parts {
+        Some(parts) =>
+          match parts[0] {
+            @types.ResponseContentPart::Refusal(reason) =>
+              inspect(reason, content="I cannot help with that.")
+            _ => fail("Expected Refusal part")
+          }
+        None => fail("Expected content_parts")
+      }
+    _ => fail("Expected RichText response")
+  }
+}
+
+///|
+test "parse_chat_response handles refusal" {
+  let response : Json = {
+    "choices": Json::array([
+      {
+        "message": {
+          "role": "assistant",
+          "content": Json::null(),
+          "refusal": "I cannot help with that request.",
+        },
+        "finish_reason": "stop",
+      },
+    ]),
+  }
+  let result = parse_chat_response(response)
+  match result {
+    @types.ModelResponse::RichText(rich) =>
+      match rich.content_parts {
+        Some(parts) =>
+          match parts[0] {
+            @types.ResponseContentPart::Refusal(reason) =>
+              inspect(reason, content="I cannot help with that request.")
+            _ => fail("Expected Refusal part")
+          }
+        None => fail("Expected content_parts for refusal")
+      }
+    _ => fail("Expected RichText response for refusal")
+  }
+}
+
+///|
+test "parse_responses_api_response handles reasoning output" {
+  let response : Json = {
+    "output": Json::array([
+      {
+        "type": "reasoning",
+        "content": Json::array([
+          { "type": "text", "text": "Step 1: analyze..." },
+        ]),
+      },
+      {
+        "type": "message",
+        "role": "assistant",
+        "content": Json::array([
+          { "type": "output_text", "text": "The answer is 42." },
+        ]),
+      },
+    ]),
+  }
+  let result = parse_responses_api_response(response)
+  match result {
+    @types.ModelResponse::RichText(rich) => {
+      inspect(rich.content, content="The answer is 42.")
+      match rich.content_parts {
+        Some(parts) => {
+          let mut has_thinking = false
+          let mut has_text = false
+          for part in parts {
+            match part {
+              @types.ResponseContentPart::Thinking(..) => has_thinking = true
+              @types.ResponseContentPart::OutputText(_) => has_text = true
+              _ => ()
+            }
+          }
+          inspect(has_thinking, content="true")
+          inspect(has_text, content="true")
+        }
+        None => fail("Expected content_parts for reasoning")
+      }
+    }
+    _ => fail("Expected RichText response for reasoning")
+  }
+}
+
+///|
+test "message_to_json converts User with audio content_parts" {
+  let msg = @types.ModelMessage::User(
+    content="Transcribe this",
+    name=None,
+    content_parts=Some([
+      @types.ContentPart::Text("Transcribe this"),
+      @types.ContentPart::Audio(data="base64audio", format="wav"),
+    ]),
+  )
+  let json = message_to_json(msg)
+  match json {
+    { "role": "user", "content": Array(parts), .. } => {
+      inspect(parts.length(), content="2")
+      match parts[1] {
+        {
+          "type": "input_audio",
+          "input_audio": { "data": "base64audio", "format": "wav", .. },
+          ..
+        } => ()
+        _ => fail("Expected input_audio part")
+      }
+    }
+    _ => fail("Expected array content")
+  }
+}
+
+///|
+test "reasoning item roundtrip: generate then parse" {
+  // Generate a reasoning item via build_responses_reasoning_item
+  let reasoning_json = build_responses_reasoning_item("Step 1: analyze...")
+  // Wrap in a full response with a message
+  let response : Json = {
+    "output": Json::array([
+      reasoning_json,
+      {
+        "type": "message",
+        "role": "assistant",
+        "content": Json::array([
+          { "type": "output_text", "text": "The answer is 42." },
+        ]),
+      },
+    ]),
+  }
+  // Parse it back
+  let result = parse_responses_api_response(response)
+  match result {
+    @types.ModelResponse::RichText(rich) => {
+      inspect(rich.content, content="The answer is 42.")
+      match rich.content_parts {
+        Some(parts) => {
+          // Should have Thinking (from summary_text) + OutputText
+          let mut thinking_found = false
+          for p in parts {
+            match p {
+              @types.ResponseContentPart::Thinking(text~) => {
+                inspect(text, content="Step 1: analyze...")
+                thinking_found = true
+              }
+              _ => ()
+            }
+          }
+          assert_true(thinking_found)
+        }
+        None => fail("Expected content_parts with reasoning")
+      }
+    }
+    _ => fail("Expected RichText")
+  }
+}
+
+///|
+test "parse_responses_api_response reads reasoning_text from content array" {
+  let response : Json = {
+    "output": Json::array([
+      {
+        "type": "reasoning",
+        "content": Json::array([
+          { "type": "reasoning_text", "text": "Detailed reasoning here" },
+        ]),
+        "summary": Json::array([{ "type": "summary_text", "text": "Summary" }]),
+      },
+      {
+        "type": "message",
+        "role": "assistant",
+        "content": Json::array([{ "type": "output_text", "text": "Done." }]),
+      },
+    ]),
+  }
+  let result = parse_responses_api_response(response)
+  match result {
+    @types.ModelResponse::RichText(rich) =>
+      match rich.content_parts {
+        Some(parts) => {
+          // Should prefer content (reasoning_text) over summary
+          let mut found_detailed = false
+          for p in parts {
+            match p {
+              @types.ResponseContentPart::Thinking(text~) =>
+                if text == "Detailed reasoning here" {
+                  found_detailed = true
+                }
+              _ => ()
+            }
+          }
+          assert_true(found_detailed)
+        }
+        None => fail("Expected content_parts")
+      }
+    _ => fail("Expected RichText")
+  }
+}
+
+///|
+test "messages_to_responses_input handles document via input_file" {
+  let messages = [
+    @types.ModelMessage::User(
+      content="Read this PDF",
+      name=None,
+      content_parts=Some([
+        @types.ContentPart::Text("Read this PDF"),
+        @types.ContentPart::Document(
+          data="base64pdf",
+          media_type="application/pdf",
+          title=Some("report.pdf"),
+        ),
+      ]),
+    ),
+  ]
+  let input = messages_to_responses_input(messages)
+  match input[0] {
+    { "role": "user", "content": Array(blocks), .. } =>
+      match blocks[1] {
+        {
+          "type": "input_file",
+          "file_data": String(data_url),
+          "filename": "report.pdf",
+          ..
+        } => assert_true(data_url.has_prefix("data:application/pdf;base64,"))
+        _ => fail("Expected input_file with file_data")
+      }
+    _ => fail("Expected user with array content")
+  }
+}
+
+///|
+test "Chat Completions document renders as text not image_url" {
+  let msg = @types.ModelMessage::User(
+    content="Read this",
+    name=None,
+    content_parts=Some([
+      @types.ContentPart::Text("Read this"),
+      @types.ContentPart::Document(
+        data="base64pdf",
+        media_type="application/pdf",
+        title=Some("report.pdf"),
+      ),
+    ]),
+  )
+  let json = message_to_json(msg)
+  match json {
+    { "role": "user", "content": Array(parts), .. } =>
+      match parts[1] {
+        { "type": "text", "text": String(t), .. } =>
+          // Should be a text fallback, not image_url
+          assert_true(t.contains("application/pdf"))
+        _ => fail("Expected text fallback for PDF in Chat Completions")
+      }
+    _ => fail("Expected array content")
+  }
+}
+
+///|
+test "Chat Completions text/plain document also gets metadata fallback" {
+  let msg = @types.ModelMessage::User(
+    content="Read this",
+    name=None,
+    content_parts=Some([
+      @types.ContentPart::Text("Read this"),
+      @types.ContentPart::Document(
+        data="SGVsbG8gV29ybGQ=",
+        media_type="text/plain",
+        title=Some("readme.txt"),
+      ),
+    ]),
+  )
+  let json = message_to_json(msg)
+  match json {
+    { "role": "user", "content": Array(parts), .. } =>
+      match parts[1] {
+        { "type": "text", "text": String(t), .. } => {
+          // Should NOT contain raw base64 data
+          assert_true(not(t.contains("SGVsbG8")))
+          // Should contain metadata about the document
+          assert_true(t.contains("text/plain"))
+          assert_true(t.contains("readme.txt"))
+        }
+        _ => fail("Expected text fallback")
+      }
+    _ => fail("Expected array content")
   }
 }

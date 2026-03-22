@@ -155,7 +155,11 @@ test "cross-provider equality: same suffix matches across all providers" {
 ///|
 test "message roundtrip: OpenAI Chat -> Anthropic -> OpenAI Chat" {
   let original_messages = [
-    @types.ModelMessage::User(content="Get weather in Tokyo", name=None),
+    @types.ModelMessage::User(
+      content="Get weather in Tokyo",
+      name=None,
+      content_parts=None,
+    ),
     @types.ModelMessage::Assistant(
       content="",
       tool_calls=Some([

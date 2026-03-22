@@ -11,10 +11,26 @@ pub fn message_to_json(message : @types.ModelMessage) -> Json {
   match message {
     @types.ModelMessage::System(content) =>
       { "role": "system", "content": content }
-    @types.ModelMessage::User(content~, name~) =>
-      match name {
-        Some(n) => { "role": "user", "content": content, "name": n }
-        None => { "role": "user", "content": content }
+    @types.ModelMessage::User(content~, name~, content_parts~) =>
+      match content_parts {
+        Some(parts) => {
+          let anthropic_content = content_parts_to_anthropic_json(parts)
+          match name {
+            Some(n) =>
+              {
+                "role": "user",
+                "content": Json::array(anthropic_content),
+                "name": n,
+              }
+            None =>
+              { "role": "user", "content": Json::array(anthropic_content) }
+          }
+        }
+        None =>
+          match name {
+            Some(n) => { "role": "user", "content": content, "name": n }
+            None => { "role": "user", "content": content }
+          }
       }
     @types.ModelMessage::Assistant(content~, tool_calls~) =>
       match tool_calls {
@@ -53,8 +69,15 @@ pub fn messages_to_json(messages : Array[@types.ModelMessage]) -> Array[Json] {
   for msg in messages {
     match msg {
       @types.ModelMessage::System(_) => ()
-      @types.ModelMessage::User(content~, ..) =>
-        result.push({ "role": "user", "content": content })
+      @types.ModelMessage::User(content~, content_parts~, ..) =>
+        match content_parts {
+          Some(parts) =>
+            result.push({
+              "role": "user",
+              "content": Json::array(content_parts_to_anthropic_json(parts)),
+            })
+          None => result.push({ "role": "user", "content": content })
+        }
       @types.ModelMessage::Assistant(content~, tool_calls~) =>
         match tool_calls {
           Some(calls) if calls.length() > 0 => {
@@ -103,6 +126,73 @@ pub fn extract_system_message(messages : Array[@types.ModelMessage]) -> String {
     }
   }
   ""
+}
+
+///|
+/// Convert ContentPart array to Anthropic content blocks format.
+/// Ref: docs/upstream/anthropic-messages-api.md:80 — TextBlockParam
+/// Ref: docs/upstream/anthropic-messages-api.md:193 — ImageBlockParam
+/// Ref: docs/upstream/anthropic-messages-api.md:250 — DocumentBlockParam
+fn content_parts_to_anthropic_json(
+  parts : Array[@types.ContentPart],
+) -> Array[Json] {
+  let result : Array[Json] = []
+  for part in parts {
+    match part {
+      // Ref: docs/upstream/anthropic-messages-api.md:80
+      //   TextBlockParam = object { text, type, cache_control, citations }
+      @types.ContentPart::Text(text) =>
+        result.push({ "type": "text", "text": text })
+      // Ref: docs/upstream/anthropic-messages-api.md:193
+      //   ImageBlockParam = object { source, type, cache_control }
+      @types.ContentPart::ImageUrl(url~, ..) => {
+        let source : Map[String, Json] = {
+          "type": Json::string("url"),
+          "url": Json::string(url),
+        }
+        result.push({ "type": "image", "source": Json::object(source) })
+      }
+      // Ref: docs/upstream/anthropic-messages-api.md:193 — ImageBlockParam base64 source variant
+      @types.ContentPart::ImageBase64(data~, media_type~) => {
+        let source : Map[String, Json] = {
+          "type": Json::string("base64"),
+          "media_type": Json::string(media_type),
+          "data": Json::string(data),
+        }
+        result.push({ "type": "image", "source": Json::object(source) })
+      }
+      // Anthropic Messages API does not support audio input (not in docs/upstream/anthropic-messages-api.md)
+      @types.ContentPart::Audio(..) => ()
+      // Ref: docs/upstream/anthropic-messages-api.md:250
+      //   DocumentBlockParam = object { source, type, cache_control, context, citations, title }
+      @types.ContentPart::Document(data~, media_type~, title~) => {
+        let source : Map[String, Json] = {
+          "type": Json::string("base64"),
+          "media_type": Json::string(media_type),
+          "data": Json::string(data),
+        }
+        let doc : Map[String, Json] = {
+          "type": Json::string("document"),
+          "source": Json::object(source),
+        }
+        match title {
+          Some(t) => doc["title"] = Json::string(t)
+          None => ()
+        }
+        result.push(Json::object(doc))
+      }
+      // Ref: docs/upstream/anthropic-messages-api.md:250 — DocumentBlockParam file source variant
+      // Ref: docs/upstream/anthropic-files-api.md — Files API file_id reference
+      @types.ContentPart::FileRef(file_id~, ..) =>
+        result.push({
+          "type": "document",
+          "source": { "type": "file", "file_id": file_id },
+        })
+      // Anthropic Messages API does not support video input (not in docs/upstream/anthropic-messages-api.md)
+      @types.ContentPart::Video(..) => ()
+    }
+  }
+  result
 }
 
 // =============================================================================
@@ -205,10 +295,12 @@ pub fn parse_response(response_json : Json) -> @types.ModelResponse {
           return @types.ModelResponse::ToolCalls(tool_calls)
         }
       }
-      // Extract text response
+      // Extract text response and structured content parts
       match content {
         Array(blocks) => {
           let text = StringBuilder::new()
+          let content_parts : Array[@types.ResponseContentPart] = []
+          let mut has_non_text = false
           for block in blocks {
             match block {
               { "type": String("text"), "text": String(t), .. } => {
@@ -216,11 +308,70 @@ pub fn parse_response(response_json : Json) -> @types.ModelResponse {
                   text.write_char('\n')
                 }
                 text.write_string(t)
+                content_parts.push(@types.ResponseContentPart::OutputText(t))
+              }
+              // ThinkingBlock: {"type":"thinking","thinking":"..."}
+              // Ref: docs/upstream/anthropic-messages-api.md:3971-3979 — ThinkingBlock
+              { "type": String("thinking"), "thinking": String(t), .. } => {
+                content_parts.push(@types.ResponseContentPart::Thinking(text=t))
+                has_non_text = true
+              }
+              // RedactedThinkingBlock: {"type":"redacted_thinking","data":"..."}
+              // Ref: docs/upstream/anthropic-messages-api.md:3981 — RedactedThinkingBlock
+              { "type": String("redacted_thinking"), "data": String(d), .. } => {
+                content_parts.push(
+                  @types.ResponseContentPart::RedactedThinking(data=d),
+                )
+                has_non_text = true
+              }
+              // CodeExecutionToolResultBlock: {"type":"code_execution_tool_result","content":{"stdout":"...","stderr":"...","return_code":N}}
+              // Ref: docs/upstream/anthropic-messages-api.md:1911-1977 — CodeExecutionToolResultBlockParam
+              // Ref: docs/upstream/anthropic-code-execution-tool.md:1796-1802 — stdout/stderr/return_code example
+              // Both stdout and stderr may be present; either may be empty.
+              {
+                "type": String("code_execution_tool_result"),
+                "content": content_obj,
+                ..
+              } => {
+                let stdout = match content_obj {
+                  { "stdout": String(s), .. } => s
+                  _ => ""
+                }
+                let stderr = match content_obj {
+                  { "stderr": String(s), .. } => s
+                  _ => ""
+                }
+                let rc = match content_obj {
+                  { "return_code": Number(n, ..), .. } => n.to_int()
+                  _ => -1
+                }
+                let outcome = if rc == 0 { "success" } else { "failed" }
+                // Combine stdout and stderr; include both when available
+                let output = if stdout.length() > 0 && stderr.length() > 0 {
+                  "\{stdout}\n[stderr]\n\{stderr}"
+                } else if stderr.length() > 0 {
+                  "[stderr]\n\{stderr}"
+                } else {
+                  stdout
+                }
+                content_parts.push(
+                  @types.ResponseContentPart::CodeResult(outcome~, output~),
+                )
+                has_non_text = true
               }
               _ => ()
             }
           }
-          @types.ModelResponse::Text(text.to_string())
+          if has_non_text {
+            @types.ModelResponse::RichText(
+              @types.RichTextResponse::new(
+                content=text.to_string(),
+                content_parts=Some(content_parts),
+              ),
+            )
+          } else {
+            @types.ModelResponse::Text(text.to_string())
+          }
         }
         _ => @types.ModelResponse::ModelError("Invalid content format")
       }

@@ -189,6 +189,146 @@ test "responses_input_to_messages: multiple parallel tool calls" {
   }
 }
 
+///|
+test "responses_input_to_messages preserves image content_parts" {
+  let input : Array[Json] = [
+    {
+      "role": "user",
+      "content": Json::array([
+        { "type": "input_text", "text": "What is in this image?" },
+        {
+          "type": "input_image",
+          "image_url": "https://example.com/cat.png",
+          "detail": "auto",
+        },
+      ]),
+    },
+  ]
+  let messages = responses_input_to_messages(input)
+  inspect(messages.length(), content="1")
+  match messages[0] {
+    @types.ModelMessage::User(content~, content_parts~, ..) => {
+      // text content is extracted
+      inspect(content, content="What is in this image?")
+      // content_parts should contain both text and image
+      match content_parts {
+        Some(parts) => {
+          inspect(parts.length(), content="2")
+          match parts[0] {
+            @types.ContentPart::Text(t) =>
+              inspect(t, content="What is in this image?")
+            _ => fail("Expected Text part")
+          }
+          match parts[1] {
+            @types.ContentPart::ImageUrl(url~, ..) =>
+              inspect(url, content="https://example.com/cat.png")
+            _ => fail("Expected ImageUrl part")
+          }
+        }
+        None => fail("Expected content_parts for multimodal input")
+      }
+    }
+    _ => fail("Expected User message")
+  }
+}
+
+///|
+test "responses_input_to_messages with base64 image" {
+  let input : Array[Json] = [
+    {
+      "role": "user",
+      "content": Json::array([
+        { "type": "input_text", "text": "Describe" },
+        { "type": "input_image", "image_url": "data:image/png;base64,iVBOR" },
+      ]),
+    },
+  ]
+  let messages = responses_input_to_messages(input)
+  match messages[0] {
+    @types.ModelMessage::User(content_parts=Some(parts), ..) => {
+      inspect(parts.length(), content="2")
+      match parts[1] {
+        @types.ContentPart::ImageBase64(data~, media_type~) => {
+          inspect(media_type, content="image/png")
+          inspect(data, content="iVBOR")
+        }
+        _ => fail("Expected ImageBase64 part")
+      }
+    }
+    _ => fail("Expected User with content_parts")
+  }
+}
+
+///|
+test "responses_input_to_messages text-only returns None content_parts" {
+  let input : Array[Json] = [{ "role": "user", "content": "Hello" }]
+  let messages = responses_input_to_messages(input)
+  match messages[0] {
+    @types.ModelMessage::User(content_parts=None, ..) => ()
+    _ => fail("Expected None content_parts for text-only")
+  }
+}
+
+///|
+test "responses_input_to_messages parses input_file with file_data" {
+  let input : Array[Json] = [
+    {
+      "role": "user",
+      "content": Json::array([
+        { "type": "input_text", "text": "Read this PDF" },
+        {
+          "type": "input_file",
+          "file_data": "data:application/pdf;base64,JVBERi0",
+          "filename": "report.pdf",
+        },
+      ]),
+    },
+  ]
+  let messages = responses_input_to_messages(input)
+  match messages[0] {
+    @types.ModelMessage::User(content_parts=Some(parts), ..) => {
+      inspect(parts.length(), content="2")
+      match parts[1] {
+        @types.ContentPart::Document(data~, media_type~, title~) => {
+          inspect(media_type, content="application/pdf")
+          inspect(data, content="JVBERi0")
+          inspect(title, content="Some(\"report.pdf\")")
+        }
+        _ => fail("Expected Document from input_file.file_data")
+      }
+    }
+    _ => fail("Expected User with content_parts")
+  }
+}
+
+///|
+test "responses_input_to_messages parses input_file video file_data" {
+  let input : Array[Json] = [
+    {
+      "role": "user",
+      "content": Json::array([
+        { "type": "input_text", "text": "Describe this video" },
+        {
+          "type": "input_file",
+          "file_data": "data:video/mp4;base64,AAAAIGZ0eXA",
+        },
+      ]),
+    },
+  ]
+  let messages = responses_input_to_messages(input)
+  match messages[0] {
+    @types.ModelMessage::User(content_parts=Some(parts), ..) =>
+      match parts[1] {
+        @types.ContentPart::Video(data~, media_type~) => {
+          inspect(media_type, content="video/mp4")
+          inspect(data, content="AAAAIGZ0eXA")
+        }
+        _ => fail("Expected Video from input_file.file_data with video mime")
+      }
+    _ => fail("Expected User with content_parts")
+  }
+}
+
 // =============================================================================
 // ModelResponse -> Responses API JSON Tests
 // =============================================================================
@@ -333,6 +473,101 @@ test "model_response_to_responses_json: rich text preserves annotations and web 
         _ => fail("Expected message output")
       }
     }
+    _ => fail("Expected valid response JSON")
+  }
+}
+
+///|
+test "model_response_to_responses_json: rich text annotations stay on their text segment" {
+  let response = @types.ModelResponse::RichText(
+    @types.RichTextResponse::new(
+      content="FirstSecond",
+      content_parts=Some([
+        @types.ResponseContentPart::OutputText("First"),
+        @types.ResponseContentPart::OutputImage(
+          url="https://example.com/generated.png",
+        ),
+        @types.ResponseContentPart::OutputText("Second"),
+      ]),
+      annotations=[
+        @types.ResponseAnnotation::url_citation(
+          url="https://example.com/first",
+          start_index=0,
+          end_index=5,
+          title=Some("First Source"),
+        ),
+        @types.ResponseAnnotation::url_citation(
+          url="https://example.com/second",
+          start_index=5,
+          end_index=11,
+          title=Some("Second Source"),
+        ),
+      ],
+    ),
+  )
+  let json = model_response_to_responses_json(
+    response,
+    response_id=test_response_id,
+    model=test_model,
+  )
+  match json {
+    { "output": Array(output), .. } =>
+      match output[0] {
+        { "type": String("message"), "content": Array(content_arr), .. } => {
+          assert_eq(content_arr.length(), 3)
+          match content_arr[0] {
+            {
+              "type": String("output_text"),
+              "annotations": Array(annotations),
+              ..
+            } => {
+              assert_eq(annotations.length(), 1)
+              match annotations[0] {
+                {
+                  "url": String(url),
+                  "start_index": Number(start, ..),
+                  "end_index": Number(end_, ..),
+                  ..
+                } => {
+                  assert_eq(url, "https://example.com/first")
+                  assert_eq(start.to_int(), 0)
+                  assert_eq(end_.to_int(), 5)
+                }
+                _ => fail("Expected first annotation")
+              }
+            }
+            _ => fail("Expected first output_text")
+          }
+          match content_arr[1] {
+            { "type": String("output_image"), .. } => ()
+            _ => fail("Expected output_image")
+          }
+          match content_arr[2] {
+            {
+              "type": String("output_text"),
+              "annotations": Array(annotations),
+              ..
+            } => {
+              assert_eq(annotations.length(), 1)
+              match annotations[0] {
+                {
+                  "url": String(url),
+                  "start_index": Number(start, ..),
+                  "end_index": Number(end_, ..),
+                  ..
+                } => {
+                  assert_eq(url, "https://example.com/second")
+                  assert_eq(start.to_int(), 5)
+                  assert_eq(end_.to_int(), 11)
+                }
+                _ => fail("Expected second annotation")
+              }
+            }
+            _ => fail("Expected second output_text")
+          }
+        }
+        _ => fail("Expected message output")
+      }
     _ => fail("Expected valid response JSON")
   }
 }

@@ -45,17 +45,33 @@ pub fn build_tools_list_result(
 }
 
 ///|
-/// Build MCP tools/call success result with text content.
+/// Build MCP tools/call result with text content (convenience wrapper).
 pub fn build_tools_call_result(
   id : Int,
   text : String,
   is_error : Bool,
 ) -> String {
-  let content_item : Map[String, Json] = {}
-  content_item["type"] = Json::string("text")
-  content_item["text"] = Json::string(text)
+  build_tools_call_result_from_items(
+    id,
+    [@mcp.McpContentItem::Text(text)],
+    is_error,
+  )
+}
+
+///|
+/// Build MCP tools/call result with arbitrary content items.
+/// Ref: https://modelcontextprotocol.io/specification/2025-03-26/server/tools — Tool Result
+pub fn build_tools_call_result_from_items(
+  id : Int,
+  items : Array[@mcp.McpContentItem],
+  is_error : Bool,
+) -> String {
+  let content_jsons : Array[Json] = []
+  for item in items {
+    content_jsons.push(item.to_json())
+  }
   let result : Map[String, Json] = {}
-  result["content"] = Json::array([Json::object(content_item)])
+  result["content"] = Json::array(content_jsons)
   if is_error {
     result["isError"] = true.to_json()
   }

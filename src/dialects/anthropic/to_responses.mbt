@@ -35,10 +35,58 @@ fn build_responses_output_from_anthropic(
 ) -> Array[Json] {
   let tool_outputs : Array[Json] = []
   let text_parts : Array[Json] = []
+  // Anthropic content blocks → Responses API output items
+  // Ref: https://platform.claude.com/docs/en/api/messages
+  //   TextBlock → output_text
+  //   ThinkingBlock → reasoning (Ref: ResponseReasoningItem)
+  //   RedactedThinkingBlock → not representable in Responses API, skipped
+  //   ToolUseBlock → function_call / web_search_call
+  //   CodeExecutionToolResultBlock → output_text (text representation)
+  let reasoning_outputs : Array[Json] = []
   for block in content_blocks {
     match block {
+      // Ref: TextBlock — {"type":"text","text":"..."} → output_text
       { "type": String("text"), "text": String(text), .. } =>
         text_parts.push({ "type": "output_text", "text": text })
+      // ThinkingBlock: {"type":"thinking","thinking":"...","signature":"..."}
+      // Ref: docs/upstream/anthropic-messages-api.md:3971-3979
+      //   ThinkingBlock = object { signature, thinking, type }
+      { "type": String("thinking"), "thinking": String(thinking_text), .. } =>
+        reasoning_outputs.push(
+          @openai.build_responses_reasoning_item(thinking_text),
+        )
+      // RedactedThinkingBlock: no Responses API equivalent
+      { "type": String("redacted_thinking"), .. } => ()
+      // CodeExecutionToolResultBlock
+      // Ref: docs/upstream/anthropic-messages-api.md:1911-1977
+      //   CodeExecutionToolResultBlockParam = object { content, tool_use_id, type }
+      // Ref: docs/upstream/anthropic-code-execution-tool.md:1796-1802
+      //   {"type":"bash_code_execution_tool_result","content":{"stdout":"...","stderr":"","return_code":0}}
+      {
+        "type": String("code_execution_tool_result"),
+        "content": content_obj,
+        ..
+      } => {
+        let stdout = match content_obj {
+          { "stdout": String(s), .. } => s
+          _ => ""
+        }
+        let stderr = match content_obj {
+          { "stderr": String(s), .. } => s
+          _ => ""
+        }
+        let output = if stdout.length() > 0 && stderr.length() > 0 {
+          "Code execution output:\n\{stdout}\n[stderr]\n\{stderr}"
+        } else if stderr.length() > 0 {
+          "Code execution [stderr]:\n\{stderr}"
+        } else if stdout.length() > 0 {
+          "Code execution output:\n\{stdout}"
+        } else {
+          "Code execution completed (no output)"
+        }
+        text_parts.push({ "type": "output_text", "text": output })
+      }
+      // ToolUseBlock: {"type":"tool_use","id":"...","name":"...","input":{}}
       {
         "type": String("tool_use"),
         "id": String(id),
@@ -60,7 +108,11 @@ fn build_responses_output_from_anthropic(
       _ => ()
     }
   }
-  @openai.assemble_responses_output(text_parts, tool_outputs)
+  @openai.assemble_responses_output(
+    text_parts,
+    tool_outputs,
+    reasoning_outputs~,
+  )
 }
 
 ///|

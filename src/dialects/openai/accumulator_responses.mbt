@@ -1,15 +1,43 @@
 ///|
 /// OpenAI/Groq Responses API stream accumulator
+///
+/// SSE event flow (Ref: docs/upstream/openai-responses-create.md:13556-13584):
+///   response.created → response.in_progress
+///   → response.output_item.added (message/reasoning/function_call/web_search_call)
+///   → response.content_part.added (empty shell — text:"", annotations:[])
+///     Ref: docs/upstream/openai-responses-create.md:13566-13567
+///   → response.output_text.delta / response.refusal.delta (incremental text)
+///   → response.content_part.done (completed part with final text)
+///     Ref: docs/upstream/openai-responses-create.md:13577-13578
+///   → response.output_item.done (completed item containing all content parts)
+///     Ref: docs/upstream/openai-responses-create.md:13580-13581
+///   → response.completed
+///
+/// content_part.added is an empty shell (text:""), NOT the final content.
+/// content_part.done and output_item.done both carry the completed content.
+/// To avoid double-counting, structured content parts (refusal, output_image)
+/// are extracted exclusively from output_item.done.
+///
+/// NOTE: output_image is not present in the vendored snapshot
+/// (docs/upstream/openai-responses-create.md). Its structure is inferred from
+/// the ResponseOutputMessage schema at line 336 ("content: array of
+/// ResponseOutputText or ResponseOutputRefusal") and runtime payloads from
+/// image generation models. If the snapshot is updated to include output_image
+/// examples, this comment should be revised with exact line references.
 
 ///|
 /// OpenAI/Groq Responses API stream accumulator
-/// Accumulates response.output_text.delta, response.function_call_arguments.delta, etc.
 pub struct ResponsesApiAccumulator {
   text : StringBuilder
+  /// Refusal delta accumulator — used only if output_item.done lacks refusal
+  refusal : StringBuilder
   annotations : Array[@types.ResponseAnnotation]
   function_calls : Array[@types.ToolCallAcc]
   output_index_map : Map[String, Int]
   web_search_traces : Array[WebSearchTraceAcc]
+  /// Structured content parts extracted from output_item.done (authoritative)
+  content_parts : Array[@types.ResponseContentPart]
+  mut has_non_text : Bool
   mut completed : Bool
 }
 
@@ -25,10 +53,13 @@ struct WebSearchTraceAcc {
 pub fn ResponsesApiAccumulator::new() -> ResponsesApiAccumulator {
   {
     text: StringBuilder::new(),
+    refusal: StringBuilder::new(),
     annotations: [],
     function_calls: [],
     output_index_map: {},
     web_search_traces: [],
+    content_parts: [],
+    has_non_text: false,
     completed: false,
   }
 }
@@ -40,11 +71,48 @@ pub fn ResponsesApiAccumulator::feed(
   event : @sse.SseEvent,
 ) -> Unit {
   match event.event {
+    // --- Delta events: accumulate text incrementally ---
+    // Ref: docs/upstream/openai-responses-create.md:13569
     "response.output_text.delta" =>
       match event.data {
         { "delta": String(delta), .. } => self.text.write_string(delta)
         _ => ()
       }
+    // Ref: docs/upstream/openai-responses-create.md:13569 (refusal variant)
+    "response.refusal.delta" =>
+      match event.data {
+        { "delta": String(delta), .. } => self.refusal.write_string(delta)
+        _ => ()
+      }
+    "response.refusal.done" => ()
+    // --- Annotation events ---
+    "response.output_text.annotation.added" =>
+      match event.data {
+        { "annotation": annotation, .. } =>
+          push_annotations(self.annotations, parse_annotations(annotation))
+        _ => ()
+      }
+    // --- Function call delta ---
+    "response.function_call_arguments.delta" =>
+      match event.data {
+        { "delta": String(delta), .. } =>
+          if self.function_calls.length() > 0 {
+            let call_index = match event.data {
+              { "output_index": Number(output_index, ..), .. } =>
+                self.output_index_map.get(output_index.to_int().to_string())
+              _ => None
+            }
+            match call_index {
+              Some(i) => self.function_calls[i].arguments.write_string(delta)
+              None =>
+                self.function_calls[self.function_calls.length() - 1].arguments.write_string(
+                  delta,
+                )
+            }
+          }
+        _ => ()
+      }
+    // --- output_item.added: set up tracking for new items ---
     "response.output_item.added" =>
       match event.data {
         {
@@ -77,31 +145,7 @@ pub fn ResponsesApiAccumulator::feed(
         }
         _ => ()
       }
-    "response.output_text.annotation.added" =>
-      match event.data {
-        { "annotation": annotation, .. } =>
-          push_annotations(self.annotations, parse_annotations(annotation))
-        _ => ()
-      }
-    "response.function_call_arguments.delta" =>
-      match event.data {
-        { "delta": String(delta), .. } =>
-          if self.function_calls.length() > 0 {
-            let call_index = match event.data {
-              { "output_index": Number(output_index, ..), .. } =>
-                self.output_index_map.get(output_index.to_int().to_string())
-              _ => None
-            }
-            match call_index {
-              Some(i) => self.function_calls[i].arguments.write_string(delta)
-              None =>
-                self.function_calls[self.function_calls.length() - 1].arguments.write_string(
-                  delta,
-                )
-            }
-          }
-        _ => ()
-      }
+    // --- Web search status events ---
     "response.web_search_call.in_progress" =>
       match event.data {
         { "item_id": String(item_id), .. } =>
@@ -129,6 +173,11 @@ pub fn ResponsesApiAccumulator::feed(
           )
         _ => ()
       }
+    // --- output_item.done: authoritative final snapshot ---
+    // content_part.added is an empty shell (line 13567), content_part.done has the
+    // completed part (line 13578), and output_item.done has all parts (line 13581).
+    // We use output_item.done as the authoritative ordered list of message parts.
+    // Ref: docs/upstream/openai-responses-create.md:13580-13581
     "response.output_item.done" =>
       match event.data {
         {
@@ -204,24 +253,126 @@ pub fn ResponsesApiAccumulator::feed(
             )
           }
         }
+        // Ref: ResponseOutputMessage — extract refusal, output_image from content
+        // Ref: docs/upstream/openai-responses-create.md:13580
         {
           "item": { "type": String("message"), "content": Array(contents), .. },
           ..
-        } =>
+        } => {
+          let message_parts : Array[@types.ResponseContentPart] = []
+          let mut saw_output_text = false
           for content in contents {
             match content {
-              { "type": String("output_text"), "annotations": Array(items), .. } =>
-                push_annotations(
-                  self.annotations,
-                  parse_annotation_array(items),
+              { "type": String("output_text"), "text": String(text), .. } => {
+                saw_output_text = true
+                if text.length() > 0 {
+                  message_parts.push(
+                    @types.ResponseContentPart::OutputText(text),
+                  )
+                }
+                match content {
+                  { "annotations": Array(items), .. } =>
+                    push_annotations(
+                      self.annotations,
+                      parse_annotation_array(items),
+                    )
+                  _ => ()
+                }
+              }
+              // Ref: docs/upstream/openai-responses-create.md:470-482 — ResponseOutputRefusal
+              { "type": String("refusal"), "refusal": String(reason), .. } =>
+                message_parts.push(@types.ResponseContentPart::Refusal(reason))
+              // NOTE: output_image is not in vendored snapshot; inferred from
+              // ResponseOutputMessage schema (line 336) and runtime payloads
+              { "type": String("output_image"), "image_url": String(url), .. } =>
+                message_parts.push(
+                  @types.ResponseContentPart::OutputImage(url~),
                 )
               _ => ()
             }
           }
+          if saw_output_text {
+            // output_item.done carries the final text segments in order, so the
+            // delta buffer is only needed as a fallback when that snapshot is absent.
+            self.text.reset()
+          }
+          for part in message_parts {
+            match part {
+              @types.ResponseContentPart::Refusal(_)
+              | @types.ResponseContentPart::OutputImage(..) =>
+                self.has_non_text = true
+              _ => ()
+            }
+            self.content_parts.push(part)
+          }
+        }
+        // Ref: ResponseReasoningItem — extract thinking from summary/content
+        // Ref: docs/upstream/openai-responses-create.md:2459-2497
+        //   summary: array of SummaryTextContent (line 2459)
+        //   content: optional array of {text, type:"reasoning_text"} (line 2479-2489)
+        { "item": { "type": String("reasoning"), .. } as item, .. } => {
+          let mut found = false
+          // Prefer content array (detailed reasoning_text)
+          match item {
+            { "content": Array(content_blocks), .. } =>
+              for cblock in content_blocks {
+                match cblock {
+                  { "type": String("reasoning_text"), "text": String(t), .. } => {
+                    self.content_parts.push(
+                      @types.ResponseContentPart::Thinking(text=t),
+                    )
+                    self.has_non_text = true
+                    found = true
+                  }
+                  _ => ()
+                }
+              }
+            _ => ()
+          }
+          // Fallback to summary array
+          if not(found) {
+            match item {
+              { "summary": Array(summary_blocks), .. } =>
+                for sblock in summary_blocks {
+                  match sblock {
+                    { "type": String("summary_text"), "text": String(t), .. } => {
+                      self.content_parts.push(
+                        @types.ResponseContentPart::Thinking(text=t),
+                      )
+                      self.has_non_text = true
+                    }
+                    _ => ()
+                  }
+                }
+              _ => ()
+            }
+          }
+        }
         _ => ()
       }
+    // --- content_part.added/done: NOT used for content_parts extraction ---
+    // content_part.added is an empty shell (line 13567: text:"", annotations:[]).
+    // content_part.done has the completed part (line 13578) but output_item.done
+    // (line 13581) also includes it, so we skip both to avoid double-counting.
+    // Ref: docs/upstream/openai-responses-create.md:13566-13578
+    "response.content_part.added" | "response.content_part.done" => ()
+    // --- Reasoning delta: no-op, captured on output_item.done ---
+    "response.reasoning_summary_text.delta"
+    | "response.reasoning_summary_text.done" => ()
+    "response.output_text.done" => ()
     "response.completed" => self.completed = true
-    _ => () // reasoning, content_part, ping, etc.
+    _ => () // response.created, response.in_progress, ping, etc.
+  }
+}
+
+///|
+/// Flush accumulated text into content_parts, preserving interleaving order
+/// with non-text parts (images, refusals). Resets the text buffer.
+fn ResponsesApiAccumulator::flush_text(self : ResponsesApiAccumulator) -> Unit {
+  let text_str = self.text.to_string()
+  if text_str.length() > 0 {
+    self.content_parts.push(@types.ResponseContentPart::OutputText(text_str))
+    self.text.reset()
   }
 }
 
@@ -230,20 +381,55 @@ pub fn ResponsesApiAccumulator::feed(
 pub fn ResponsesApiAccumulator::finish(
   self : ResponsesApiAccumulator,
 ) -> @types.ModelResponse {
+  // Flush any remaining text into content_parts (preserves interleaving order)
+  self.flush_text()
+  // Reconstruct full text for the content field (concatenate all OutputText parts)
+  let full_text = StringBuilder::new()
+  for p in self.content_parts {
+    match p {
+      @types.ResponseContentPart::OutputText(t) => full_text.write_string(t)
+      _ => ()
+    }
+  }
+  let text_str = full_text.to_string()
+  // If refusal was accumulated via delta but NOT captured by output_item.done,
+  // add it as a fallback. This handles edge cases where output_item.done
+  // arrives without the message content (e.g. incomplete streams).
+  let refusal_str = self.refusal.to_string()
+  if refusal_str.length() > 0 {
+    let mut already_has_refusal = false
+    for p in self.content_parts {
+      match p {
+        @types.ResponseContentPart::Refusal(_) => {
+          already_has_refusal = true
+          break
+        }
+        _ => ()
+      }
+    }
+    if not(already_has_refusal) {
+      self.content_parts.push(@types.ResponseContentPart::Refusal(refusal_str))
+      self.has_non_text = true
+    }
+  }
   if self.function_calls.length() > 0 {
     @types.ModelResponse::ToolCalls(
       @types.tool_calls_to_requests(self.function_calls),
     )
-  } else if self.annotations.length() > 0 || self.web_search_traces.length() > 0 {
+  } else if self.has_non_text ||
+    self.annotations.length() > 0 ||
+    self.web_search_traces.length() > 0 {
+    let parts = if self.has_non_text { Some(self.content_parts) } else { None }
     @types.ModelResponse::RichText(
       @types.RichTextResponse::new(
-        content=self.text.to_string(),
+        content=text_str,
+        content_parts=parts,
         annotations=self.annotations,
         tool_traces=self.web_search_traces.map(web_search_trace_to_public),
       ),
     )
   } else {
-    @types.ModelResponse::Text(self.text.to_string())
+    @types.ModelResponse::Text(text_str)
   }
 }
 
@@ -332,6 +518,8 @@ fn push_annotations(
   incoming : Array[@types.ResponseAnnotation],
 ) -> Unit {
   for annotation in incoming {
-    target.push(annotation)
+    if not(target.contains(annotation)) {
+      target.push(annotation)
+    }
   }
 }

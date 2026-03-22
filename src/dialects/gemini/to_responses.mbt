@@ -56,10 +56,18 @@ fn build_responses_output_from_gemini(parts : Array[Json]) -> Array[Json] {
   let tool_outputs : Array[Json] = []
   let text_parts : Array[Json] = []
   let mut call_index = 0
+  // Gemini parts → Responses API output items
+  // Ref: https://ai.google.dev/api/generate-content — Part types
+  //   text → output_text
+  //   functionCall → function_call
+  //   executableCode → output_text (code block)
+  //   codeExecutionResult → output_text (execution result)
   for part in parts {
     match part {
+      // Ref: Part.text — {"text":"..."} → output_text
       { "text": String(text), .. } =>
         text_parts.push({ "type": "output_text", "text": text })
+      // Ref: Part.functionCall — {"functionCall":{"name":"...","args":{...}}} → function_call
       { "functionCall": { "name": String(name), "args": args, .. }, .. } => {
         let gemini_id = @interop_util.generate_gemini_tool_call_id(
           name, call_index,
@@ -78,6 +86,30 @@ fn build_responses_output_from_gemini(parts : Array[Json]) -> Array[Json] {
         }
         call_index = call_index + 1
       }
+      // NOTE: executableCode not in vendored snapshot; inferred from runtime API
+      // Structure: {"executableCode":{"language":"PYTHON","code":"..."}}
+      {
+        "executableCode": { "language": String(lang), "code": String(code), .. },
+        ..
+      } =>
+        text_parts.push({
+          "type": "output_text",
+          "text": "```\{lang.to_lower()}\n\{code}\n```",
+        })
+      // NOTE: codeExecutionResult not in vendored snapshot; inferred from runtime API
+      // Structure: {"codeExecutionResult":{"outcome":"OUTCOME_OK","output":"..."}}
+      {
+        "codeExecutionResult": {
+          "outcome": String(outcome),
+          "output": String(output),
+          ..
+        },
+        ..
+      } =>
+        text_parts.push({
+          "type": "output_text",
+          "text": "Execution [\{outcome}]: \{output}",
+        })
       _ => ()
     }
   }

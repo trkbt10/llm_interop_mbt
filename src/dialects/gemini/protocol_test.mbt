@@ -7,7 +7,11 @@
 
 ///|
 test "message_to_content converts User message" {
-  let msg = @types.ModelMessage::User(content="Hello Gemini", name=None)
+  let msg = @types.ModelMessage::User(
+    content="Hello Gemini",
+    name=None,
+    content_parts=None,
+  )
   match message_to_content(msg) {
     Some(content) => {
       inspect(content.role, content="user")
@@ -15,6 +19,32 @@ test "message_to_content converts User message" {
       match content.parts[0] {
         GeminiPart::Text(t) => inspect(t, content="Hello Gemini")
         _ => fail("Expected Text part")
+      }
+    }
+    None => fail("Expected Some content")
+  }
+}
+
+///|
+test "message_to_content converts ImageUrl to text placeholder" {
+  let msg = @types.ModelMessage::User(
+    content="",
+    name=None,
+    content_parts=Some([
+      @types.ContentPart::ImageUrl(
+        url="https://example.com/cat.png",
+        detail=None,
+      ),
+    ]),
+  )
+  match message_to_content(msg) {
+    Some(content) => {
+      inspect(content.role, content="user")
+      inspect(content.parts.length(), content="1")
+      match content.parts[0] {
+        GeminiPart::Text(text) =>
+          inspect(text, content="[Image: https://example.com/cat.png]")
+        _ => fail("Expected Text placeholder")
       }
     }
     None => fail("Expected Some content")
@@ -122,7 +152,13 @@ test "tools_to_json wraps in functionDeclarations" {
 
 ///|
 test "build_body creates valid body" {
-  let messages = [@types.ModelMessage::User(content="Calculate 2+2", name=None)]
+  let messages = [
+    @types.ModelMessage::User(
+      content="Calculate 2+2",
+      name=None,
+      content_parts=None,
+    ),
+  ]
   let tools = [
     @types.ToolDefinition::new(name="calculator", description="Math", parameters={}),
   ]
@@ -215,4 +251,187 @@ test "parse_response handles safety block" {
     @types.ModelResponse::ModelError(msg) => assert_true(msg.contains("safety"))
     _ => fail("Expected ModelError response")
   }
+}
+
+///|
+test "parse_response handles code execution output" {
+  let response : Json = {
+    "candidates": Json::array([
+      {
+        "content": {
+          "role": "model",
+          "parts": Json::array([
+            { "text": "Let me calculate that." },
+            {
+              "executableCode": { "language": "python", "code": "print(2 + 2)" },
+            },
+            {
+              "codeExecutionResult": {
+                "outcome": "OUTCOME_OK",
+                "output": "4\n",
+              },
+            },
+            { "text": "The answer is 4." },
+          ]),
+        },
+      },
+    ]),
+  }
+  let result = parse_response(response)
+  match result {
+    @types.ModelResponse::RichText(rich) => {
+      inspect(
+        rich.content.contains("Let me calculate") &&
+        rich.content.contains("answer is 4"),
+        content="true",
+      )
+      match rich.content_parts {
+        Some(parts) => {
+          inspect(parts.length(), content="4")
+          match parts[1] {
+            @types.ResponseContentPart::CodeExecution(language~, code~) => {
+              inspect(language, content="python")
+              inspect(code, content="print(2 + 2)")
+            }
+            _ => fail("Expected CodeExecution")
+          }
+          match parts[2] {
+            @types.ResponseContentPart::CodeResult(outcome~, output~) => {
+              inspect(outcome, content="OUTCOME_OK")
+              inspect(output, content="4\n")
+            }
+            _ => fail("Expected CodeResult")
+          }
+        }
+        None => fail("Expected content_parts")
+      }
+    }
+    _ => fail("Expected RichText response")
+  }
+}
+
+///|
+test "message_to_content handles audio content_parts" {
+  let msg = @types.ModelMessage::User(
+    content="Transcribe this audio",
+    name=None,
+    content_parts=Some([
+      @types.ContentPart::Text("Transcribe this audio"),
+      @types.ContentPart::Audio(data="base64audio", format="wav"),
+    ]),
+  )
+  match message_to_content(msg) {
+    Some(content) => {
+      inspect(content.parts.length(), content="2")
+      match content.parts[1] {
+        GeminiPart::InlineData(mime_type~, data~) => {
+          inspect(mime_type, content="audio/wav")
+          inspect(data, content="base64audio")
+        }
+        _ => fail("Expected InlineData for audio")
+      }
+    }
+    None => fail("Expected content")
+  }
+}
+
+///|
+test "message_to_content handles document content_parts" {
+  let msg = @types.ModelMessage::User(
+    content="Summarize this PDF",
+    name=None,
+    content_parts=Some([
+      @types.ContentPart::Text("Summarize this PDF"),
+      @types.ContentPart::Document(
+        data="base64pdf",
+        media_type="application/pdf",
+        title=Some("report.pdf"),
+      ),
+    ]),
+  )
+  match message_to_content(msg) {
+    Some(content) => {
+      inspect(content.parts.length(), content="2")
+      match content.parts[1] {
+        GeminiPart::InlineData(mime_type~, data~) => {
+          inspect(mime_type, content="application/pdf")
+          inspect(data, content="base64pdf")
+        }
+        _ => fail("Expected InlineData for document")
+      }
+    }
+    None => fail("Expected content")
+  }
+}
+
+///|
+test "parse_stream_chunk extracts executableCode and codeExecutionResult" {
+  let chunk : Json = {
+    "candidates": Json::array([
+      {
+        "content": {
+          "role": "model",
+          "parts": Json::array([
+            { "text": "Let me calculate." },
+            { "executableCode": { "language": "PYTHON", "code": "print(2+2)" } },
+            {
+              "codeExecutionResult": {
+                "outcome": "OUTCOME_OK",
+                "output": "4\n",
+              },
+            },
+          ]),
+        },
+      },
+    ]),
+  }
+  match parse_stream_chunk(chunk) {
+    Some((text, _calls)) => {
+      assert_true(text.contains("Let me calculate"))
+      assert_true(text.contains("```python"))
+      assert_true(text.contains("print(2+2)"))
+      assert_true(text.contains("OUTCOME_OK"))
+      assert_true(text.contains("4"))
+    }
+    None => fail("Expected parsed chunk")
+  }
+}
+
+///|
+test "GeminiToResponsesTranslator handles SAFETY finishReason" {
+  let translator = GeminiToResponsesTranslator::new(
+    response_id="resp_safety_test",
+    model="gemini-2.0-flash",
+  )
+  let safety_event : @sse.SseEvent = {
+    event: "data",
+    data: {
+      "candidates": Json::array([
+        {
+          "finishReason": "SAFETY",
+          "content": { "role": "model", "parts": Json::array([]) },
+        },
+      ]),
+    },
+  }
+  let events = translator.translate(safety_event)
+  let mut found_completed = false
+  for e in events {
+    match e {
+      ("response.completed", data) =>
+        match data {
+          {
+            "response": {
+              "status": String("failed"),
+              "error": { "type": String("content_filter"), .. },
+              ..
+            },
+            ..
+          } => found_completed = true
+          _ => ()
+        }
+      _ => ()
+    }
+  }
+  assert_true(found_completed)
 }

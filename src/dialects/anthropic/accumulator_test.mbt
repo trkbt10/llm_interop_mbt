@@ -41,3 +41,127 @@ test "AnthropicMessagesAccumulator tool call stream" {
     _ => fail("Expected ToolCalls response")
   }
 }
+
+///|
+test "non_streaming_to_synthetic_events preserves thinking block" {
+  // Anthropic response with thinking + text
+  let response : Json = {
+    "content": Json::array([
+      { "type": "thinking", "thinking": "Let me reason..." },
+      { "type": "text", "text": "The answer is 42." },
+    ]),
+    "stop_reason": "end_turn",
+    "model": "claude-sonnet-4-20250514",
+  }
+  let events = non_streaming_to_synthetic_events(response)
+  // Verify thinking block generates a thinking_delta synthetic event
+  let mut has_thinking_delta = false
+  for event in events {
+    match event.data {
+      {
+        "delta": { "type": String("thinking_delta"), "thinking": String(t), .. },
+        ..
+      } => {
+        inspect(t, content="Let me reason...")
+        has_thinking_delta = true
+      }
+      _ => ()
+    }
+  }
+  assert_true(has_thinking_delta)
+}
+
+///|
+test "non_streaming_to_synthetic_events preserves code_execution_tool_result" {
+  let response : Json = {
+    "content": Json::array([
+      {
+        "type": "code_execution_tool_result",
+        "tool_use_id": "toolu_456",
+        "content": { "stdout": "42", "stderr": "", "return_code": 0 },
+      },
+      { "type": "text", "text": "Done." },
+    ]),
+    "stop_reason": "end_turn",
+    "model": "claude-sonnet-4-20250514",
+  }
+  let events = non_streaming_to_synthetic_events(response)
+  let mut has_code_result = false
+  for event in events {
+    match event.data {
+      { "delta": { "type": String("code_execution_result_delta"), .. }, .. } =>
+        has_code_result = true
+      _ => ()
+    }
+  }
+  assert_true(has_code_result)
+}
+
+///|
+test "AnthropicToResponsesTranslator coalesces thinking deltas into one reasoning item" {
+  let translator = AnthropicToResponsesTranslator::new(
+    response_id="resp_thinking",
+  )
+  let start_event : @sse.SseEvent = {
+    event: "content_block_start",
+    data: {
+      "type": "content_block_start",
+      "index": 0,
+      "content_block": { "type": "thinking", "thinking": "" },
+    },
+  }
+  let delta1 : @sse.SseEvent = {
+    event: "content_block_delta",
+    data: {
+      "type": "content_block_delta",
+      "index": 0,
+      "delta": { "type": "thinking_delta", "thinking": "Let me " },
+    },
+  }
+  let delta2 : @sse.SseEvent = {
+    event: "content_block_delta",
+    data: {
+      "type": "content_block_delta",
+      "index": 0,
+      "delta": { "type": "thinking_delta", "thinking": "reason this through." },
+    },
+  }
+  let stop_event : @sse.SseEvent = {
+    event: "content_block_stop",
+    data: { "type": "content_block_stop", "index": 0 },
+  }
+  let start_events = translator.translate(start_event)
+  let delta_events1 = translator.translate(delta1)
+  let delta_events2 = translator.translate(delta2)
+  let stop_events = translator.translate(stop_event)
+  let mut delta1_has_done = false
+  for pair in delta_events1 {
+    if pair.0 == "response.output_item.done" {
+      delta1_has_done = true
+    }
+  }
+  let mut delta2_has_done = false
+  for pair in delta_events2 {
+    if pair.0 == "response.output_item.done" {
+      delta2_has_done = true
+    }
+  }
+  assert_eq(start_events.length(), 1)
+  assert_eq(start_events[0].0, "response.created")
+  assert_true(not(delta1_has_done))
+  assert_true(not(delta2_has_done))
+  assert_eq(stop_events.length(), 1)
+  assert_eq(stop_events[0].0, "response.output_item.done")
+  match stop_events[0].1 {
+    {
+      "item": { "type": String("reasoning"), "summary": Array(summary), .. },
+      ..
+    } =>
+      match summary[0] {
+        { "type": String("summary_text"), "text": String(text), .. } =>
+          assert_eq(text, "Let me reason this through.")
+        _ => fail("Expected summary_text block")
+      }
+    _ => fail("Expected reasoning output item")
+  }
+}

@@ -347,7 +347,11 @@ test "full flow: parse Anthropic -> build message -> convert to OpenAI Chat" {
   }
   // Create message with tool calls
   let messages : Array[@types.ModelMessage] = [
-    @types.ModelMessage::User(content="What's the weather in Tokyo?", name=None),
+    @types.ModelMessage::User(
+      content="What's the weather in Tokyo?",
+      name=None,
+      content_parts=None,
+    ),
     @types.ModelMessage::Assistant(content="", tool_calls=Some(tool_calls)),
     @types.ModelMessage::ToolResult(
       tool_call_id=tool_calls[0].id,
@@ -403,7 +407,11 @@ test "full flow: parse OpenAI -> convert to Anthropic -> build body" {
   }
   // Create messages
   let messages : Array[@types.ModelMessage] = [
-    @types.ModelMessage::User(content="What's the weather in Tokyo?", name=None),
+    @types.ModelMessage::User(
+      content="What's the weather in Tokyo?",
+      name=None,
+      content_parts=None,
+    ),
     @types.ModelMessage::Assistant(content="", tool_calls=Some(tool_calls)),
     @types.ModelMessage::ToolResult(
       tool_call_id=tool_calls[0].id,

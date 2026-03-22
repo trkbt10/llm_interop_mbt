@@ -60,3 +60,53 @@ test "build_json_schema creates valid schema" {
     _ => fail("Expected valid schema")
   }
 }
+
+///|
+test "ContentPart enum covers all multimodal types" {
+  // Verify all ContentPart variants can be constructed
+  let parts : Array[ContentPart] = [
+    ContentPart::Text("hello"),
+    ContentPart::ImageUrl(url="https://img.png", detail=Some("auto")),
+    ContentPart::ImageBase64(data="abc", media_type="image/png"),
+    ContentPart::Audio(data="base64audio", format="wav"),
+    ContentPart::Document(
+      data="base64pdf",
+      media_type="application/pdf",
+      title=Some("doc.pdf"),
+    ),
+    ContentPart::FileRef(file_id="file_abc", media_type=Some("application/pdf")),
+    ContentPart::Video(data="base64video", media_type="video/mp4"),
+  ]
+  inspect(parts.length(), content="7")
+}
+
+///|
+test "ResponseContentPart enum covers all output types" {
+  let parts : Array[ResponseContentPart] = [
+    ResponseContentPart::OutputText("hello"),
+    ResponseContentPart::OutputImage(url="https://img.png"),
+    ResponseContentPart::Refusal("cannot help"),
+    ResponseContentPart::Thinking(text="let me think..."),
+    ResponseContentPart::RedactedThinking(data="encrypted..."),
+    ResponseContentPart::CodeExecution(language="python", code="print(1)"),
+    ResponseContentPart::CodeResult(outcome="OUTCOME_OK", output="1"),
+    ResponseContentPart::AudioOutput(data="base64audio", transcript="hello"),
+  ]
+  inspect(parts.length(), content="8")
+}
+
+///|
+test "RichTextResponse with content_parts" {
+  let rich = RichTextResponse::new(
+    content="Hello",
+    content_parts=Some([
+      ResponseContentPart::OutputText("Hello"),
+      ResponseContentPart::OutputImage(url="https://img.png"),
+    ]),
+  )
+  inspect(rich.content, content="Hello")
+  match rich.content_parts {
+    Some(parts) => inspect(parts.length(), content="2")
+    None => fail("Expected content_parts")
+  }
+}

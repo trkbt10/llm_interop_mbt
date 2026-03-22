@@ -21,6 +21,18 @@ pub fn web_search_tool_parameters_schema() -> Json
 // Errors
 
 // Types and methods
+pub(all) enum ContentPart {
+  Text(String)
+  ImageUrl(url~ : String, detail~ : String?)
+  ImageBase64(data~ : String, media_type~ : String)
+  Audio(data~ : String, format~ : String)
+  Document(data~ : String, media_type~ : String, title~ : String?)
+  FileRef(file_id~ : String, media_type~ : String?)
+  Video(data~ : String, media_type~ : String)
+}
+pub impl Eq for ContentPart
+pub impl Show for ContentPart
+
 pub(all) struct GenerationParams {
   max_tokens : Json
   temperature : Json
@@ -39,7 +51,7 @@ pub fn GenerationParams::from_openai(Json) -> Self
 
 pub(all) enum ModelMessage {
   System(String)
-  User(content~ : String, name~ : String?)
+  User(content~ : String, name~ : String?, content_parts~ : Array[ContentPart]?)
   Assistant(content~ : String, tool_calls~ : Array[ToolCallRequest]?)
   ToolResult(tool_call_id~ : String, content~ : String)
 }
@@ -67,12 +79,26 @@ pub fn ResponseAnnotation::url_citation(url~ : String, start_index~ : Int, end_i
 pub impl Eq for ResponseAnnotation
 pub impl Show for ResponseAnnotation
 
+pub(all) enum ResponseContentPart {
+  OutputText(String)
+  OutputImage(url~ : String)
+  Refusal(String)
+  Thinking(text~ : String)
+  RedactedThinking(data~ : String)
+  CodeExecution(language~ : String, code~ : String)
+  CodeResult(outcome~ : String, output~ : String)
+  AudioOutput(data~ : String, transcript~ : String)
+}
+pub impl Eq for ResponseContentPart
+pub impl Show for ResponseContentPart
+
 pub(all) struct RichTextResponse {
   content : String
+  content_parts : Array[ResponseContentPart]?
   annotations : Array[ResponseAnnotation]
   tool_traces : Array[ToolCallTrace]
 }
-pub fn RichTextResponse::new(content~ : String, annotations? : Array[ResponseAnnotation], tool_traces? : Array[ToolCallTrace]) -> Self
+pub fn RichTextResponse::new(content~ : String, content_parts? : Array[ResponseContentPart]?, annotations? : Array[ResponseAnnotation], tool_traces? : Array[ToolCallTrace]) -> Self
 
 pub(all) struct ToolCallAcc {
   mut id : String

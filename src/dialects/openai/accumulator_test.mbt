@@ -192,3 +192,137 @@ test "ResponsesApiAccumulator preserves annotations and web search statuses" {
     _ => fail("Expected RichText response")
   }
 }
+
+///|
+test "ResponsesApiAccumulator refusal via output_item.done no double count" {
+  // Simulates: refusal.delta events + output_item.done with refusal in content.
+  // Both carry refusal text. Only one Refusal should appear in content_parts.
+  // Ref: docs/upstream/openai-responses-create.md:13566-13581
+  let jsonl =
+    #| {"event":"response.created","data":{"type":"response.created","sequence_number":0}}
+    #| {"event":"response.refusal.delta","data":{"type":"response.refusal.delta","delta":"I cannot","sequence_number":1}}
+    #| {"event":"response.refusal.delta","data":{"type":"response.refusal.delta","delta":" help.","sequence_number":2}}
+    #| {"event":"response.output_item.done","data":{"type":"response.output_item.done","output_index":0,"item":{"type":"message","status":"completed","role":"assistant","content":[{"type":"refusal","refusal":"I cannot help."}]}}}
+    #| {"event":"response.completed","data":{"type":"response.completed","sequence_number":4}}
+  let result = accumulate_responses_api(jsonl)
+  match result {
+    @types.ModelResponse::RichText(rich) =>
+      match rich.content_parts {
+        Some(parts) => {
+          // Count refusal parts — should be exactly 1
+          let mut refusal_count = 0
+          for p in parts {
+            match p {
+              @types.ResponseContentPart::Refusal(_) =>
+                refusal_count = refusal_count + 1
+              _ => ()
+            }
+          }
+          inspect(refusal_count, content="1")
+        }
+        None => fail("Expected content_parts with refusal")
+      }
+    _ => fail("Expected RichText")
+  }
+}
+
+///|
+test "ResponsesApiAccumulator output_image via output_item.done no double count" {
+  // content_part.added fires first, then output_item.done.
+  // Only output_item.done should produce an OutputImage.
+  // Ref: docs/upstream/openai-responses-create.md:13566-13581
+  let jsonl =
+    #| {"event":"response.created","data":{"type":"response.created","sequence_number":0}}
+    #| {"event":"response.content_part.added","data":{"type":"response.content_part.added","output_index":0,"content_index":0,"part":{"type":"output_image","image_url":"https://example.com/img.png"}}}
+    #| {"event":"response.content_part.done","data":{"type":"response.content_part.done","output_index":0,"content_index":0,"part":{"type":"output_image","image_url":"https://example.com/img.png"}}}
+    #| {"event":"response.output_item.done","data":{"type":"response.output_item.done","output_index":0,"item":{"type":"message","status":"completed","role":"assistant","content":[{"type":"output_image","image_url":"https://example.com/img.png"}]}}}
+    #| {"event":"response.completed","data":{"type":"response.completed","sequence_number":4}}
+  let result = accumulate_responses_api(jsonl)
+  match result {
+    @types.ModelResponse::RichText(rich) =>
+      match rich.content_parts {
+        Some(parts) => {
+          let mut image_count = 0
+          for p in parts {
+            match p {
+              @types.ResponseContentPart::OutputImage(..) =>
+                image_count = image_count + 1
+              _ => ()
+            }
+          }
+          inspect(image_count, content="1")
+        }
+        None => fail("Expected content_parts with image")
+      }
+    _ => fail("Expected RichText")
+  }
+}
+
+///|
+test "ResponsesApiAccumulator preserves output_text boundaries around output_image" {
+  let jsonl =
+    #| {"event":"response.created","data":{"type":"response.created","sequence_number":0}}
+    #| {"event":"response.output_text.delta","data":{"type":"response.output_text.delta","delta":"before","sequence_number":1}}
+    #| {"event":"response.output_text.delta","data":{"type":"response.output_text.delta","delta":"after","sequence_number":2}}
+    #| {"event":"response.output_item.done","data":{"type":"response.output_item.done","output_index":0,"item":{"type":"message","status":"completed","role":"assistant","content":[{"type":"output_text","text":"before","annotations":[]},{"type":"output_image","image_url":"https://example.com/generated.png"},{"type":"output_text","text":"after","annotations":[]}]}}}
+    #| {"event":"response.completed","data":{"type":"response.completed","sequence_number":4}}
+  let result = accumulate_responses_api(jsonl)
+  match result {
+    @types.ModelResponse::RichText(rich) => {
+      assert_eq(rich.content, "beforeafter")
+      match rich.content_parts {
+        Some(parts) => {
+          assert_eq(parts.length(), 3)
+          match parts[0] {
+            @types.ResponseContentPart::OutputText(text) =>
+              assert_eq(text, "before")
+            _ => fail("Expected leading OutputText")
+          }
+          match parts[1] {
+            @types.ResponseContentPart::OutputImage(url~) =>
+              assert_eq(url, "https://example.com/generated.png")
+            _ => fail("Expected OutputImage")
+          }
+          match parts[2] {
+            @types.ResponseContentPart::OutputText(text) =>
+              assert_eq(text, "after")
+            _ => fail("Expected trailing OutputText")
+          }
+        }
+        None => fail("Expected content_parts")
+      }
+    }
+    _ => fail("Expected RichText")
+  }
+}
+
+///|
+test "ResponsesApiAccumulator reasoning via output_item.done" {
+  // Ref: docs/upstream/openai-responses-create.md — reasoning output item
+  let jsonl =
+    #| {"event":"response.created","data":{"type":"response.created","sequence_number":0}}
+    #| {"event":"response.output_item.done","data":{"type":"response.output_item.done","output_index":0,"item":{"type":"reasoning","summary":[{"type":"summary_text","text":"Let me analyze..."}]}}}
+    #| {"event":"response.output_text.delta","data":{"type":"response.output_text.delta","delta":"The answer is 42.","sequence_number":2}}
+    #| {"event":"response.completed","data":{"type":"response.completed","sequence_number":3}}
+  let result = accumulate_responses_api(jsonl)
+  match result {
+    @types.ModelResponse::RichText(rich) => {
+      inspect(rich.content, content="The answer is 42.")
+      match rich.content_parts {
+        Some(parts) => {
+          let mut thinking_count = 0
+          for p in parts {
+            match p {
+              @types.ResponseContentPart::Thinking(..) =>
+                thinking_count = thinking_count + 1
+              _ => ()
+            }
+          }
+          inspect(thinking_count, content="1")
+        }
+        None => fail("Expected content_parts with thinking")
+      }
+    }
+    _ => fail("Expected RichText")
+  }
+}
