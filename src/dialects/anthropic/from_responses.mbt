@@ -19,7 +19,8 @@ pub fn responses_request_to_anthropic(request : Json) -> Json {
   let msgs_json = messages_to_json(messages)
   // Extract system message
   let system = extract_system_message(messages)
-  // Get max_tokens (Anthropic requires this)
+  // Ref: docs/upstream/anthropic-messages-api.md:13-21 — max_tokens is a
+  // required request body field.
   let max_tokens = match request {
     { "max_output_tokens": Number(n, ..), .. } => n.to_int()
     _ => 8192
