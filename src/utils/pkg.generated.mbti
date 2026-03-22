@@ -1,5 +1,5 @@
 // Generated using `moon info`, DON'T EDIT IT
-package "trkbt10/llm_interop/src/utils"
+package "trkbt10/llm_interop/utils"
 
 // Values
 pub fn extract_json_field(String, String) -> String?
@@ -7,6 +7,8 @@ pub fn extract_json_field(String, String) -> String?
 pub fn find_substr(String, String, Int) -> Int?
 
 pub fn inject_json_field(String, String, String) -> String
+
+pub fn parse_data_url(String) -> (String, String)?
 
 pub fn parse_url(String) -> (String, String)
 

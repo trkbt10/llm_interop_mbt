@@ -1,14 +1,21 @@
 // Generated using `moon info`, DON'T EDIT IT
-package "trkbt10/llm_interop/src/client"
+package "trkbt10/llm_interop/client"
 
 import {
-  "trkbt10/llm_interop/src/types",
+  "trkbt10/llm_interop/gateway",
+  "trkbt10/llm_interop/types",
 }
 
 // Values
-pub async fn chat(ClientConfig, Array[@types.ModelMessage], tools? : Array[@types.ToolDefinition]) -> @types.ModelResponse raise ClientError
+pub async fn chat_gateway(@gateway.ProviderConfig, &HttpTransport, Array[@types.ModelMessage], Array[@types.ToolDefinition], String, max_tokens? : Int?, temperature? : Double?) -> @types.ModelResponse raise ClientError
 
-pub async fn chat_stream(ClientConfig, Array[@types.ModelMessage], tools? : Array[@types.ToolDefinition], on_event? : (StreamEvent) -> Unit) -> @types.ModelResponse raise ClientError
+pub async fn chat_gateway_responses(@gateway.ProviderConfig, &HttpTransport, Array[@types.ModelMessage], Array[@types.ToolDefinition], String, max_tokens? : Int?, temperature? : Double?) -> @types.ModelResponse raise ClientError
+
+pub async fn chat_gateway_responses_stream(@gateway.ProviderConfig, &StreamingHttpTransport, Array[@types.ModelMessage], Array[@types.ToolDefinition], String, on_event~ : ((String, Json)) -> Unit, max_tokens? : Int?, temperature? : Double?) -> @types.ModelResponse raise ClientError
+
+pub fn transport_network_error(String) -> TransportError
+
+pub fn transport_timeout_error() -> TransportError
 
 // Errors
 pub suberror ClientError {
@@ -18,28 +25,42 @@ pub suberror ClientError {
 }
 pub impl Show for ClientError
 
+pub suberror TransportError {
+  NetworkError(String)
+  TimeoutError
+}
+pub impl Show for TransportError
+
 // Types and methods
-pub(all) struct ClientConfig {
-  provider : Provider
-  api_key : String
-  model : String
-  max_tokens : Int
-  temperature : Double?
-}
-pub fn ClientConfig::new(Provider, String, String, max_tokens? : Int, temperature? : Double?) -> Self
-
-pub(all) enum Provider {
-  Anthropic
-  OpenAI
-  OpenAICompatible(base_url~ : String)
+pub(all) struct StreamingResponse {
+  status : Int
+  reader : &StreamReader
 }
 
-pub(all) struct StreamEvent {
-  event : String
-  data : Json
+pub(all) struct TransportRequest {
+  url : String
+  http_method : String
+  headers : Map[String, String]
+  body : String?
+}
+
+pub(all) struct TransportResponse {
+  status : Int
+  body : String
 }
 
 // Type aliases
 
 // Traits
+pub(open) trait HttpTransport {
+  async request(Self, TransportRequest) -> TransportResponse raise TransportError
+}
+
+pub(open) trait StreamReader {
+  async read(Self) -> Bytes? raise TransportError
+}
+
+pub(open) trait StreamingHttpTransport {
+  async request_stream(Self, TransportRequest) -> StreamingResponse raise TransportError
+}
 

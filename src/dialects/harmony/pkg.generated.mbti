@@ -1,9 +1,9 @@
 // Generated using `moon info`, DON'T EDIT IT
-package "trkbt10/llm_interop/src/dialects/harmony"
+package "trkbt10/llm_interop/dialects/harmony"
 
 import {
-  "trkbt10/llm_interop/src/sse",
-  "trkbt10/llm_interop/src/types",
+  "trkbt10/llm_interop/sse",
+  "trkbt10/llm_interop/types",
 }
 
 // Values

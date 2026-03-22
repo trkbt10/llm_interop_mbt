@@ -1,9 +1,9 @@
 // Generated using `moon info`, DON'T EDIT IT
-package "trkbt10/llm_interop/src/dialects/openai"
+package "trkbt10/llm_interop/dialects/openai"
 
 import {
-  "trkbt10/llm_interop/src/sse",
-  "trkbt10/llm_interop/src/types",
+  "trkbt10/llm_interop/sse",
+  "trkbt10/llm_interop/types",
 }
 
 // Values
@@ -11,9 +11,23 @@ pub fn accumulate_chat_completions(String) -> @types.ModelResponse raise
 
 pub fn accumulate_responses_api(String) -> @types.ModelResponse raise
 
+pub fn assemble_responses_output(Array[Json], Array[Json]) -> Array[Json]
+
 pub fn build_chat_body(String, Array[@types.ModelMessage], Array[@types.ToolDefinition], max_tokens? : Int?, temperature? : Double?) -> Json
 
+pub fn build_chat_choice(Int, String, Array[Json]) -> Json
+
+pub fn build_chat_response(String, String, Array[Json]) -> String
+
 pub fn build_responses_api_body(String, Array[@types.ModelMessage], Array[@types.ToolDefinition]) -> Json
+
+pub fn build_responses_function_call(String, String, Json) -> Json
+
+pub fn build_responses_message_output(Array[Json]) -> Json
+
+pub fn build_responses_web_search_call(String, Json) -> Json
+
+pub fn build_tool_call_json(String, String, Json) -> Json
 
 pub fn chat_completions_auth_headers(String) -> Map[String, String]
 
@@ -25,6 +39,8 @@ pub fn chat_completions_path(String) -> String
 
 pub fn chat_completions_resolve(String, String, String) -> (String, String)?
 
+pub fn github_copilot_default_base_url() -> String
+
 pub fn message_to_json(@types.ModelMessage) -> Json
 
 pub fn messages_to_json(Array[@types.ModelMessage]) -> Array[Json]
@@ -32,6 +48,10 @@ pub fn messages_to_json(Array[@types.ModelMessage]) -> Array[Json]
 pub fn messages_to_responses_input(Array[@types.ModelMessage]) -> Array[Json]
 
 pub fn normalize_json_schema_for_openai(Json) -> Json
+
+pub fn ollama_default_base_url() -> String
+
+pub fn openrouter_default_base_url() -> String
 
 pub fn parse_chat_response(Json) -> @types.ModelResponse
 
@@ -54,6 +74,8 @@ pub fn tool_to_responses_api_json(@types.ToolDefinition) -> Json
 pub fn tools_to_json(Array[@types.ToolDefinition]) -> Array[Json]
 
 pub fn tools_to_responses_api_json(Array[@types.ToolDefinition]) -> Array[Json]
+
+pub fn web_search_tool_to_json() -> Json
 
 // Errors
 

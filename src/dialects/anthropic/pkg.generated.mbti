@@ -1,9 +1,9 @@
 // Generated using `moon info`, DON'T EDIT IT
-package "trkbt10/llm_interop/src/dialects/anthropic"
+package "trkbt10/llm_interop/dialects/anthropic"
 
 import {
-  "trkbt10/llm_interop/src/sse",
-  "trkbt10/llm_interop/src/types",
+  "trkbt10/llm_interop/sse",
+  "trkbt10/llm_interop/types",
 }
 
 // Values
@@ -62,6 +62,8 @@ pub fn is_tool_use_block(Json) -> Bool
 pub fn message_to_json(@types.ModelMessage) -> Json
 
 pub fn messages_to_json(Array[@types.ModelMessage]) -> Array[Json]
+
+pub fn non_streaming_to_synthetic_events(Json) -> Array[@sse.SseEvent]
 
 pub fn openai_error_to_anthropic(String) -> String
 

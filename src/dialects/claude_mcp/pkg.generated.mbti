@@ -1,11 +1,11 @@
 // Generated using `moon info`, DON'T EDIT IT
-package "trkbt10/llm_interop/src/dialects/claude_mcp"
+package "trkbt10/llm_interop/dialects/claude_mcp"
 
 import {
   "moonbitlang/core/json",
-  "trkbt10/llm_interop/src/jsonrpc",
-  "trkbt10/llm_interop/src/mcp",
-  "trkbt10/llm_interop/src/types",
+  "trkbt10/llm_interop/jsonrpc",
+  "trkbt10/llm_interop/mcp",
+  "trkbt10/llm_interop/types",
 }
 
 // Values

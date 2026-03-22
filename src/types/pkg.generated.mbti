@@ -1,12 +1,22 @@
 // Generated using `moon info`, DON'T EDIT IT
-package "trkbt10/llm_interop/src/types"
+package "trkbt10/llm_interop/types"
 
 // Values
 pub fn build_json_schema(type_~ : String, properties~ : Map[String, Json], required~ : Array[String]) -> Json
 
+pub fn build_web_search_action(Json) -> Json
+
+pub fn finalize_accumulation(Bool, Array[ToolCallAcc], StringBuilder) -> ModelResponse
+
 pub fn process_tool_call_delta(Array[ToolCallAcc], Json) -> Unit
 
 pub fn tool_calls_to_requests(Array[ToolCallAcc]) -> Array[ToolCallRequest]
+
+pub fn web_search_tool_description() -> String
+
+pub fn web_search_tool_name() -> String
+
+pub fn web_search_tool_parameters_schema() -> Json
 
 // Errors
 

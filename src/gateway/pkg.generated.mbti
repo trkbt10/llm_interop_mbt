@@ -1,10 +1,14 @@
 // Generated using `moon info`, DON'T EDIT IT
-package "trkbt10/llm_interop/src/gateway"
+package "trkbt10/llm_interop/gateway"
 
 import {
-  "trkbt10/llm_interop/src/dialects/claude_mcp",
-  "trkbt10/llm_interop/src/dialects/codex",
-  "trkbt10/llm_interop/src/types",
+  "trkbt10/llm_interop/dialects/anthropic",
+  "trkbt10/llm_interop/dialects/claude_mcp",
+  "trkbt10/llm_interop/dialects/codex",
+  "trkbt10/llm_interop/dialects/gemini",
+  "trkbt10/llm_interop/dialects/harmony",
+  "trkbt10/llm_interop/sse",
+  "trkbt10/llm_interop/types",
 }
 
 // Values
@@ -12,7 +16,17 @@ pub fn add_cors_headers(HttpResponse) -> HttpResponse
 
 pub fn config_to_json(GatewayConfig) -> Json
 
+pub fn create_responses_api_translator(ModelApi, response_id~ : String, model? : String) -> ResponsesApiTranslator
+
+pub let default_config_filename : String
+
 pub fn enrich_remote_model_json(String, String, Array[ModelConfig]) -> Json
+
+pub fn extract_response_id(String, String) -> String
+
+pub fn fallback_response_id(String) -> String
+
+pub fn load_config_from_file(String) -> GatewayConfig raise GatewayError
 
 pub fn model_config_to_codex_model_json(ModelConfig, String) -> Json
 
@@ -22,11 +36,17 @@ pub fn parse_config(Json) -> GatewayConfig raise GatewayError
 
 pub fn parse_models_response(String, String) -> Array[Json]
 
+pub fn parse_responses_api_result(ModelApi, String, model~ : String) -> @types.ModelResponse
+
 pub fn prepare_models_request(ProviderConfig, String, String) -> UpstreamRequest
+
+pub fn prepare_responses_api_upstream(ProviderConfig, Json, String, String, String, stream? : Bool) -> UpstreamRequest
 
 pub fn prepare_upstream(ProviderConfig, String, GatewaySurface, String, String, String) -> UpstreamRequest
 
 pub fn set_cors_headers(Map[String, String]) -> Unit
+
+pub fn to_synthetic_sse_events(ModelApi, String) -> Array[@sse.SseEvent]
 
 pub fn transform_for_provider(ProviderConfig, String, GatewaySurface, GatewaySurface, String) -> String
 
@@ -130,6 +150,7 @@ pub(all) enum ModelApi {
   GithubCopilot
   BedrockConverseStream
   Ollama
+  OpenRouter
   CodexAppServer
   ClaudeMcpServe
 }
@@ -138,6 +159,7 @@ pub fn ModelApi::completion_path(Self, String, String, String) -> String
 pub fn ModelApi::default_base_url(Self) -> String
 pub fn ModelApi::from_string(String) -> Self?
 pub fn ModelApi::models_path(Self, String, String) -> String
+pub fn ModelApi::supports_responses_api(Self) -> Bool
 pub fn ModelApi::to_dialect(Self) -> GatewaySurface
 pub fn ModelApi::to_spec(Self) -> DialectSpec
 pub fn ModelApi::to_string(Self) -> String
@@ -193,6 +215,14 @@ pub(all) struct ProviderConfig {
 pub fn ProviderConfig::list_model_json(Self) -> Array[Json]
 pub fn ProviderConfig::new(String, ModelApi) -> Self
 pub impl Show for ProviderConfig
+
+pub(all) enum ResponsesApiTranslator {
+  Harmony(@harmony.HarmonyToResponsesTranslator)
+  Anthropic(@anthropic.AnthropicToResponsesTranslator)
+  Gemini(@gemini.GeminiToResponsesTranslator)
+  PassThrough
+}
+pub fn ResponsesApiTranslator::translate(Self, @sse.SseEvent) -> Array[(String, Json)]
 
 pub(all) enum RouteResult {
   Health

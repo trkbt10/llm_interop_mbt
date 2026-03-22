@@ -1,6 +1,6 @@
 {
   "name": "trkbt10/llm_interop",
-  "version": "0.2.3",
+  "version": "0.3.0",
   "deps": {
     "mizchi/x": "0.1.5",
     "moonbitlang/async": "0.16.7",

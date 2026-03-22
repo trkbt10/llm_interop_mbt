@@ -1,5 +1,5 @@
 // Generated using `moon info`, DON'T EDIT IT
-package "trkbt10/llm_interop/src/mcp"
+package "trkbt10/llm_interop/mcp"
 
 // Values
 pub fn build_initialize_request(Int, String, String) -> String

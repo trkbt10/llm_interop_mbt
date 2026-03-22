@@ -1,8 +1,8 @@
 // Generated using `moon info`, DON'T EDIT IT
-package "trkbt10/llm_interop/src/interop/util"
+package "trkbt10/llm_interop/interop/id"
 
 import {
-  "trkbt10/llm_interop/src/types",
+  "trkbt10/llm_interop/types",
 }
 
 // Values
@@ -18,7 +18,13 @@ pub fn convert_tool_call_id_to(String, ToolCallIdProvider) -> String
 
 pub fn convert_tool_call_request_ids(Array[@types.ToolCallRequest], ToolCallIdProvider) -> Array[@types.ToolCallRequest]
 
+pub fn detect_response_id_provider(String) -> ResponseIdProvider
+
 pub fn detect_tool_call_id_provider(String) -> ToolCallIdProvider
+
+pub fn extract_or_generate_response_id(String, ResponseIdProvider, String) -> String
+
+pub fn extract_response_id_from_json(String) -> String?
 
 pub fn gemini_to_anthropic_tool_use_id(String) -> String
 
@@ -34,6 +40,10 @@ pub fn generate_openai_chat_call_id() -> String
 
 pub fn generate_openai_responses_call_id() -> String
 
+pub fn generate_response_id(ResponseIdProvider) -> String
+
+pub fn generate_response_id_for_model(ResponseIdProvider, String) -> String
+
 pub fn generate_tool_call_id(ToolCallIdProvider) -> String
 
 pub fn is_same_tool_call_id(String, String) -> Bool
@@ -48,11 +58,31 @@ pub fn openai_responses_to_anthropic_tool_use_id(String) -> String
 
 pub fn openai_responses_to_openai_chat_call_id(String) -> String
 
+pub fn reset_response_id_counter() -> Unit
+
 pub fn reset_tool_call_id_counter() -> Unit
 
 // Errors
 
 // Types and methods
+pub(all) struct ResponseIdFormat {
+  provider : ResponseIdProvider
+  prefix : String
+  has_native_id : Bool
+}
+
+pub(all) enum ResponseIdProvider {
+  OpenAIChatCompletions
+  OpenAIResponsesApi
+  AnthropicClaude
+  GoogleGemini
+  Unknown
+}
+pub fn ResponseIdProvider::format(Self) -> ResponseIdFormat
+pub fn ResponseIdProvider::prefix(Self) -> String
+pub impl Eq for ResponseIdProvider
+pub impl Show for ResponseIdProvider
+
 pub(all) struct ToolCallIdFormat {
   provider : ToolCallIdProvider
   prefix : String

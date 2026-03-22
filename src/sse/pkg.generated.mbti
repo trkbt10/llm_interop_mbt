@@ -1,5 +1,5 @@
 // Generated using `moon info`, DON'T EDIT IT
-package "trkbt10/llm_interop/src/sse"
+package "trkbt10/llm_interop/sse"
 
 // Values
 pub fn format_sse_done() -> String
