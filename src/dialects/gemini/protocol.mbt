@@ -402,21 +402,42 @@ pub fn parse_response(response_json : Json) -> @types.ModelResponse {
       match candidate {
         { "content": { "parts": Array(parts), .. }, .. } => {
           let tool_calls = parse_function_calls(parts)
-          if tool_calls.length() > 0 {
-            return @types.ModelResponse::ToolCalls(tool_calls)
-          }
           // Extract text and structured content parts
           let text = extract_gemini_text(parts)
           let response_parts = extract_gemini_content_parts(parts)
-          match response_parts {
-            Some(rparts) =>
-              @types.ModelResponse::RichText(
-                @types.RichTextResponse::new(
-                  content=text,
-                  content_parts=Some(rparts),
-                ),
-              )
-            None => @types.ModelResponse::Text(text)
+          if tool_calls.length() > 0 {
+            match response_parts {
+              Some(rparts) =>
+                @types.ModelResponse::ToolCallsWithContent(
+                  tool_calls~,
+                  rich=@types.RichTextResponse::from_parts(
+                    content=text,
+                    content_parts=rparts,
+                  ),
+                )
+              None =>
+                if text.length() > 0 {
+                  @types.ModelResponse::ToolCallsWithContent(
+                    tool_calls~,
+                    rich=@types.RichTextResponse::from_parts(content=text, content_parts=[
+                      @types.ResponseContentPart::OutputText(text),
+                    ]),
+                  )
+                } else {
+                  @types.ModelResponse::ToolCalls(tool_calls)
+                }
+            }
+          } else {
+            match response_parts {
+              Some(rparts) =>
+                @types.ModelResponse::RichText(
+                  @types.RichTextResponse::from_parts(
+                    content=text,
+                    content_parts=rparts,
+                  ),
+                )
+              None => @types.ModelResponse::Text(text)
+            }
           }
         }
         { "finishReason": String("SAFETY"), .. } =>

@@ -22,6 +22,18 @@ fn xform_and_parse(
   parse_oai(transform_response(body, from, OpenAI))
 }
 
+///|
+fn extract_tool_calls_multi(
+  response : @types.ModelResponse,
+) -> Array[@types.ToolCallRequest]? {
+  match response {
+    @types.ModelResponse::ToolCalls(calls) => Some(calls)
+    @types.ModelResponse::ToolCallsWithContent(tool_calls~, ..) =>
+      Some(tool_calls)
+    _ => None
+  }
+}
+
 // #####################################################################
 // A. Direct parse: each fixture → ModelResponse
 // #####################################################################
@@ -90,13 +102,18 @@ test "multi/parse/anthropic: 1 tool mixed with text (via transform)" {
     load_fixture("testdata/anthropic/messages/toolcall_nonstream.json"),
     Anthropic,
   )
-  match r {
-    @types.ModelResponse::ToolCalls(c) => {
+  match extract_tool_calls_multi(r) {
+    Some(c) => {
       assert_eq(c.length(), 1)
       assert_eq(c[0].name, "get_weather")
       assert_true(c[0].id.has_prefix("call_")) // toolu_ → call_ via interop
     }
-    _ => fail("expected ToolCalls from Anthropic")
+    None => fail("expected ToolCalls from Anthropic")
+  }
+  match r {
+    @types.ModelResponse::ToolCallsWithContent(rich~, ..) =>
+      assert_true(rich.content.length() > 0)
+    _ => fail("expected mixed Anthropic content")
   }
 }
 
@@ -300,11 +317,11 @@ test "multi/cross/anthropic→gemini→openai preserves tool" {
   let body = load_fixture("testdata/anthropic/messages/toolcall_nonstream.json")
   let gem = transform_response(body, Anthropic, Gemini)
   let r = parse_oai(transform_response(gem, Gemini, OpenAI))
-  match r {
-    @types.ModelResponse::ToolCalls(c) => {
+  match extract_tool_calls_multi(r) {
+    Some(c) => {
       assert_eq(c.length(), 1)
       assert_eq(c[0].name, "get_weather")
     }
-    _ => fail("tool lost in triple transform")
+    None => fail("tool lost in triple transform")
   }
 }

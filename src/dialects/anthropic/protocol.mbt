@@ -429,12 +429,10 @@ pub fn build_body(
 pub fn parse_response(response_json : Json) -> @types.ModelResponse {
   match response_json {
     { "content": content, "stop_reason": String(stop_reason), .. } => {
-      // Check for tool use
-      if stop_reason == "tool_use" {
-        let tool_calls = parse_tool_calls(content)
-        if tool_calls.length() > 0 {
-          return @types.ModelResponse::ToolCalls(tool_calls)
-        }
+      let tool_calls = if stop_reason == "tool_use" {
+        parse_tool_calls(content)
+      } else {
+        []
       }
       // Extract text response and structured content parts
       match content {
@@ -576,16 +574,30 @@ pub fn parse_response(response_json : Json) -> @types.ModelResponse {
               _ => ()
             }
           }
-          if has_non_text || tool_traces.length() > 0 {
+          let content_str = text.to_string()
+          if tool_calls.length() > 0 {
+            if content_parts.length() > 0 || tool_traces.length() > 0 {
+              @types.ModelResponse::ToolCallsWithContent(
+                tool_calls~,
+                rich=@types.RichTextResponse::from_parts(
+                  content=content_str,
+                  content_parts~,
+                  tool_traces~,
+                ),
+              )
+            } else {
+              @types.ModelResponse::ToolCalls(tool_calls)
+            }
+          } else if has_non_text || tool_traces.length() > 0 {
             @types.ModelResponse::RichText(
-              @types.RichTextResponse::new(
-                content=text.to_string(),
-                content_parts=Some(content_parts),
+              @types.RichTextResponse::from_parts(
+                content=content_str,
+                content_parts~,
                 tool_traces~,
               ),
             )
           } else {
-            @types.ModelResponse::Text(text.to_string())
+            @types.ModelResponse::Text(content_str)
           }
         }
         _ => @types.ModelResponse::ModelError("Invalid content format")

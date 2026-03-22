@@ -359,6 +359,38 @@ test "parse_response parses function call response" {
 }
 
 ///|
+test "parse_response preserves mixed text and function call" {
+  let json : Json = {
+    "candidates": Json::array([
+      {
+        "content": {
+          "role": "model",
+          "parts": Json::array([
+            { "text": "Checking..." },
+            {
+              "functionCall": {
+                "name": "get_weather",
+                "args": { "city": "Tokyo" },
+              },
+            },
+          ]),
+        },
+        "finishReason": "STOP",
+      },
+    ]),
+  }
+  let response = parse_response(json)
+  match response {
+    @types.ModelResponse::ToolCallsWithContent(tool_calls~, rich~) => {
+      assert_eq(tool_calls.length(), 1)
+      assert_eq(tool_calls[0].name, "get_weather")
+      assert_eq(rich.content, "Checking...")
+    }
+    _ => fail("Expected ToolCallsWithContent response")
+  }
+}
+
+///|
 test "parse_response handles safety block" {
   let json : Json = {
     "candidates": Json::array([{ "finishReason": "SAFETY" }]),

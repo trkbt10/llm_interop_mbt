@@ -321,6 +321,18 @@ pub fn parse_chat_response(json : Json) -> @types.ModelResponse {
               { "tool_calls": tool_calls, .. } => {
                 let calls = parse_tool_calls(tool_calls)
                 if calls.length() > 0 {
+                  let content = match message {
+                    { "content": String(value), .. } => value
+                    _ => ""
+                  }
+                  if content.length() > 0 {
+                    return @types.ModelResponse::ToolCallsWithContent(
+                      tool_calls=calls,
+                      rich=@types.RichTextResponse::from_parts(content~, content_parts=[
+                        @types.ResponseContentPart::OutputText(content),
+                      ]),
+                    )
+                  }
                   return @types.ModelResponse::ToolCalls(calls)
                 }
               }

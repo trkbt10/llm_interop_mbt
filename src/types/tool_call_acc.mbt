@@ -54,7 +54,18 @@ pub fn finalize_accumulation(
   text : StringBuilder,
 ) -> ModelResponse {
   if is_tool_call && tool_calls.length() > 0 {
-    ModelResponse::ToolCalls(tool_calls_to_requests(tool_calls))
+    let calls = tool_calls_to_requests(tool_calls)
+    let content = text.to_string()
+    if content.length() > 0 {
+      ModelResponse::ToolCallsWithContent(
+        tool_calls=calls,
+        rich=RichTextResponse::from_parts(content~, content_parts=[
+          ResponseContentPart::OutputText(content),
+        ]),
+      )
+    } else {
+      ModelResponse::ToolCalls(calls)
+    }
   } else {
     ModelResponse::Text(text.to_string())
   }

@@ -108,6 +108,33 @@ fn fixture_gemini_toolcall_response() -> Json {
   }
 }
 
+///|
+fn extract_tool_calls(
+  response : @types.ModelResponse,
+) -> Array[@types.ToolCallRequest]? {
+  match response {
+    @types.ModelResponse::ToolCalls(calls) => Some(calls)
+    @types.ModelResponse::ToolCallsWithContent(tool_calls~, ..) =>
+      Some(tool_calls)
+    _ => None
+  }
+}
+
+///|
+fn require_tool_calls(
+  response : @types.ModelResponse,
+  error_message : String,
+) -> Array[@types.ToolCallRequest] {
+  match extract_tool_calls(response) {
+    Some(calls) => calls
+    None => {
+      ignore(error_message)
+      panic()
+      []
+    }
+  }
+}
+
 // =============================================================================
 // Parse and Extract Tool Calls Tests
 // =============================================================================
@@ -117,17 +144,13 @@ test "parse Anthropic response and extract tool calls" {
   let response = @anthropic.parse_response(
     fixture_anthropic_toolcall_response(),
   )
-  match response {
-    @types.ModelResponse::ToolCalls(calls) => {
-      inspect(calls.length(), content="1")
-      inspect(calls[0].name, content="get_weather")
-      assert_true(calls[0].id.has_prefix("toolu_"))
-      match calls[0].arguments {
-        { "location": String(loc), .. } => inspect(loc, content="Tokyo")
-        _ => fail("Expected location in arguments")
-      }
-    }
-    _ => fail("Expected ToolCalls response")
+  let calls = require_tool_calls(response, "Expected ToolCalls response")
+  inspect(calls.length(), content="1")
+  inspect(calls[0].name, content="get_weather")
+  assert_true(calls[0].id.has_prefix("toolu_"))
+  match calls[0].arguments {
+    { "location": String(loc), .. } => inspect(loc, content="Tokyo")
+    _ => fail("Expected location in arguments")
   }
 }
 
@@ -136,17 +159,13 @@ test "parse OpenAI Chat response and extract tool calls" {
   let response = @openai.parse_chat_response(
     fixture_openai_chat_toolcall_response(),
   )
-  match response {
-    @types.ModelResponse::ToolCalls(calls) => {
-      inspect(calls.length(), content="1")
-      inspect(calls[0].name, content="get_weather")
-      assert_true(calls[0].id.has_prefix("call_"))
-      match calls[0].arguments {
-        { "location": String(loc), .. } => inspect(loc, content="Tokyo")
-        _ => fail("Expected location in arguments")
-      }
-    }
-    _ => fail("Expected ToolCalls response")
+  let calls = require_tool_calls(response, "Expected ToolCalls response")
+  inspect(calls.length(), content="1")
+  inspect(calls[0].name, content="get_weather")
+  assert_true(calls[0].id.has_prefix("call_"))
+  match calls[0].arguments {
+    { "location": String(loc), .. } => inspect(loc, content="Tokyo")
+    _ => fail("Expected location in arguments")
   }
 }
 
@@ -155,32 +174,24 @@ test "parse OpenAI Responses API response and extract tool calls" {
   let response = @openai.parse_responses_api_response(
     fixture_openai_responses_toolcall_response(),
   )
-  match response {
-    @types.ModelResponse::ToolCalls(calls) => {
-      inspect(calls.length(), content="1")
-      inspect(calls[0].name, content="get_weather")
-      // Responses API uses call_id field
-      assert_true(calls[0].id.has_prefix("call_"))
-    }
-    _ => fail("Expected ToolCalls response")
-  }
+  let calls = require_tool_calls(response, "Expected ToolCalls response")
+  inspect(calls.length(), content="1")
+  inspect(calls[0].name, content="get_weather")
+  // Responses API uses call_id field
+  assert_true(calls[0].id.has_prefix("call_"))
 }
 
 ///|
 test "parse Gemini response and extract tool calls" {
   let response = @gemini.parse_response(fixture_gemini_toolcall_response())
-  match response {
-    @types.ModelResponse::ToolCalls(calls) => {
-      inspect(calls.length(), content="1")
-      inspect(calls[0].name, content="get_weather")
-      // Gemini doesn't have native IDs, we generate synthetic ones
-      assert_true(calls[0].id.has_prefix("gemini_"))
-      match calls[0].arguments {
-        { "location": String(loc), .. } => inspect(loc, content="Tokyo")
-        _ => fail("Expected location in arguments")
-      }
-    }
-    _ => fail("Expected ToolCalls response")
+  let calls = require_tool_calls(response, "Expected ToolCalls response")
+  inspect(calls.length(), content="1")
+  inspect(calls[0].name, content="get_weather")
+  // Gemini doesn't have native IDs, we generate synthetic ones
+  assert_true(calls[0].id.has_prefix("gemini_"))
+  match calls[0].arguments {
+    { "location": String(loc), .. } => inspect(loc, content="Tokyo")
+    _ => fail("Expected location in arguments")
   }
 }
 
@@ -193,20 +204,16 @@ test "interop: Anthropic tool call -> OpenAI Chat format" {
   let anthropic_response = @anthropic.parse_response(
     fixture_anthropic_toolcall_response(),
   )
-  match anthropic_response {
-    @types.ModelResponse::ToolCalls(calls) => {
-      // Convert to OpenAI Chat format IDs
-      let converted = @util.convert_tool_call_request_ids(
-        calls,
-        @util.ToolCallIdProvider::OpenAIChatCompletions,
-      )
-      inspect(converted.length(), content="1")
-      assert_true(converted[0].id.has_prefix("call_"))
-      // Name and arguments should be preserved
-      inspect(converted[0].name, content="get_weather")
-    }
-    _ => fail("Expected ToolCalls")
-  }
+  let calls = require_tool_calls(anthropic_response, "Expected ToolCalls")
+  // Convert to OpenAI Chat format IDs
+  let converted = @util.convert_tool_call_request_ids(
+    calls,
+    @util.ToolCallIdProvider::OpenAIChatCompletions,
+  )
+  inspect(converted.length(), content="1")
+  assert_true(converted[0].id.has_prefix("call_"))
+  // Name and arguments should be preserved
+  inspect(converted[0].name, content="get_weather")
 }
 
 ///|
@@ -214,18 +221,14 @@ test "interop: OpenAI Chat tool call -> Anthropic format" {
   let openai_response = @openai.parse_chat_response(
     fixture_openai_chat_toolcall_response(),
   )
-  match openai_response {
-    @types.ModelResponse::ToolCalls(calls) => {
-      let converted = @util.convert_tool_call_request_ids(
-        calls,
-        @util.ToolCallIdProvider::AnthropicClaude,
-      )
-      inspect(converted.length(), content="1")
-      assert_true(converted[0].id.has_prefix("toolu_"))
-      inspect(converted[0].name, content="get_weather")
-    }
-    _ => fail("Expected ToolCalls")
-  }
+  let calls = require_tool_calls(openai_response, "Expected ToolCalls")
+  let converted = @util.convert_tool_call_request_ids(
+    calls,
+    @util.ToolCallIdProvider::AnthropicClaude,
+  )
+  inspect(converted.length(), content="1")
+  assert_true(converted[0].id.has_prefix("toolu_"))
+  inspect(converted[0].name, content="get_weather")
 }
 
 ///|
@@ -233,33 +236,27 @@ test "interop: Gemini tool call -> OpenAI Responses format" {
   let gemini_response = @gemini.parse_response(
     fixture_gemini_toolcall_response(),
   )
-  match gemini_response {
-    @types.ModelResponse::ToolCalls(calls) => {
-      let converted = @util.convert_tool_call_request_ids(
-        calls,
-        @util.ToolCallIdProvider::OpenAIResponsesApi,
-      )
-      inspect(converted.length(), content="1")
-      assert_true(converted[0].id.has_prefix("fc_"))
-      inspect(converted[0].name, content="get_weather")
-    }
-    _ => fail("Expected ToolCalls")
-  }
+  let calls = require_tool_calls(gemini_response, "Expected ToolCalls")
+  let converted = @util.convert_tool_call_request_ids(
+    calls,
+    @util.ToolCallIdProvider::OpenAIResponsesApi,
+  )
+  inspect(converted.length(), content="1")
+  assert_true(converted[0].id.has_prefix("fc_"))
+  inspect(converted[0].name, content="get_weather")
 }
 
 ///|
 test "interop: all providers can be compared via is_same_tool_call_id" {
   // Parse responses from all providers
-  let anthropic_calls = match
-    @anthropic.parse_response(fixture_anthropic_toolcall_response()) {
-    @types.ModelResponse::ToolCalls(c) => c
-    _ => []
-  }
-  let openai_chat_calls = match
-    @openai.parse_chat_response(fixture_openai_chat_toolcall_response()) {
-    @types.ModelResponse::ToolCalls(c) => c
-    _ => []
-  }
+  let anthropic_calls = require_tool_calls(
+    @anthropic.parse_response(fixture_anthropic_toolcall_response()),
+    "Expected Anthropic tool calls",
+  )
+  let openai_chat_calls = require_tool_calls(
+    @openai.parse_chat_response(fixture_openai_chat_toolcall_response()),
+    "Expected OpenAI Chat tool calls",
+  )
   // Convert Anthropic to have same suffix as OpenAI Chat
   let anthropic_converted = @util.convert_tool_call_request_ids(
     anthropic_calls,
@@ -310,25 +307,21 @@ test "interop: Gemini multi tool calls -> Anthropic format" {
   let gemini_response = @gemini.parse_response(
     fixture_gemini_multi_toolcall_response(),
   )
-  match gemini_response {
-    @types.ModelResponse::ToolCalls(calls) => {
-      inspect(calls.length(), content="2")
-      // Verify synthetic IDs are generated with indices
-      assert_true(calls[0].id.has_prefix("gemini_get_weather_"))
-      assert_true(calls[1].id.has_prefix("gemini_get_time_"))
-      // Convert to Anthropic
-      let converted = @util.convert_tool_call_request_ids(
-        calls,
-        @util.ToolCallIdProvider::AnthropicClaude,
-      )
-      assert_true(converted[0].id.has_prefix("toolu_"))
-      assert_true(converted[1].id.has_prefix("toolu_"))
-      // Names preserved
-      inspect(converted[0].name, content="get_weather")
-      inspect(converted[1].name, content="get_time")
-    }
-    _ => fail("Expected ToolCalls")
-  }
+  let calls = require_tool_calls(gemini_response, "Expected ToolCalls")
+  inspect(calls.length(), content="2")
+  // Verify synthetic IDs are generated with indices
+  assert_true(calls[0].id.has_prefix("gemini_get_weather_"))
+  assert_true(calls[1].id.has_prefix("gemini_get_time_"))
+  // Convert to Anthropic
+  let converted = @util.convert_tool_call_request_ids(
+    calls,
+    @util.ToolCallIdProvider::AnthropicClaude,
+  )
+  assert_true(converted[0].id.has_prefix("toolu_"))
+  assert_true(converted[1].id.has_prefix("toolu_"))
+  // Names preserved
+  inspect(converted[0].name, content="get_weather")
+  inspect(converted[1].name, content="get_time")
 }
 
 // =============================================================================
@@ -341,10 +334,9 @@ test "full flow: parse Anthropic -> build message -> convert to OpenAI Chat" {
   let anthropic_response = @anthropic.parse_response(
     fixture_anthropic_toolcall_response(),
   )
-  let tool_calls = match anthropic_response {
-    @types.ModelResponse::ToolCalls(c) => c
-    _ => []
-  }
+  let tool_calls = require_tool_calls(
+    anthropic_response, "Expected Anthropic tool calls",
+  )
   // Create message with tool calls
   let messages : Array[@types.ModelMessage] = [
     @types.ModelMessage::User(
@@ -401,10 +393,9 @@ test "full flow: parse OpenAI -> convert to Anthropic -> build body" {
   let openai_response = @openai.parse_chat_response(
     fixture_openai_chat_toolcall_response(),
   )
-  let tool_calls = match openai_response {
-    @types.ModelResponse::ToolCalls(c) => c
-    _ => []
-  }
+  let tool_calls = require_tool_calls(
+    openai_response, "Expected OpenAI tool calls",
+  )
   // Create messages
   let messages : Array[@types.ModelMessage] = [
     @types.ModelMessage::User(

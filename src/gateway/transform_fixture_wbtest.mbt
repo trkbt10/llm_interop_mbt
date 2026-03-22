@@ -17,6 +17,18 @@ fn load(path : String) -> String {
   }
 }
 
+///|
+fn extract_tool_calls_fixture(
+  response : @types.ModelResponse,
+) -> Array[@types.ToolCallRequest]? {
+  match response {
+    @types.ModelResponse::ToolCalls(calls) => Some(calls)
+    @types.ModelResponse::ToolCallsWithContent(tool_calls~, ..) =>
+      Some(tool_calls)
+    _ => None
+  }
+}
+
 // #####################################################################
 // OpenAI CC fixtures (real gpt-4o-mini responses)
 // #####################################################################
@@ -132,12 +144,12 @@ test "fixture/anthropic/toolcall: transform Anthropic→OpenAI and parse" {
   let openai = transform_response(body, Anthropic, OpenAI)
   let json : Json = @json.parse(openai) catch { _ => fail("parse") }
   let resp = @openai.parse_chat_response(json)
-  match resp {
-    @types.ModelResponse::ToolCalls(calls) => {
+  match extract_tool_calls_fixture(resp) {
+    Some(calls) => {
       assert_true(calls.length() > 0)
       assert_eq(calls[0].name, "get_weather")
     }
-    _ =>
+    None =>
       fail(
         "expected ToolCalls from real Anthropic toolcall fixture → OpenAI transform",
       )
@@ -152,17 +164,22 @@ test "fixture/anthropic/toolcall: real fixture has mixed text+tool_use" {
   // Verify the fixture actually has text AND tool_use (compact JSON, no spaces in keys)
   assert_true(body.contains("tool_use"))
   assert_true(body.contains("\"text\""))
-  // Transform should produce ToolCalls (tool_use takes precedence)
+  // Transform should preserve both the tool call and the lead-in text.
   let openai = transform_response(body, Anthropic, OpenAI)
   let json : Json = @json.parse(openai) catch { _ => fail("parse") }
   let resp = @openai.parse_chat_response(json)
-  match resp {
-    @types.ModelResponse::ToolCalls(calls) => {
+  match extract_tool_calls_fixture(resp) {
+    Some(calls) => {
       assert_eq(calls[0].name, "get_weather")
       // Real fixture has toolu_ ID, converted to call_ for OpenAI CC
       assert_true(calls[0].id.has_prefix("call_"))
     }
-    _ => fail("expected ToolCalls from mixed Anthropic fixture")
+    None => fail("expected ToolCalls from mixed Anthropic fixture")
+  }
+  match resp {
+    @types.ModelResponse::ToolCallsWithContent(rich~, ..) =>
+      assert_true(rich.content.length() > 0)
+    _ => fail("expected mixed content from Anthropic fixture")
   }
 }
 

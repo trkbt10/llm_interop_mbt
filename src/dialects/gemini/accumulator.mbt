@@ -53,7 +53,17 @@ pub fn GeminiAccumulator::finish(
         @types.ToolCallRequest::new(id=tc.id, name=tc.name, arguments~),
       )
     }
-    @types.ModelResponse::ToolCalls(calls)
+    let content = self.text.to_string()
+    if content.length() > 0 {
+      @types.ModelResponse::ToolCallsWithContent(
+        tool_calls=calls,
+        rich=@types.RichTextResponse::from_parts(content~, content_parts=[
+          @types.ResponseContentPart::OutputText(content),
+        ]),
+      )
+    } else {
+      @types.ModelResponse::ToolCalls(calls)
+    }
   } else {
     @types.ModelResponse::Text(self.text.to_string())
   }

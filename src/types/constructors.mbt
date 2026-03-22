@@ -94,6 +94,44 @@ pub fn RichTextResponse::new(
 }
 
 ///|
+fn should_preserve_rich_content_parts(
+  content_parts : Array[ResponseContentPart],
+  annotations : Array[ResponseAnnotation],
+  tool_traces : Array[ToolCallTrace],
+) -> Bool {
+  if annotations.length() > 0 ||
+    tool_traces.length() > 0 ||
+    content_parts.length() > 1 {
+    return true
+  }
+  for part in content_parts {
+    match part {
+      ResponseContentPart::OutputText(_) => ()
+      _ => return true
+    }
+  }
+  false
+}
+
+///|
+/// Build a RichTextResponse from parsed content parts.
+/// Keeps structured parts only when needed to preserve fidelity.
+pub fn RichTextResponse::from_parts(
+  content~ : String,
+  content_parts~ : Array[ResponseContentPart],
+  annotations? : Array[ResponseAnnotation] = [],
+  tool_traces? : Array[ToolCallTrace] = [],
+) -> RichTextResponse {
+  let structured_parts = if content_parts.length() > 0 &&
+    should_preserve_rich_content_parts(content_parts, annotations, tool_traces) {
+    Some(content_parts)
+  } else {
+    None
+  }
+  { content, content_parts: structured_parts, annotations, tool_traces }
+}
+
+///|
 /// Create new ToolDefinition
 pub fn ToolDefinition::new(
   name~ : String,

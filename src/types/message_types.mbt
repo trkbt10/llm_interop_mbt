@@ -240,6 +240,11 @@ pub(all) enum ModelResponse {
   RichText(RichTextResponse)
   /// Tool call request
   ToolCalls(Array[ToolCallRequest])
+  /// Tool call request with accompanying text/reasoning content
+  ToolCallsWithContent(
+    tool_calls~ : Array[ToolCallRequest],
+    rich~ : RichTextResponse
+  )
   /// Error
   ModelError(String)
   /// Rate limited

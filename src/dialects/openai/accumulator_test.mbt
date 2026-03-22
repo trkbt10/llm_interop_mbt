@@ -66,6 +66,24 @@ test "ChatCompletionsAccumulator handles tool calls" {
   }
 }
 
+///|
+test "ChatCompletionsAccumulator preserves mixed text and tool calls" {
+  let jsonl =
+    #| {"choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}
+    #| {"choices":[{"index":0,"delta":{"content":"Let me check"},"finish_reason":null}]}
+    #| {"choices":[{"index":0,"delta":{"tool_calls":[{"id":"fc_123","type":"function","function":{"name":"datetime","arguments":"{}"}}]},"finish_reason":null}]}
+    #| {"choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}
+  let result = accumulate_chat_completions(jsonl)
+  match result {
+    @types.ModelResponse::ToolCallsWithContent(tool_calls~, rich~) => {
+      assert_eq(tool_calls.length(), 1)
+      assert_eq(tool_calls[0].name, "datetime")
+      assert_eq(rich.content, "Let me check")
+    }
+    _ => fail("Expected ToolCallsWithContent response")
+  }
+}
+
 // =============================================================================
 // Responses API Accumulator Tests
 // =============================================================================

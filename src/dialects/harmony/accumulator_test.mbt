@@ -66,6 +66,35 @@ test "accumulate_harmony handles tool calls" {
 }
 
 ///|
+test "accumulate_harmony preserves reasoning and text with tool calls" {
+  let jsonl =
+    #| {"choices":[{"index":0,"delta":{"reasoning":"Need current time.","channel":"analysis"},"finish_reason":null}]}
+    #| {"choices":[{"index":0,"delta":{"content":"Let me check","channel":"final"},"finish_reason":null}]}
+    #| {"choices":[{"index":0,"delta":{"tool_calls":[{"id":"fc_123","type":"function","function":{"name":"datetime","arguments":"{}"}}]},"finish_reason":null}]}
+    #| {"choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}
+  let result = accumulate_harmony(jsonl)
+  match result {
+    @types.ModelResponse::ToolCallsWithContent(tool_calls~, rich~) => {
+      assert_eq(tool_calls.length(), 1)
+      assert_eq(tool_calls[0].name, "datetime")
+      assert_eq(rich.content, "Let me check")
+      match rich.content_parts {
+        Some(parts) => {
+          assert_eq(parts.length(), 2)
+          match parts[0] {
+            @types.ResponseContentPart::Thinking(text~) =>
+              assert_eq(text, "Need current time.")
+            _ => fail("Expected reasoning part")
+          }
+        }
+        None => fail("Expected structured mixed content")
+      }
+    }
+    _ => fail("Expected ToolCallsWithContent response")
+  }
+}
+
+///|
 test "accumulate_harmony fixture multi tool stream keeps arguments by index" {
   let jsonl = read_sse_fixture(
     "testdata/groq/harmony/stream/multi_toolcall.jsonl",

@@ -148,3 +148,19 @@ test "RichTextResponse with content_parts" {
     None => fail("Expected content_parts")
   }
 }
+
+///|
+test "RichTextResponse::from_parts preserves structure only when needed" {
+  let plain = RichTextResponse::from_parts(content="Hello", content_parts=[
+    ResponseContentPart::OutputText("Hello"),
+  ])
+  let structured = RichTextResponse::from_parts(content="Hello world", content_parts=[
+    ResponseContentPart::OutputText("Hello"),
+    ResponseContentPart::OutputText(" world"),
+  ])
+  assert_eq(plain.content_parts, None)
+  match structured.content_parts {
+    Some(parts) => assert_eq(parts.length(), 2)
+    None => fail("Expected structured content parts")
+  }
+}

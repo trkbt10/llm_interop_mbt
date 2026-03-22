@@ -95,11 +95,26 @@ fn HarmonyAccumulator::process_tool_call_delta(
 pub fn HarmonyAccumulator::finish(
   self : HarmonyAccumulator,
 ) -> @types.ModelResponse {
-  @types.finalize_accumulation(
-    self.finish_reason == "tool_calls",
-    self.tool_calls,
-    self.text,
-  )
+  if self.finish_reason == "tool_calls" && self.tool_calls.length() > 0 {
+    let calls = @types.tool_calls_to_requests(self.tool_calls)
+    let content = self.text.to_string()
+    let reasoning = self.reasoning.to_string()
+    let parts : Array[@types.ResponseContentPart] = []
+    if reasoning.length() > 0 {
+      parts.push(@types.ResponseContentPart::Thinking(text=reasoning))
+    }
+    if content.length() > 0 {
+      parts.push(@types.ResponseContentPart::OutputText(content))
+    }
+    if parts.length() > 0 {
+      return @types.ModelResponse::ToolCallsWithContent(
+        tool_calls=calls,
+        rich=@types.RichTextResponse::from_parts(content~, content_parts=parts),
+      )
+    }
+    return @types.ModelResponse::ToolCalls(calls)
+  }
+  @types.finalize_accumulation(false, self.tool_calls, self.text)
 }
 
 ///|

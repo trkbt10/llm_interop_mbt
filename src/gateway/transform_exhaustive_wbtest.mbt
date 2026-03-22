@@ -169,6 +169,18 @@ fn parse_as_model_response(body : String) -> @types.ModelResponse {
 }
 
 ///|
+fn extract_tool_calls_exhaustive(
+  response : @types.ModelResponse,
+) -> Array[@types.ToolCallRequest]? {
+  match response {
+    @types.ModelResponse::ToolCalls(calls) => Some(calls)
+    @types.ModelResponse::ToolCallsWithContent(tool_calls~, ..) =>
+      Some(tool_calls)
+    _ => None
+  }
+}
+
+///|
 fn count_anthropic_tool_use(body : String) -> Int {
   let json = @json.parse(body) catch { _ => return 0 }
   match json {
@@ -422,9 +434,14 @@ test "resp Anth→OAI: mixed text+tool" {
   let r = parse_as_model_response(
     transform_response(anthropic_mixed_response(), Anthropic, OpenAI),
   )
+  match extract_tool_calls_exhaustive(r) {
+    Some(c) => assert_eq(c[0].name, "get_weather")
+    None => fail("tc")
+  }
   match r {
-    @types.ModelResponse::ToolCalls(c) => assert_eq(c[0].name, "get_weather")
-    _ => fail("tc")
+    @types.ModelResponse::ToolCallsWithContent(rich~, ..) =>
+      assert_eq(rich.content, "Let me check")
+    _ => fail("expected mixed content")
   }
 }
 
@@ -483,9 +500,14 @@ test "resp Gem→OAI: mixed text+functionCall" {
   let r = parse_as_model_response(
     transform_response(gemini_mixed_response(), Gemini, OpenAI),
   )
+  match extract_tool_calls_exhaustive(r) {
+    Some(c) => assert_eq(c[0].name, "get_weather")
+    None => fail("tc")
+  }
   match r {
-    @types.ModelResponse::ToolCalls(c) => assert_eq(c[0].name, "get_weather")
-    _ => fail("tc")
+    @types.ModelResponse::ToolCallsWithContent(rich~, ..) =>
+      assert_eq(rich.content, "Checking...")
+    _ => fail("expected mixed content")
   }
 }
 
@@ -541,9 +563,14 @@ test "resp OAI→OAI: mixed text+tool_calls" {
   let r = parse_as_model_response(
     transform_response(openai_cc_mixed_response(), OpenAI, OpenAI),
   )
+  match extract_tool_calls_exhaustive(r) {
+    Some(c) => assert_eq(c[0].name, "get_weather")
+    None => fail("tc")
+  }
   match r {
-    @types.ModelResponse::ToolCalls(c) => assert_eq(c[0].name, "get_weather")
-    _ => fail("tc")
+    @types.ModelResponse::ToolCallsWithContent(rich~, ..) =>
+      assert_eq(rich.content, "Let me check")
+    _ => fail("expected mixed content")
   }
 }
 

@@ -60,6 +60,7 @@ pub(all) enum ModelResponse {
   Text(String)
   RichText(RichTextResponse)
   ToolCalls(Array[ToolCallRequest])
+  ToolCallsWithContent(tool_calls~ : Array[ToolCallRequest], rich~ : RichTextResponse)
   ModelError(String)
   RateLimited(retry_after~ : Int)
 }
@@ -98,6 +99,7 @@ pub(all) struct RichTextResponse {
   annotations : Array[ResponseAnnotation]
   tool_traces : Array[ToolCallTrace]
 }
+pub fn RichTextResponse::from_parts(content~ : String, content_parts~ : Array[ResponseContentPart], annotations? : Array[ResponseAnnotation], tool_traces? : Array[ToolCallTrace]) -> Self
 pub fn RichTextResponse::new(content~ : String, content_parts? : Array[ResponseContentPart]?, annotations? : Array[ResponseAnnotation], tool_traces? : Array[ToolCallTrace]) -> Self
 
 pub(all) struct ToolCallAcc {

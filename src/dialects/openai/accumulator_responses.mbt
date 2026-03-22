@@ -328,11 +328,23 @@ pub fn ResponsesApiAccumulator::finish(
     }
   }
   if self.function_calls.length() > 0 {
-    return parse_responses_output(
-      build_responses_output_from_tool_calls(
-        @types.tool_calls_to_requests(self.function_calls),
-      ),
-    )
+    let calls = @types.tool_calls_to_requests(self.function_calls)
+    let text = concatenate_output_text_parts(self.content_parts)
+    let tool_traces = self.web_search_traces.map(web_search_trace_to_public)
+    if self.content_parts.length() > 0 ||
+      self.annotations.length() > 0 ||
+      tool_traces.length() > 0 {
+      return @types.ModelResponse::ToolCallsWithContent(
+        tool_calls=calls,
+        rich=@types.RichTextResponse::from_parts(
+          content=text,
+          content_parts=self.content_parts,
+          annotations=self.annotations,
+          tool_traces~,
+        ),
+      )
+    }
+    return @types.ModelResponse::ToolCalls(calls)
   }
   let text = concatenate_output_text_parts(self.content_parts)
   let tool_traces = self.web_search_traces.map(web_search_trace_to_public)

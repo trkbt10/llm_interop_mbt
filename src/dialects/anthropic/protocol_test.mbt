@@ -167,6 +167,31 @@ test "parse_response parses tool_use response" {
 }
 
 ///|
+test "parse_response preserves mixed text and tool_use" {
+  let json : Json = {
+    "content": Json::array([
+      { "type": "text", "text": "Let me check that." },
+      {
+        "type": "tool_use",
+        "id": "toolu_abc",
+        "name": "search",
+        "input": { "query": "MoonBit" },
+      },
+    ]),
+    "stop_reason": "tool_use",
+  }
+  let response = parse_response(json)
+  match response {
+    @types.ModelResponse::ToolCallsWithContent(tool_calls~, rich~) => {
+      assert_eq(tool_calls.length(), 1)
+      assert_eq(tool_calls[0].name, "search")
+      assert_eq(rich.content, "Let me check that.")
+    }
+    _ => fail("Expected ToolCallsWithContent response")
+  }
+}
+
+///|
 test "message_to_json converts User with document content_parts" {
   let msg = @types.ModelMessage::User(
     content="Summarize this PDF",

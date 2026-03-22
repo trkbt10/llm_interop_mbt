@@ -428,6 +428,8 @@ pub fn model_response_to_responses_output(
       }
     @types.ModelResponse::ToolCalls(calls) =>
       build_responses_output_from_tool_calls(calls)
+    @types.ModelResponse::ToolCallsWithContent(tool_calls~, rich~) =>
+      build_responses_output_from_mixed_tool_calls(tool_calls, rich)
     @types.ModelResponse::ModelError(_) => []
     @types.ModelResponse::RateLimited(_) => []
   }
@@ -512,11 +514,55 @@ fn build_responses_output_from_tool_calls(
 }
 
 ///|
+fn rich_parts_for_responses_output(
+  rich : @types.RichTextResponse,
+) -> Array[@types.ResponseContentPart] {
+  match rich.content_parts {
+    Some(parts) => parts
+    None =>
+      if rich.content.length() > 0 {
+        [@types.ResponseContentPart::OutputText(rich.content)]
+      } else {
+        []
+      }
+  }
+}
+
+///|
+fn build_responses_output_from_mixed_tool_calls(
+  tool_calls : Array[@types.ToolCallRequest],
+  rich : @types.RichTextResponse,
+) -> Array[Json] {
+  let (message_parts, trace_tool_outputs, reasoning_outputs) = decompose_responses_rich_content(
+    rich_parts_for_responses_output(rich),
+    rich.annotations,
+    rich.tool_traces,
+  )
+  let tool_outputs = trace_tool_outputs
+  for output in build_responses_output_from_tool_calls(tool_calls) {
+    tool_outputs.push(output)
+  }
+  assemble_responses_output(message_parts, tool_outputs, reasoning_outputs~)
+}
+
+///|
 fn build_responses_output_from_rich_content(
   parts : Array[@types.ResponseContentPart],
   annotations : Array[@types.ResponseAnnotation],
   tool_traces : Array[@types.ToolCallTrace],
 ) -> Array[Json] {
+  let (message_parts, tool_outputs, reasoning_outputs) = decompose_responses_rich_content(
+    parts, annotations, tool_traces,
+  )
+  assemble_responses_output(message_parts, tool_outputs, reasoning_outputs~)
+}
+
+///|
+fn decompose_responses_rich_content(
+  parts : Array[@types.ResponseContentPart],
+  annotations : Array[@types.ResponseAnnotation],
+  tool_traces : Array[@types.ToolCallTrace],
+) -> (Array[Json], Array[Json], Array[Json]) {
   let message_parts : Array[Json] = []
   let reasoning_outputs : Array[Json] = []
   let tool_outputs : Array[Json] = []
@@ -600,7 +646,7 @@ fn build_responses_output_from_rich_content(
         message_parts.push({ "type": "output_text", "text": transcript })
     }
   }
-  assemble_responses_output(message_parts, tool_outputs, reasoning_outputs~)
+  (message_parts, tool_outputs, reasoning_outputs)
 }
 
 // =============================================================================
@@ -693,18 +739,27 @@ fn parse_responses_output(outputs : Array[Json]) -> @types.ModelResponse {
     }
   }
   let text = concatenate_output_text_parts(content_parts)
-  let content_parts_opt : Array[@types.ResponseContentPart]? = if has_non_text {
-    Some(content_parts)
-  } else {
-    None
-  }
   if tool_calls.length() > 0 {
-    @types.ModelResponse::ToolCalls(tool_calls)
+    if content_parts.length() > 0 ||
+      annotations.length() > 0 ||
+      tool_traces.length() > 0 {
+      @types.ModelResponse::ToolCallsWithContent(
+        tool_calls~,
+        rich=@types.RichTextResponse::from_parts(
+          content=text,
+          content_parts~,
+          annotations~,
+          tool_traces~,
+        ),
+      )
+    } else {
+      @types.ModelResponse::ToolCalls(tool_calls)
+    }
   } else if has_non_text || annotations.length() > 0 || tool_traces.length() > 0 {
     @types.ModelResponse::RichText(
-      @types.RichTextResponse::new(
+      @types.RichTextResponse::from_parts(
         content=text,
-        content_parts=content_parts_opt,
+        content_parts~,
         annotations~,
         tool_traces~,
       ),

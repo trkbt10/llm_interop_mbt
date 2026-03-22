@@ -43,6 +43,29 @@ test "AnthropicMessagesAccumulator tool call stream" {
 }
 
 ///|
+test "AnthropicMessagesAccumulator preserves mixed text and tool call stream" {
+  let jsonl =
+    #| {"event":"message_start","data":{"type":"message_start","message":{"id":"msg_1"}}}
+    #| {"event":"content_block_start","data":{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}}
+    #| {"event":"content_block_delta","data":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Let me check"}}}
+    #| {"event":"content_block_stop","data":{"type":"content_block_stop","index":0}}
+    #| {"event":"content_block_start","data":{"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"toolu_123","name":"search","input":{}}}}
+    #| {"event":"content_block_delta","data":{"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{\"q\":\"test\"}"}}}
+    #| {"event":"content_block_stop","data":{"type":"content_block_stop","index":1}}
+    #| {"event":"message_delta","data":{"type":"message_delta","delta":{"stop_reason":"tool_use"}}}
+    #| {"event":"message_stop","data":{"type":"message_stop"}}
+  let result = accumulate_messages(jsonl)
+  match result {
+    @types.ModelResponse::ToolCallsWithContent(tool_calls~, rich~) => {
+      assert_eq(tool_calls.length(), 1)
+      assert_eq(tool_calls[0].name, "search")
+      assert_eq(rich.content, "Let me check")
+    }
+    _ => fail("Expected ToolCallsWithContent response")
+  }
+}
+
+///|
 test "non_streaming_to_synthetic_events preserves thinking block" {
   // Anthropic response with thinking + text
   let response : Json = {

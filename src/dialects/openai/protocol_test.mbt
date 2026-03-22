@@ -388,6 +388,40 @@ test "parse_chat_response parses tool_calls response" {
 }
 
 ///|
+test "parse_chat_response preserves mixed text and tool_calls" {
+  let json : Json = {
+    "choices": Json::array([
+      {
+        "message": {
+          "role": "assistant",
+          "content": "Let me check",
+          "tool_calls": Json::array([
+            {
+              "id": "call_abc",
+              "type": "function",
+              "function": {
+                "name": "get_weather",
+                "arguments": "{\"city\":\"Tokyo\"}",
+              },
+            },
+          ]),
+        },
+        "finish_reason": "tool_calls",
+      },
+    ]),
+  }
+  let response = parse_chat_response(json)
+  match response {
+    @types.ModelResponse::ToolCallsWithContent(tool_calls~, rich~) => {
+      assert_eq(tool_calls.length(), 1)
+      assert_eq(tool_calls[0].name, "get_weather")
+      assert_eq(rich.content, "Let me check")
+    }
+    _ => fail("Expected ToolCallsWithContent response")
+  }
+}
+
+///|
 test "parse_responses_api_response parses text response" {
   let json : Json = {
     "id": Json::string(test_response_id),
