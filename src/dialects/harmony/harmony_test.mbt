@@ -143,6 +143,60 @@ test "responses_input_to_messages: web_search_call becomes builtin tool call" {
 }
 
 ///|
+test "responses_input_to_messages: hosted builtin item becomes builtin tool call" {
+  let input : Array[Json] = [
+    { "role": "user", "content": "Check docs" },
+    {
+      "type": "mcp_call",
+      "id": "mcp_123",
+      "server_label": "docs",
+      "name": "lookup_docs",
+      "arguments": "{\"topic\":\"MoonBit\"}",
+      "status": "completed",
+      "output": "Found API docs",
+    },
+  ]
+  let messages = responses_input_to_messages(input)
+  assert_eq(messages.length(), 2)
+  match messages[1] {
+    @types.ModelMessage::Assistant(tool_calls=Some(calls), ..) => {
+      assert_eq(calls.length(), 1)
+      assert_eq(
+        calls[0].kind,
+        @types.ToolCallKind::Builtin(builtin_type="mcp_call"),
+      )
+      assert_eq(calls[0].name, "lookup_docs")
+      match calls[0].arguments {
+        { "server_label": String(label), .. } => assert_eq(label, "docs")
+        _ => fail("Expected builtin payload")
+      }
+    }
+    _ => fail("Expected Assistant with builtin tool call")
+  }
+}
+
+///|
+test "responses_input_to_messages: custom_tool_call_output becomes ToolResult" {
+  let input : Array[Json] = [
+    {
+      "type": "custom_tool_call_output",
+      "call_id": "fc_custom_1",
+      "output": Json::array([{ "type": "input_text", "text": "done" }]),
+    },
+  ]
+  let messages = responses_input_to_messages(input)
+  assert_eq(messages.length(), 1)
+  match messages[0] {
+    @types.ModelMessage::ToolResult(tool_call_id~, content~) => {
+      assert_eq(tool_call_id, "fc_custom_1")
+      assert_true(content.contains("input_text"))
+      assert_true(content.contains("done"))
+    }
+    _ => fail("Expected ToolResult")
+  }
+}
+
+///|
 test "responses_input_to_messages: multiple parallel tool calls" {
   let input : Array[Json] = [
     { "role": "user", "content": "Get time and weather" },

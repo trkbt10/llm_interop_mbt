@@ -98,10 +98,47 @@ fn convert_responses_tools_to_anthropic(tools : Array[Json]) -> Array[Json] {
             ),
           ),
         )
+      { "type": String(type_), .. } =>
+        result.push(
+          tool_to_json(
+            @types.ToolDefinition::builtin(
+              type_~,
+              name=extract_tool_name(tool, type_),
+              config=extract_tool_config(tool),
+            ),
+          ),
+        )
       _ => ()
     }
   }
   result
+}
+
+///|
+fn extract_tool_name(tool : Json, fallback : String) -> String {
+  match tool {
+    { "name": String(name), .. } => name
+    _ => fallback
+  }
+}
+
+///|
+fn extract_tool_config(tool : Json) -> Json {
+  match tool {
+    Object(fields) => {
+      let config : Map[String, Json] = {}
+      for key, value in fields {
+        if key != "type" &&
+          key != "name" &&
+          key != "description" &&
+          key != "parameters" {
+          config[key] = value
+        }
+      }
+      Json::object(config)
+    }
+    _ => Json::object({})
+  }
 }
 
 ///|

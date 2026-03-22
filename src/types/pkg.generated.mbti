@@ -120,6 +120,7 @@ pub(all) struct ToolCallRequest {
   arguments : Json
   kind : ToolCallKind
 }
+pub fn ToolCallRequest::builtin(id~ : String, type_~ : String, payload? : Json, name? : String) -> Self
 pub fn ToolCallRequest::default() -> Self
 pub fn ToolCallRequest::new(id~ : String, name~ : String, arguments~ : Json) -> Self
 pub fn ToolCallRequest::web_search(id~ : String, query? : String?, queries? : Array[String]?) -> Self

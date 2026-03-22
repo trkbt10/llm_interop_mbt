@@ -43,6 +43,23 @@ pub fn ToolCallRequest::web_search(
 }
 
 ///|
+/// Create generic builtin ToolCallRequest
+pub fn ToolCallRequest::builtin(
+  id~ : String,
+  type_~ : String,
+  payload? : Json = Json::object({}),
+  name? : String = "",
+) -> ToolCallRequest {
+  let resolved_name = if name.length() > 0 { name } else { type_ }
+  {
+    id,
+    name: resolved_name,
+    arguments: payload,
+    kind: ToolCallKind::Builtin(builtin_type=type_),
+  }
+}
+
+///|
 /// Create URL citation annotation
 pub fn ResponseAnnotation::url_citation(
   url~ : String,

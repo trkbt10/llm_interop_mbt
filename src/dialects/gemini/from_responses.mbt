@@ -30,30 +30,15 @@ pub fn responses_request_to_gemini(request : Json) -> Json {
     { "tools": Array(t), .. } => convert_responses_tools_to_gemini(t)
     _ => []
   }
-  let tool_defs = tools.map(fn(t) {
-    match t {
-      {
-        "name": String(name),
-        "description": String(desc),
-        "parameters": params,
-        ..
-      } =>
-        @types.ToolDefinition::new(name~, description=desc, parameters=params)
-      _ =>
-        @types.ToolDefinition::new(
-          name="",
-          description="",
-          parameters=Json::object({}),
-        )
-    }
-  })
-  build_body(messages, tool_defs, max_tokens~)
+  build_body(messages, tools, max_tokens~)
 }
 
 ///|
-/// Convert Responses API tools to Gemini functionDeclarations format
-fn convert_responses_tools_to_gemini(tools : Array[Json]) -> Array[Json] {
-  let result : Array[Json] = []
+/// Convert Responses API tools to Gemini ToolDefinition values
+fn convert_responses_tools_to_gemini(
+  tools : Array[Json],
+) -> Array[@types.ToolDefinition] {
+  let result : Array[@types.ToolDefinition] = []
   for tool in tools {
     match tool {
       { "type": String("function"), "name": String(name), .. } => {
@@ -65,17 +50,41 @@ fn convert_responses_tools_to_gemini(tools : Array[Json]) -> Array[Json] {
           { "parameters": params, .. } => params
           _ => Json::object({})
         }
-        result.push({
-          "name": name,
-          "description": description,
-          "parameters": parameters,
-        })
+        result.push(
+          @types.ToolDefinition::new(name~, description~, parameters~),
+        )
       }
       { "type": String("web_search_preview"), .. }
       | { "type": String("web_search_preview_2025_03_11"), .. } =>
-        result.push(web_search_tool_to_json())
+        result.push(@types.ToolDefinition::web_search_preview())
+      { "type": String(type_), .. } =>
+        result.push(
+          @types.ToolDefinition::builtin(
+            type_~,
+            config=extract_tool_config(tool),
+          ),
+        )
       _ => ()
     }
   }
   result
+}
+
+///|
+fn extract_tool_config(tool : Json) -> Json {
+  match tool {
+    Object(fields) => {
+      let config : Map[String, Json] = {}
+      for key, value in fields {
+        if key != "type" &&
+          key != "name" &&
+          key != "description" &&
+          key != "parameters" {
+          config[key] = value
+        }
+      }
+      Json::object(config)
+    }
+    _ => Json::object({})
+  }
 }

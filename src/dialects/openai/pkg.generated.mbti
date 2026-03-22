@@ -43,6 +43,8 @@ pub fn chat_completions_resolve(String, String, String) -> (String, String)?
 
 pub fn github_copilot_default_base_url() -> String
 
+pub fn is_builtin_responses_tool_item_type(String) -> Bool
+
 pub fn message_to_json(@types.ModelMessage) -> Json
 
 pub fn messages_to_json(Array[@types.ModelMessage]) -> Array[Json]

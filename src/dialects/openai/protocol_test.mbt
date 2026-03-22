@@ -145,6 +145,43 @@ test "tool_to_responses_api_json preserves generic builtin config" {
   }
 }
 
+///|
+test "messages_to_responses_input preserves builtin assistant tool items" {
+  let messages = [
+    @types.ModelMessage::Assistant(
+      content="",
+      tool_calls=Some([
+        @types.ToolCallRequest::builtin(
+          id="mcp_req_123",
+          type_="mcp_approval_request",
+          payload={
+            "id": "mcp_req_123",
+            "server_label": "docs",
+            "name": "lookup_docs",
+            "arguments": "{\"topic\":\"MoonBit\"}",
+          },
+          name="lookup_docs",
+        ),
+      ]),
+    ),
+  ]
+  let input = messages_to_responses_input(messages)
+  match input[0] {
+    {
+      "type": String("mcp_approval_request"),
+      "id": String(id),
+      "server_label": String(server_label),
+      "name": String(name),
+      ..
+    } => {
+      assert_eq(id, "mcp_req_123")
+      assert_eq(server_label, "docs")
+      assert_eq(name, "lookup_docs")
+    }
+    _ => fail("Expected builtin assistant tool item")
+  }
+}
+
 // =============================================================================
 // Request Body Builder Tests (OpenAI Format)
 // =============================================================================
@@ -352,6 +389,72 @@ test "parse_responses_api_response preserves annotations and web search traces" 
       assert_eq(rich.tool_traces[0].kind, @types.ToolCallKind::WebSearch)
     }
     _ => fail("Expected RichText response")
+  }
+}
+
+///|
+test "parse_responses_api_response preserves builtin hosted tool traces" {
+  let json : Json = {
+    "output": Json::array([
+      {
+        "type": "file_search_call",
+        "id": "fs_001",
+        "status": "completed",
+        "results": Json::array([
+          { "file_id": "file_123", "filename": "docs.md", "score": 0.98 },
+        ]),
+      },
+      {
+        "type": "message",
+        "content": Json::array([
+          { "type": "output_text", "text": "Found relevant docs." },
+        ]),
+      },
+    ]),
+  }
+  let response = parse_responses_api_response(json)
+  match response {
+    @types.ModelResponse::RichText(rich) => {
+      assert_eq(rich.tool_traces.length(), 1)
+      assert_eq(
+        rich.tool_traces[0].kind,
+        @types.ToolCallKind::Builtin(builtin_type="file_search_call"),
+      )
+      match rich.tool_traces[0].arguments {
+        { "results": Array(results), .. } => assert_eq(results.length(), 1)
+        _ => fail("Expected stored builtin payload")
+      }
+    }
+    _ => fail("Expected RichText response")
+  }
+}
+
+///|
+test "parse_responses_api_response returns ToolCalls for actionable builtin items" {
+  let json : Json = {
+    "output": Json::array([
+      {
+        "type": "mcp_call",
+        "id": "mcp_001",
+        "name": "lookup_docs",
+        "server_label": "docs",
+        "arguments": "{\"topic\":\"MoonBit\"}",
+        "status": "completed",
+        "output": "Found docs",
+      },
+    ]),
+  }
+  let response = parse_responses_api_response(json)
+  match response {
+    @types.ModelResponse::ToolCalls(calls) => {
+      assert_eq(calls.length(), 1)
+      assert_eq(
+        calls[0].kind,
+        @types.ToolCallKind::Builtin(builtin_type="mcp_call"),
+      )
+      assert_eq(calls[0].name, "lookup_docs")
+    }
+    _ => fail("Expected ToolCalls response")
   }
 }
 
@@ -778,6 +881,44 @@ test "reasoning item roundtrip preserves encrypted_content" {
         None => fail("Expected content_parts")
       }
     _ => fail("Expected RichText")
+  }
+}
+
+///|
+test "model_response_to_responses_json preserves builtin hosted tool traces" {
+  let response = @types.ModelResponse::RichText(
+    @types.RichTextResponse::new(content="Found relevant docs.", tool_traces=[
+      @types.ToolCallTrace::new(
+        id="fs_001",
+        name="file_search_call",
+        kind=@types.ToolCallKind::Builtin(builtin_type="file_search_call"),
+        statuses=[@types.ToolCallStatus::Completed],
+        arguments={
+          "type": "file_search_call",
+          "id": "fs_001",
+          "status": "completed",
+          "results": Json::array([
+            { "file_id": "file_123", "filename": "docs.md", "score": 0.98 },
+          ]),
+        },
+      ),
+    ]),
+  )
+  let json = model_response_to_responses_json(
+    response,
+    response_id=test_response_id,
+    model=test_model_openai_responses,
+  )
+  match json {
+    { "output": Array(output), .. } => {
+      assert_eq(output.length(), 2)
+      match output[0] {
+        { "type": String("file_search_call"), "results": Array(results), .. } =>
+          assert_eq(results.length(), 1)
+        _ => fail("Expected builtin hosted tool output")
+      }
+    }
+    _ => fail("Expected response JSON")
   }
 }
 

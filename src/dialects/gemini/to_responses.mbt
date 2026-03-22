@@ -55,6 +55,7 @@ pub fn response_to_responses(
 fn build_responses_output_from_gemini(parts : Array[Json]) -> Array[Json] {
   let tool_outputs : Array[Json] = []
   let text_parts : Array[Json] = []
+  let reasoning_outputs : Array[Json] = []
   let mut call_index = 0
   // Gemini parts → Responses API output items
   // Ref: https://ai.google.dev/api/generate-content — Part types
@@ -63,10 +64,32 @@ fn build_responses_output_from_gemini(parts : Array[Json]) -> Array[Json] {
   //   executableCode → output_text (code block)
   //   codeExecutionResult → output_text (execution result)
   for part in parts {
+    let thought_signature = match part {
+      { "thoughtSignature": String(value), .. } => Some(value)
+      _ => None
+    }
     match part {
       // Ref: Part.text — {"text":"..."} → output_text
-      { "text": String(text), .. } =>
+      { "text": String(text), "thought": True, .. } =>
+        reasoning_outputs.push(
+          @openai.build_responses_reasoning_item(
+            text,
+            encrypted_content=thought_signature,
+          ),
+        )
+      { "text": String(text), .. } => {
+        match thought_signature {
+          Some(value) =>
+            reasoning_outputs.push(
+              @openai.build_responses_reasoning_item(
+                "",
+                encrypted_content=Some(value),
+              ),
+            )
+          None => ()
+        }
         text_parts.push({ "type": "output_text", "text": text })
+      }
       // Ref: Part.functionCall — {"functionCall":{"name":"...","args":{...}}} → function_call
       { "functionCall": { "name": String(name), "args": args, .. }, .. } => {
         let gemini_id = @interop_util.generate_gemini_tool_call_id(
@@ -83,6 +106,16 @@ fn build_responses_output_from_gemini(parts : Array[Json]) -> Array[Json] {
           tool_outputs.push(
             @openai.build_responses_function_call(call_id, name, args),
           )
+        }
+        match thought_signature {
+          Some(value) =>
+            reasoning_outputs.push(
+              @openai.build_responses_reasoning_item(
+                "",
+                encrypted_content=Some(value),
+              ),
+            )
+          None => ()
         }
         call_index = call_index + 1
       }
@@ -115,7 +148,11 @@ fn build_responses_output_from_gemini(parts : Array[Json]) -> Array[Json] {
       _ => ()
     }
   }
-  @openai.assemble_responses_output(text_parts, tool_outputs)
+  @openai.assemble_responses_output(
+    text_parts,
+    tool_outputs,
+    reasoning_outputs~,
+  )
 }
 
 ///|

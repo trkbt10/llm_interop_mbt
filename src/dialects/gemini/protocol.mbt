@@ -235,18 +235,19 @@ pub fn tool_to_json(tool : @types.ToolDefinition) -> Json {
 
 ///|
 fn build_builtin_tool_json(type_ : String, config : Json) -> Json {
-  match type_ {
-    "codeExecution" =>
-      match config {
-        Object(fields) => { "codeExecution": Json::object(fields) }
-        _ => { "codeExecution": Json::object({}) }
-      }
-    _ =>
-      {
-        "name": tool_name_from_builtin(type_),
-        "description": "",
-        "parameters": Json::object({}),
-      }
+  if is_native_gemini_tool_type(type_) {
+    let result : Map[String, Json] = {}
+    result[type_] = match config {
+      Object(fields) => Json::object(fields)
+      _ => Json::object({})
+    }
+    Json::object(result)
+  } else {
+    {
+      "name": tool_name_from_builtin(type_),
+      "description": "",
+      "parameters": Json::object({}),
+    }
   }
 }
 
@@ -257,6 +258,14 @@ fn tool_name_from_builtin(type_ : String) -> String {
       @types.web_search_tool_name()
     _ => type_
   }
+}
+
+///|
+fn is_native_gemini_tool_type(type_ : String) -> Bool {
+  [
+    "googleSearchRetrieval", "codeExecution", "googleSearch", "computerUse", "urlContext",
+    "fileSearch", "googleMaps",
+  ].contains(type_)
 }
 
 ///|
@@ -272,30 +281,24 @@ fn web_search_tool_to_json() -> Json {
 /// Convert tool definitions array to Gemini tools format
 pub fn tools_to_json(tools : Array[@types.ToolDefinition]) -> Json {
   let function_declarations : Array[Json] = []
-  let mut code_execution : Json? = None
+  let native_tools : Map[String, Json] = {}
   for tool in tools {
     match tool.kind {
       @types.ToolDefinitionKind::Builtin(builtin_type~, config~) =>
-        if builtin_type == "codeExecution" {
-          code_execution = Some(
-            match config {
-              Object(fields) => Json::object(fields)
-              _ => Json::object({})
-            },
-          )
+        if is_native_gemini_tool_type(builtin_type) {
+          native_tools[builtin_type] = match config {
+            Object(fields) => Json::object(fields)
+            _ => Json::object({})
+          }
         } else {
           function_declarations.push(tool_to_json(tool))
         }
       _ => function_declarations.push(tool_to_json(tool))
     }
   }
-  let result : Map[String, Json] = {}
+  let result : Map[String, Json] = native_tools
   if function_declarations.length() > 0 {
     result["functionDeclarations"] = Json::array(function_declarations)
-  }
-  match code_execution {
-    Some(config) => result["codeExecution"] = config
-    None => ()
   }
   Json::object(result)
 }
@@ -454,6 +457,7 @@ fn extract_gemini_text(parts : Array[Json]) -> String {
   let text = StringBuilder::new()
   for part in parts {
     match part {
+      { "text": String(_), "thought": True, .. } => ()
       { "text": String(t), .. } => {
         if text.to_string().length() > 0 {
           text.write_char('\n')
@@ -475,7 +479,15 @@ fn extract_gemini_content_parts(
   let result : Array[@types.ResponseContentPart] = []
   let mut has_non_text = false
   for part in parts {
+    let thought_signature = match part {
+      { "thoughtSignature": String(value), .. } => Some(value)
+      _ => None
+    }
     match part {
+      { "text": String(t), "thought": True, .. } => {
+        result.push(@types.ResponseContentPart::Thinking(text=t))
+        has_non_text = true
+      }
       { "text": String(t), .. } =>
         result.push(@types.ResponseContentPart::OutputText(t))
       {
@@ -501,6 +513,13 @@ fn extract_gemini_content_parts(
         has_non_text = true
       }
       _ => ()
+    }
+    match thought_signature {
+      Some(value) => {
+        result.push(@types.ResponseContentPart::RedactedThinking(data=value))
+        has_non_text = true
+      }
+      None => ()
     }
   }
   if has_non_text {

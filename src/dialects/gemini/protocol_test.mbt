@@ -165,6 +165,29 @@ test "tools_to_json includes codeExecution builtin" {
 }
 
 ///|
+test "tools_to_json includes native Gemini builtin tools" {
+  let tools = [
+    @types.ToolDefinition::builtin(type_="googleSearch"),
+    @types.ToolDefinition::builtin(type_="fileSearch", config={
+      "fileSearchStoreNames": Json::array([
+        Json::string("fileSearchStores/docs-123"),
+      ]),
+    }),
+    @types.ToolDefinition::builtin(type_="urlContext"),
+  ]
+  let json = tools_to_json(tools)
+  match json {
+    {
+      "googleSearch": Object(_),
+      "fileSearch": { "fileSearchStoreNames": Array(stores), .. },
+      "urlContext": Object(_),
+      ..
+    } => assert_eq(stores.length(), 1)
+    _ => fail("Expected native Gemini builtin tools")
+  }
+}
+
+///|
 test "build_body creates valid body" {
   let messages = [
     @types.ModelMessage::User(
@@ -243,6 +266,63 @@ test "parse_response parses text response" {
     @types.ModelResponse::Text(content) =>
       inspect(content, content="The answer is 4")
     _ => fail("Expected Text response")
+  }
+}
+
+///|
+test "parse_response separates Gemini thought summaries from answer text" {
+  let json : Json = {
+    "candidates": Json::array([
+      {
+        "content": {
+          "role": "model",
+          "parts": Json::array([
+            {
+              "text": "I should check the arithmetic carefully.",
+              "thought": true,
+              "thoughtSignature": "sig_123",
+            },
+            { "text": "The answer is 4." },
+          ]),
+        },
+        "finishReason": "STOP",
+      },
+    ]),
+  }
+  let response = parse_response(json)
+  match response {
+    @types.ModelResponse::RichText(rich) => {
+      assert_eq(rich.content, "The answer is 4.")
+      match rich.content_parts {
+        Some(parts) => {
+          let mut found_thinking = false
+          let mut found_signature = false
+          let mut found_answer = false
+          for part in parts {
+            match part {
+              @types.ResponseContentPart::Thinking(text~) =>
+                if text == "I should check the arithmetic carefully." {
+                  found_thinking = true
+                }
+              @types.ResponseContentPart::RedactedThinking(data~) =>
+                if data == "sig_123" {
+                  found_signature = true
+                }
+              @types.ResponseContentPart::OutputText(text) =>
+                if text == "The answer is 4." {
+                  found_answer = true
+                }
+              _ => ()
+            }
+          }
+          assert_true(found_thinking)
+          assert_true(found_signature)
+          assert_true(found_answer)
+        }
+        None => fail("Expected structured content parts")
+      }
+    }
+    _ => fail("Expected RichText response")
   }
 }
 

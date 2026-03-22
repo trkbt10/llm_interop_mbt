@@ -85,6 +85,39 @@ test "responses_to_anthropic: converts web search builtin tool" {
 }
 
 ///|
+test "responses_to_anthropic: preserves generic builtin tool definitions" {
+  let request : Json = {
+    "model": "claude-sonnet-4-20250514",
+    "input": Json::array([{ "role": "user", "content": "Use MCP" }]),
+    "tools": Json::array([
+      {
+        "type": "mcp",
+        "name": "docs_lookup",
+        "server_url": "https://example.com/mcp",
+      },
+    ]),
+  }
+  let result = @anthropic.responses_request_to_anthropic(request)
+  match result {
+    { "tools": Array(tools), .. } =>
+      match tools[0] {
+        {
+          "type": String(type_),
+          "name": String(name),
+          "server_url": String(server_url),
+          ..
+        } => {
+          assert_eq(type_, "mcp")
+          assert_eq(name, "docs_lookup")
+          assert_eq(server_url, "https://example.com/mcp")
+        }
+        _ => fail("Expected generic builtin Anthropic tool")
+      }
+    _ => fail("Missing Anthropic tools")
+  }
+}
+
+///|
 test "responses_to_anthropic: converts function_call_output to tool_result" {
   let request : Json = {
     "model": "claude-sonnet-4-20250514",
@@ -354,6 +387,38 @@ test "responses_to_gemini: converts web search builtin tool" {
   }
 }
 
+///|
+test "responses_to_gemini: preserves native Gemini builtin tools" {
+  let request : Json = {
+    "model": "gemini-2.5-flash",
+    "input": Json::array([{ "role": "user", "content": "Search docs" }]),
+    "tools": Json::array([
+      { "type": "googleSearch" },
+      {
+        "type": "fileSearch",
+        "fileSearchStoreNames": Json::array([
+          Json::string("fileSearchStores/docs-123"),
+        ]),
+      },
+      { "type": "urlContext" },
+    ]),
+  }
+  let result = @gemini.responses_request_to_gemini(request)
+  match result {
+    { "tools": Array(tools), .. } =>
+      match tools[0] {
+        {
+          "googleSearch": Object(_),
+          "fileSearch": { "fileSearchStoreNames": Array(stores), .. },
+          "urlContext": Object(_),
+          ..
+        } => assert_eq(stores.length(), 1)
+        _ => fail("Expected native Gemini tools")
+      }
+    _ => fail("Missing Gemini tools")
+  }
+}
+
 // =============================================================================
 // Gemini Response -> Responses API Conversion
 // =============================================================================
@@ -388,6 +453,59 @@ test "gemini_to_responses: converts text response" {
             _ => fail("Content mismatch")
           }
         _ => fail("Output mismatch")
+      }
+    }
+    _ => fail("Response mismatch")
+  }
+}
+
+///|
+test "gemini_to_responses: converts thought summaries into reasoning items" {
+  let response : Json = {
+    "candidates": Json::array([
+      {
+        "content": {
+          "role": "model",
+          "parts": Json::array([
+            {
+              "text": "Let me reason through this.",
+              "thought": true,
+              "thoughtSignature": "sig_123",
+            },
+            { "text": "The answer is 4." },
+          ]),
+        },
+        "finishReason": "STOP",
+      },
+    ]),
+  }
+  let result = @gemini.response_to_responses(
+    response,
+    response_id="resp_thought",
+    model="gemini-2.5-pro",
+  )
+  match result {
+    { "output": Array(output), .. } => {
+      match output[0] {
+        {
+          "type": String("reasoning"),
+          "summary": Array(summary),
+          "encrypted_content": String(sig),
+          ..
+        } => {
+          assert_eq(sig, "sig_123")
+          assert_eq(summary.length(), 1)
+        }
+        _ => fail("Expected reasoning item")
+      }
+      match output[1] {
+        { "type": String("message"), "content": Array(content), .. } =>
+          match content[0] {
+            { "type": String("output_text"), "text": String(text), .. } =>
+              assert_eq(text, "The answer is 4.")
+            _ => fail("Expected answer text")
+          }
+        _ => fail("Expected message item")
       }
     }
     _ => fail("Response mismatch")

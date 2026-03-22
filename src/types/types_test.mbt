@@ -19,6 +19,23 @@ test "ToolCallRequest::default creates empty instance" {
 }
 
 ///|
+test "ToolCallRequest::builtin creates builtin instance" {
+  let call = ToolCallRequest::builtin(
+    id="mcp_123",
+    type_="mcp_call",
+    payload={ "server_label": "docs", "arguments": "{\"topic\":\"MoonBit\"}" },
+    name="lookup_docs",
+  )
+  assert_eq(call.kind, ToolCallKind::Builtin(builtin_type="mcp_call"))
+  inspect(call.id, content="mcp_123")
+  inspect(call.name, content="lookup_docs")
+  match call.arguments {
+    { "server_label": String(label), .. } => assert_eq(label, "docs")
+    _ => fail("Expected builtin payload")
+  }
+}
+
+///|
 test "ToolDefinition::new creates instance" {
   let tool = ToolDefinition::new(name="search", description="Search the web", parameters={
     "type": "object",

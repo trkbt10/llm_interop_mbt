@@ -93,13 +93,29 @@ pub fn messages_to_responses_input(
               input_items.push({ "role": "assistant", "content": content })
             }
             for call in calls {
-              input_items.push({
-                "type": "function_call",
-                "call_id": call.id,
-                "name": call.name,
-                "arguments": call.arguments.stringify(),
-                "status": "completed",
-              })
+              match call.kind {
+                @types.ToolCallKind::Function =>
+                  input_items.push({
+                    "type": "function_call",
+                    "call_id": call.id,
+                    "name": call.name,
+                    "arguments": call.arguments.stringify(),
+                    "status": "completed",
+                  })
+                @types.ToolCallKind::WebSearch =>
+                  input_items.push(
+                    build_responses_web_search_call(call.id, call.arguments),
+                  )
+                @types.ToolCallKind::Builtin(builtin_type~) =>
+                  input_items.push(
+                    build_responses_builtin_tool_item(
+                      builtin_type,
+                      call.id,
+                      call.name,
+                      call.arguments,
+                    ),
+                  )
+              }
             }
           }
           _ => input_items.push({ "role": "assistant", "content": content })
@@ -223,6 +239,39 @@ pub fn build_responses_web_search_call(call_id : String, input : Json) -> Json {
     "status": "completed",
     "action": @types.build_web_search_action(input),
   }
+}
+
+///|
+fn build_responses_builtin_tool_item(
+  type_ : String,
+  id : String,
+  name : String,
+  payload : Json,
+  statuses? : Array[@types.ToolCallStatus] = [],
+) -> Json {
+  let result : Map[String, Json] = { "type": Json::string(type_) }
+  match payload {
+    Object(fields) =>
+      for key, value in fields {
+        if key != "type" {
+          result[key] = value
+        }
+      }
+    _ => ()
+  }
+  if !result.contains("id") &&
+    !result.contains("call_id") &&
+    !result.contains("approval_request_id") &&
+    id.length() > 0 {
+    result["id"] = Json::string(id)
+  }
+  if !result.contains("name") && name.length() > 0 {
+    result["name"] = Json::string(name)
+  }
+  if !result.contains("status") && statuses.length() > 0 {
+    result["status"] = tool_trace_status_to_json(statuses)
+  }
+  Json::object(result)
 }
 
 ///|
@@ -355,6 +404,24 @@ pub fn model_response_to_responses_json(
 }
 
 ///|
+pub fn is_builtin_responses_tool_item_type(type_ : String) -> Bool {
+  [
+    "file_search_call", "computer_call", "computer_call_output", "tool_search_output",
+    "image_generation_call", "code_interpreter_call", "local_shell_call", "local_shell_call_output",
+    "shell_call", "shell_call_output", "apply_patch_call", "apply_patch_call_output",
+    "mcp_list_tools", "mcp_approval_request", "mcp_approval_response", "mcp_call",
+  ].contains(type_)
+}
+
+///|
+fn is_actionable_builtin_responses_tool_item_type(type_ : String) -> Bool {
+  [
+    "computer_call", "local_shell_call", "shell_call", "apply_patch_call", "mcp_call",
+    "mcp_approval_request",
+  ].contains(type_)
+}
+
+///|
 fn build_responses_output_from_tool_calls(
   calls : Array[@types.ToolCallRequest],
 ) -> Array[Json] {
@@ -372,7 +439,12 @@ fn build_responses_output_from_tool_calls(
           output.push(build_responses_web_search_call(call.id, call.arguments))
         } else {
           output.push(
-            build_responses_function_call(call.id, call.name, call.arguments),
+            build_responses_builtin_tool_item(
+              builtin_type,
+              call.id,
+              call.name,
+              call.arguments,
+            ),
           )
         }
     }
@@ -390,13 +462,25 @@ fn build_responses_output_from_rich_content(
   let reasoning_outputs : Array[Json] = []
   let tool_outputs : Array[Json] = []
   for trace in tool_traces {
-    if trace.kind == @types.ToolCallKind::WebSearch {
-      tool_outputs.push({
-        "type": "web_search_call",
-        "id": trace.id,
-        "status": tool_trace_status_to_json(trace.statuses),
-        "action": @types.build_web_search_action(trace.arguments),
-      })
+    match trace.kind {
+      @types.ToolCallKind::WebSearch =>
+        tool_outputs.push({
+          "type": "web_search_call",
+          "id": trace.id,
+          "status": tool_trace_status_to_json(trace.statuses),
+          "action": @types.build_web_search_action(trace.arguments),
+        })
+      @types.ToolCallKind::Builtin(builtin_type~) =>
+        tool_outputs.push(
+          build_responses_builtin_tool_item(
+            builtin_type,
+            trace.id,
+            trace.name,
+            trace.arguments,
+            statuses=trace.statuses,
+          ),
+        )
+      _ => ()
     }
   }
   let text_offsets : Array[(Int, Int)] = []
@@ -537,6 +621,14 @@ fn parse_responses_output(outputs : Array[Json]) -> @types.ModelResponse {
       { "type": String("reasoning"), .. } =>
         if append_response_reasoning_item(output, content_parts) {
           has_non_text = true
+        }
+      { "type": String(type_), .. } =>
+        if is_builtin_responses_tool_item_type(type_) {
+          if is_actionable_builtin_responses_tool_item_type(type_) {
+            tool_calls.push(parse_builtin_tool_call(output, type_))
+          } else {
+            tool_traces.push(parse_builtin_trace(output, type_))
+          }
         }
       _ => ()
     }
@@ -743,6 +835,59 @@ fn parse_web_search_trace(output : Json, id : String) -> @types.ToolCallTrace {
     statuses~,
     arguments=Json::object(arguments),
   )
+}
+
+///|
+fn parse_builtin_trace(output : Json, type_ : String) -> @types.ToolCallTrace {
+  let id = extract_responses_tool_item_id(output)
+  let name = match output {
+    { "name": String(value), .. } => value
+    _ => type_
+  }
+  @types.ToolCallTrace::new(
+    id~,
+    name~,
+    kind=@types.ToolCallKind::Builtin(builtin_type=type_),
+    statuses=parse_responses_tool_statuses(output),
+    arguments=output,
+  )
+}
+
+///|
+fn parse_builtin_tool_call(
+  output : Json,
+  type_ : String,
+) -> @types.ToolCallRequest {
+  let id = extract_responses_tool_item_id(output)
+  let name = match output {
+    { "name": String(value), .. } => value
+    _ => type_
+  }
+  @types.ToolCallRequest::builtin(id~, type_~, payload=output, name~)
+}
+
+///|
+fn extract_responses_tool_item_id(item : Json) -> String {
+  match item {
+    { "call_id": String(value), .. } => value
+    { "approval_request_id": String(value), .. } => value
+    { "id": String(value), .. } => value
+    _ => ""
+  }
+}
+
+///|
+fn parse_responses_tool_statuses(item : Json) -> Array[@types.ToolCallStatus] {
+  match item {
+    { "status": String("searching"), .. } => [@types.ToolCallStatus::Searching]
+    { "status": String("completed"), .. } => [@types.ToolCallStatus::Completed]
+    { "status": String("in_progress"), .. }
+    | { "status": String("calling"), .. }
+    | { "status": String("generating"), .. }
+    | { "status": String("interpreting"), .. } =>
+      [@types.ToolCallStatus::InProgress]
+    _ => []
+  }
 }
 
 ///|

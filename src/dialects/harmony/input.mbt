@@ -86,7 +86,13 @@ pub fn responses_input_to_messages(
       {
         "type": String("function_call_output"),
         "call_id": String(call_id),
-        "output": String(output),
+        "output": output,
+        ..
+      }
+      | {
+        "type": String("custom_tool_call_output"),
+        "call_id": String(call_id),
+        "output": output,
         ..
       } => {
         // Flush pending tool calls as assistant message first
@@ -100,9 +106,23 @@ pub fn responses_input_to_messages(
           pending_tool_calls = []
         }
         messages.push(
-          @types.ModelMessage::ToolResult(tool_call_id=call_id, content=output),
+          @types.ModelMessage::ToolResult(
+            tool_call_id=call_id,
+            content=stringify_tool_output(output),
+          ),
         )
       }
+      { "type": String(type_), .. } =>
+        if is_supported_builtin_responses_input_item_type(type_) {
+          let id = extract_responses_tool_item_id(item)
+          let name = match item {
+            { "name": String(value), .. } => value
+            _ => type_
+          }
+          pending_tool_calls.push(
+            @types.ToolCallRequest::builtin(id~, type_~, payload=item, name~),
+          )
+        }
       _ => () // Unknown item type, skip
     }
   }
@@ -116,6 +136,30 @@ pub fn responses_input_to_messages(
     )
   }
   messages
+}
+
+///|
+fn stringify_tool_output(output : Json) -> String {
+  match output {
+    String(value) => value
+    _ => output.stringify()
+  }
+}
+
+///|
+fn extract_responses_tool_item_id(item : Json) -> String {
+  match item {
+    { "call_id": String(value), .. } => value
+    { "approval_request_id": String(value), .. } => value
+    { "id": String(value), .. } => value
+    _ => ""
+  }
+}
+
+///|
+fn is_supported_builtin_responses_input_item_type(type_ : String) -> Bool {
+  @openai.is_builtin_responses_tool_item_type(type_) &&
+  type_ != "mcp_approval_response"
 }
 
 ///|
