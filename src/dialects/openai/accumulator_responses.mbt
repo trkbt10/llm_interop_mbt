@@ -13,17 +13,18 @@
 ///     Ref: docs/upstream/openai-responses-create.md:13580-13581
 ///   → response.completed
 ///
-/// content_part.added is an empty shell (text:""), NOT the final content.
+/// content_part.added is an empty shell (text:""), not the final content.
 /// content_part.done and output_item.done both carry the completed content.
-/// To avoid double-counting, structured content parts (refusal, output_image)
-/// are extracted exclusively from output_item.done.
+/// To avoid double-counting, structured content parts are read from
+/// output_item.done rather than content_part.* events.
+/// Ref: docs/upstream/openai-responses-create.md:13566-13581
 ///
-/// NOTE: output_image is not present in the vendored snapshot
-/// (docs/upstream/openai-responses-create.md). Its structure is inferred from
-/// the ResponseOutputMessage schema at line 336 ("content: array of
-/// ResponseOutputText or ResponseOutputRefusal") and runtime payloads from
-/// image generation models. If the snapshot is updated to include output_image
-/// examples, this comment should be revised with exact line references.
+/// Inference: the vendored snapshot documents ResponseOutputMessage.content as
+/// ResponseOutputText or ResponseOutputRefusal.
+/// Ref: docs/upstream/openai-responses-create.md:328-344
+/// It does not include a concrete output_image schema/example in that section,
+/// so output_image handling below is based on runtime payloads from image
+/// generation models in addition to the documented message/content envelope.
 
 ///|
 /// OpenAI/Groq Responses API stream accumulator
@@ -264,8 +265,9 @@ pub fn ResponsesApiAccumulator::feed(
             self.annotations,
           )
           if saw_output_text {
-            // output_item.done carries the final text segments in order, so the
-            // delta buffer is only needed as a fallback when that snapshot is absent.
+            // output_item.done already carries the final output_text blocks.
+            // Ref: docs/upstream/openai-responses-create.md:13580-13581
+            // Clear the delta buffer so finish() does not append duplicate text.
             self.text.reset()
           }
         }

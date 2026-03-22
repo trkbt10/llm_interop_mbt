@@ -70,7 +70,8 @@ pub fn messages_to_responses_input(
                     "type": "input_file",
                     "file_id": file_id,
                   })
-                // Responses API has no native video input; use input_file with data URL
+                // Ref: docs/upstream/openai-responses-create.md:165-177
+                // Map video bytes through the generic input_file.file_data shape.
                 @types.ContentPart::Video(data~, media_type~) =>
                   content_blocks.push({
                     "type": "input_file",
@@ -232,8 +233,11 @@ pub fn build_responses_reasoning_item(text : String) -> Json {
 ///|
 /// Assemble Responses API output array.
 ///
-/// Responses API output ordering (Ref: ResponseOutputItem):
-///   1. reasoning items (ResponseReasoningItem)
+/// The Responses API schema says the `output` array order is model-dependent.
+/// Ref: docs/upstream/openai-responses-create.md:8583-8590
+///
+/// This helper uses the project's canonical serialization order:
+///   1. reasoning items
 ///   2. tool call items (function_call, web_search_call)
 ///   3. message item (ResponseOutputMessage with content: [output_text, refusal, output_image])
 ///
