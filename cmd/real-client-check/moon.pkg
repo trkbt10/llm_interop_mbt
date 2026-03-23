@@ -1,0 +1,27 @@
+import {
+  "trkbt10/llm_interop/client" @client,
+  "trkbt10/llm_interop/dialects/gemini" @gemini,
+  "trkbt10/llm_interop/dialects/openai" @openai,
+  "trkbt10/llm_interop/gateway" @gateway,
+  "trkbt10/llm_interop/interop/id" @interop_util,
+  "trkbt10/llm_interop/sse" @sse,
+  "trkbt10/llm_interop/types" @types,
+  "trkbt10/llm_interop/utils" @utils,
+  "moonbitlang/core/json",
+  "moonbitlang/core/encoding/utf8",
+  "moonbitlang/async",
+  "moonbitlang/async/http",
+  "moonbitlang/async/io",
+  "moonbitlang/x/fs" @fs,
+  "moonbitlang/x/sys",
+}
+
+options(
+  "is-main": true,
+  targets: {
+    "main.mbt": [ "native" ],
+    "cli.mbt": [ "native" ],
+    "reporting.mbt": [ "native" ],
+    "main_wbtest.mbt": [ "native" ],
+  },
+)

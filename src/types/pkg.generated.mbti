@@ -8,7 +8,11 @@ pub fn build_web_search_action(Json) -> Json
 
 pub fn finalize_accumulation(Bool, Array[ToolCallAcc], StringBuilder) -> ModelResponse
 
+pub fn normalize_json_schema_for_openai(Json) -> Json
+
 pub fn process_tool_call_delta(Array[ToolCallAcc], Json) -> Unit
+
+pub fn schema_needs_normalization(Json) -> Bool
 
 pub fn tool_calls_to_requests(Array[ToolCallAcc]) -> Array[ToolCallRequest]
 
@@ -28,6 +32,7 @@ pub(all) enum ContentPart {
   Audio(data~ : String, format~ : String)
   Document(data~ : String, media_type~ : String, title~ : String?)
   FileRef(file_id~ : String, media_type~ : String?)
+  FileUrl(url~ : String)
   Video(data~ : String, media_type~ : String)
 }
 pub impl Eq for ContentPart
@@ -40,14 +45,18 @@ pub(all) struct GenerationParams {
   top_k : Json
   stop : Json
   stream : Json
+  response_format : ResponseFormat?
+  response_format_context : ResponseFormatContext?
 }
 pub fn GenerationParams::apply_to_anthropic(Self, Map[String, Json], TransformContext) -> Unit
 pub fn GenerationParams::apply_to_gemini(Self, Map[String, Json], TransformContext) -> Unit
 pub fn GenerationParams::apply_to_openai(Self, Map[String, Json], TransformContext) -> Unit
+pub fn GenerationParams::apply_to_responses(Self, Map[String, Json]) -> Unit
 pub fn GenerationParams::empty() -> Self
 pub fn GenerationParams::from_anthropic(Json) -> Self
 pub fn GenerationParams::from_gemini(Json) -> Self
 pub fn GenerationParams::from_openai(Json) -> Self
+pub fn GenerationParams::from_responses(Json) -> Self
 
 pub(all) enum ModelMessage {
   System(String)
@@ -92,6 +101,19 @@ pub(all) enum ResponseContentPart {
 }
 pub impl Eq for ResponseContentPart
 pub impl Show for ResponseContentPart
+
+pub(all) enum ResponseFormat {
+  Text
+  JsonObject
+  JsonSchema(name~ : String?, schema~ : Json, description~ : String?, strict~ : Bool?)
+}
+pub impl Eq for ResponseFormat
+pub impl Show for ResponseFormat
+
+pub(all) struct ResponseFormatContext {
+  surface : String
+  raw : Json
+}
 
 pub(all) struct RichTextResponse {
   content : String

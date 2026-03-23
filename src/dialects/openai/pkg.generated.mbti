@@ -13,13 +13,13 @@ pub fn accumulate_responses_api(String) -> @types.ModelResponse raise
 
 pub fn assemble_responses_output(Array[Json], Array[Json], reasoning_outputs? : Array[Json]) -> Array[Json]
 
-pub fn build_chat_body(String, Array[@types.ModelMessage], Array[@types.ToolDefinition], max_tokens? : Int?, temperature? : Double?) -> Json
+pub fn build_chat_body(String, Array[@types.ModelMessage], Array[@types.ToolDefinition], max_tokens? : Int?, temperature? : Double?, response_format? : @types.ResponseFormat?) -> Json
 
 pub fn build_chat_choice(Int, String, Array[Json]) -> Json
 
 pub fn build_chat_response(String, String, Array[Json]) -> String
 
-pub fn build_responses_api_body(String, Array[@types.ModelMessage], Array[@types.ToolDefinition]) -> Json
+pub fn build_responses_api_body(String, Array[@types.ModelMessage], Array[@types.ToolDefinition], response_format? : @types.ResponseFormat?) -> Json
 
 pub fn build_responses_function_call(String, String, Json) -> Json
 

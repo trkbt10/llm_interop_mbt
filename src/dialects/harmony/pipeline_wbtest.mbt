@@ -77,6 +77,48 @@ test "input with plain string content" {
 }
 
 ///|
+test "responses text.format converts to chat response_format" {
+  let request : Json = {
+    "model": "gpt-oss-20b",
+    "input": "Return structured JSON",
+    "text": {
+      "format": {
+        "type": "json_schema",
+        "name": "answer",
+        "schema": {
+          "type": "object",
+          "properties": { "url": { "type": "string", "format": "uri" } },
+        },
+        "strict": true,
+      },
+    },
+  }
+  let result = responses_request_to_chat_completions(request, stream=false)
+  match result {
+    {
+      "response_format": {
+        "type": String("json_schema"),
+        "json_schema": {
+          "name": String(name),
+          "strict": True,
+          "schema": {
+            "properties": { "url": { "type": String("string"), .. }, .. },
+            "required": ["url"],
+            "additionalProperties": False,
+            ..
+          },
+          ..
+        },
+        ..
+      },
+      "stream": False,
+      ..
+    } => assert_eq(name, "answer")
+    _ => fail("Expected chat response_format")
+  }
+}
+
+///|
 test "function tool: Responses API flat → Chat Completions nested" {
   let request : Json = {
     "model": "gpt-oss-20b",
@@ -342,7 +384,7 @@ test "temperature, top_p, max_output_tokens pass through" {
   inspect(
     result.stringify(),
     content=(
-      #|{"model":"gpt-oss-20b","messages":[{"role":"user","content":"hi"}],"stream":false,"temperature":0.7,"top_p":0.9,"max_tokens":4096}
+      #|{"model":"gpt-oss-20b","messages":[{"role":"user","content":"hi"}],"max_tokens":4096,"temperature":0.7,"top_p":0.9,"stream":false}
     ),
   )
 }

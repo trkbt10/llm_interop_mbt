@@ -105,16 +105,14 @@ pub fn transform_response(
 ) -> String {
   let json = @json.parse(body) catch { _ => return body }
   // Check for errors first
-  if @anthropic.is_error(json) {
-    return match @anthropic.extract_error(json) {
-      Some(error_obj) =>
-        match to {
-          OpenAI | Codex => @anthropic.error_to_openai(error_obj)
-          Gemini => @anthropic.error_to_gemini(error_obj)
-          Anthropic => body
-        }
-      None => body
-    }
+  match json {
+    { "type": String("error"), "error": error_obj, .. } =>
+      return match to {
+        OpenAI | Codex => @anthropic.error_to_openai(error_obj)
+        Gemini => @anthropic.error_to_gemini(error_obj)
+        Anthropic => body
+      }
+    _ => ()
   }
   if @anthropic.is_openai_error(json) {
     return match to {

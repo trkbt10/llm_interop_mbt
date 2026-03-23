@@ -85,6 +85,10 @@ pub fn message_to_content(message : @types.ModelMessage) -> GeminiContent? {
                 gemini_parts.push(
                   GeminiPart::FileData(file_uri=file_id, mime_type=media_type),
                 )
+              // Ref: docs/upstream/gemini-files-api.md —
+              // generic HTTP(S) document URLs are not documented fileData URIs.
+              @types.ContentPart::FileUrl(url~) =>
+                gemini_parts.push(GeminiPart::Text("[File: \{url}]"))
               // Ref: Part.inlineData — {"inlineData":{"mimeType":"video/*","data":"..."}}
               // Ref: https://ai.google.dev/gemini-api/docs/video-understanding
               @types.ContentPart::Video(data~, media_type~) =>
@@ -139,10 +143,31 @@ pub fn messages_to_contents(
   messages : Array[@types.ModelMessage],
 ) -> Array[GeminiContent] {
   let result : Array[GeminiContent] = []
+  let tool_names : Map[String, String] = {}
   for msg in messages {
-    match message_to_content(msg) {
-      Some(content) => result.push(content)
-      None => ()
+    match msg {
+      @types.ModelMessage::Assistant(tool_calls=Some(calls), ..) =>
+        for call in calls {
+          tool_names[call.id] = call.name
+        }
+      _ => ()
+    }
+    match msg {
+      @types.ModelMessage::ToolResult(tool_call_id~, content~) => {
+        let response : Json = @json.parse(content) catch {
+          _ => Json::string(content)
+        }
+        let name = tool_names.get(tool_call_id).unwrap_or(tool_call_id)
+        result.push({
+          role: "user",
+          parts: [GeminiPart::FunctionResponse(name~, response~)],
+        })
+      }
+      _ =>
+        match message_to_content(msg) {
+          Some(content) => result.push(content)
+          None => ()
+        }
     }
   }
   result
@@ -316,74 +341,40 @@ pub fn build_body(
   temperature? : Double? = None,
   top_p? : Double? = None,
   top_k? : Int? = None,
+  response_format? : @types.ResponseFormat? = None,
 ) -> Json {
   let contents = messages_to_contents(non_system_messages(messages))
   let contents_json = contents.map(content_to_json)
-  let mut body : Json = { "contents": Json::array(contents_json) }
+  let body : Map[String, Json] = { "contents": Json::array(contents_json) }
   match extract_system_instruction(messages) {
-    Some(content) =>
-      body = @utils.set_json_field(
-        body,
-        "systemInstruction",
-        content_to_json(content),
-      )
+    Some(content) => body["systemInstruction"] = content_to_json(content)
     None => ()
   }
-  // Generation config
-  let mut has_gen_config = false
-  let mut gen_config : Json = {}
-  match max_tokens {
-    Some(max) => {
-      gen_config = @utils.set_json_field(
-        gen_config,
-        "maxOutputTokens",
-        Json::number(max.to_double()),
-      )
-      has_gen_config = true
-    }
-    None => ()
+  let params : @types.GenerationParams = {
+    ..@types.GenerationParams::empty(),
+    max_tokens: match max_tokens {
+      Some(max) => Json::number(max.to_double())
+      None => Json::null()
+    },
+    temperature: match temperature {
+      Some(temp) => Json::number(temp)
+      None => Json::null()
+    },
+    top_p: match top_p {
+      Some(value) => Json::number(value)
+      None => Json::null()
+    },
+    top_k: match top_k {
+      Some(value) => Json::number(value.to_double())
+      None => Json::null()
+    },
+    response_format,
   }
-  match temperature {
-    Some(temp) => {
-      gen_config = @utils.set_json_field(
-        gen_config,
-        "temperature",
-        Json::number(temp),
-      )
-      has_gen_config = true
-    }
-    None => ()
-  }
-  match top_p {
-    Some(p) => {
-      gen_config = @utils.set_json_field(gen_config, "topP", Json::number(p))
-      has_gen_config = true
-    }
-    None => ()
-  }
-  match top_k {
-    Some(k) => {
-      gen_config = @utils.set_json_field(
-        gen_config,
-        "topK",
-        Json::number(k.to_double()),
-      )
-      has_gen_config = true
-    }
-    None => ()
-  }
-  if has_gen_config {
-    body = @utils.set_json_field(body, "generationConfig", gen_config)
-  }
-  // Tools
+  params.apply_to_gemini(body, @types.TransformContext::default())
   if tools.length() > 0 {
-    body = @utils.set_json_field(
-      body,
-      "tools",
-      Json::array([tools_to_json(tools)]),
-    )
+    body["tools"] = Json::array([tools_to_json(tools)])
   }
-  body
+  Json::object(body)
 }
 
 // =============================================================================
@@ -475,20 +466,15 @@ pub fn parse_function_calls(
 ///|
 /// Extract text from Gemini response parts
 fn extract_gemini_text(parts : Array[Json]) -> String {
-  let text = StringBuilder::new()
+  let fragments : Array[String] = []
   for part in parts {
     match part {
       { "text": String(_), "thought": True, .. } => ()
-      { "text": String(t), .. } => {
-        if text.to_string().length() > 0 {
-          text.write_char('\n')
-        }
-        text.write_string(t)
-      }
+      { "text": String(t), .. } => fragments.push(t)
       _ => ()
     }
   }
-  text.to_string()
+  normalize_structured_output_fragments(fragments, "\n")
 }
 
 ///|

@@ -27,18 +27,15 @@ pub fn responses_request_to_anthropic(request : Json) -> Json {
   let msgs_json = messages_to_json(messages)
   // Extract system message
   let system = extract_system_message(messages)
-  // Ref: docs/upstream/anthropic-messages-api.md:13-21 — max_tokens is a
-  // required request body field.
-  let max_tokens = match request {
-    { "max_output_tokens": Number(n, ..), .. } => n.to_int()
-    _ => 8192
-  }
   // Build Anthropic body
   let body : Map[String, Json] = {
     "model": Json::string(model),
     "messages": Json::array(msgs_json),
-    "max_tokens": Json::number(max_tokens.to_double()),
   }
+  @types.GenerationParams::from_responses(request).apply_to_anthropic(body, {
+    max_tokens: 8192,
+    max_tokens_field: "max_tokens",
+  })
   if system.length() > 0 {
     body["system"] = Json::string(system)
   }
@@ -138,19 +135,6 @@ fn extract_tool_config(tool : Json) -> Json {
       Json::object(config)
     }
     _ => Json::object({})
-  }
-}
-
-///|
-/// Convert Responses API tool_choice to Anthropic tool_choice format
-fn convert_tool_choice_to_anthropic(tool_choice : Json) -> Json? {
-  match tool_choice {
-    String("auto") => Some({ "type": "auto" })
-    String("none") => None // Anthropic doesn't have "none", just don't send tool_choice
-    String("required") => Some({ "type": "any" })
-    { "type": String("function"), "name": String(name), .. } =>
-      Some({ "type": "tool", "name": name })
-    _ => None
   }
 }
 

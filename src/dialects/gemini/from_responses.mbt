@@ -20,17 +20,21 @@ pub fn responses_request_to_gemini(request : Json) -> Json {
   for message in @harmony.responses_input_to_messages(input) {
     messages.push(message)
   }
-  // Get max_tokens
-  let max_tokens : Int? = match request {
-    { "max_output_tokens": Number(n, ..), .. } => Some(n.to_int())
-    _ => None
-  }
-  // Build Gemini body using protocol
   let tools = match request {
     { "tools": Array(t), .. } => convert_responses_tools_to_gemini(t)
     _ => []
   }
-  build_body(messages, tools, max_tokens~)
+  let body = build_body(messages, tools)
+  match body {
+    Object(obj) => {
+      @types.GenerationParams::from_responses(request).apply_to_gemini(
+        obj,
+        @types.TransformContext::default(),
+      )
+      Json::object(obj)
+    }
+    _ => body
+  }
 }
 
 ///|

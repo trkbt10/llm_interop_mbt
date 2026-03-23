@@ -63,12 +63,18 @@ pub fn chat_request_to_gemini(
   let json = @json.parse(body) catch { _ => return body }
   // Transform messages to Gemini contents format
   let contents : Array[Json] = []
+  let system_text = StringBuilder::new()
   match json {
     { "messages": Array(msgs), .. } =>
       for msg in msgs {
         match msg {
-          // Skip system messages (Gemini handles them differently)
-          { "role": String("system"), .. } => ()
+          // Gemini uses top-level systemInstruction instead of a contents entry.
+          { "role": String("system"), "content": String(content), .. } => {
+            if system_text.to_string().length() > 0 {
+              system_text.write_char('\n')
+            }
+            system_text.write_string(content)
+          }
           // Assistant with tool_calls → model with functionCall parts
           { "role": String("assistant"), "tool_calls": Array(tool_calls), .. } => {
             let parts : Array[Json] = []
@@ -147,6 +153,12 @@ pub fn chat_request_to_gemini(
   }
   let gemini_body : Map[String, Json] = {}
   gemini_body["contents"] = Json::array(contents)
+  if system_text.to_string().length() > 0 {
+    gemini_body["systemInstruction"] = content_to_json({
+      role: "user",
+      parts: [GeminiPart::Text(system_text.to_string())],
+    })
+  }
   // Convert tools: OpenAI function tools → Gemini functionDeclarations
   match json {
     { "tools": Array(openai_tools), .. } => {
@@ -292,15 +304,7 @@ pub fn response_to_chat(body : String) -> String {
             }
           _ => ()
         }
-        let content = texts
-          .iter()
-          .fold(init="", fn(acc, t) {
-            if acc == "" {
-              t
-            } else {
-              acc + "\n\n" + t
-            }
-          })
+        let content = normalize_structured_output_fragments(texts, "\n\n")
         choices.push(@openai.build_chat_choice(idx, content, tool_calls))
         idx = idx + 1
       }

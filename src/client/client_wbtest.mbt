@@ -51,6 +51,24 @@ test "split_lines handles various line endings" {
   assert_eq(lines[2], "line3")
 }
 
+///|
+test "bytes_to_string_lossy returns empty on invalid utf8" {
+  let invalid = Bytes::make(2, b'\xFF')
+  assert_eq(bytes_to_string_lossy(invalid), "")
+}
+
+///|
+test "transport error helpers create expected variants" {
+  match transport_network_error("offline") {
+    TransportError::NetworkError(message) => assert_eq(message, "offline")
+    _ => fail("Expected NetworkError")
+  }
+  match transport_timeout_error() {
+    TransportError::TimeoutError => ()
+    _ => fail("Expected TimeoutError")
+  }
+}
+
 // =============================================================================
 // Mock HttpTransport for chat_gateway() tests
 // =============================================================================
@@ -73,6 +91,144 @@ impl HttpTransport for MockTransport with request(self, req) {
   self.last_url = req.url
   self.last_body = req.body.unwrap_or("")
   { status: self.response_status, body: self.response_body }
+}
+
+///|
+struct NetworkErrorTransport {
+  message : String
+}
+
+///|
+fn NetworkErrorTransport::new(message : String) -> NetworkErrorTransport {
+  { message, }
+}
+
+///|
+impl HttpTransport for NetworkErrorTransport with request(self, _req) {
+  raise transport_network_error(self.message)
+}
+
+///|
+struct TimeoutTransport {
+  dummy : Int
+}
+
+///|
+fn TimeoutTransport::new() -> TimeoutTransport {
+  { dummy: 0 }
+}
+
+///|
+impl HttpTransport for TimeoutTransport with request(_self, _req) {
+  ignore(_self.dummy)
+  raise transport_timeout_error()
+}
+
+///|
+struct StreamingNetworkErrorTransport {
+  message : String
+}
+
+///|
+fn StreamingNetworkErrorTransport::new(
+  message : String,
+) -> StreamingNetworkErrorTransport {
+  { message, }
+}
+
+///|
+impl StreamingHttpTransport for StreamingNetworkErrorTransport with request_stream(
+  self,
+  _req,
+) {
+  raise transport_network_error(self.message)
+}
+
+///|
+struct MockStreamReader {
+  chunks : Array[Bytes]
+  mut index : Int
+}
+
+///|
+fn MockStreamReader::from_strings(chunks : Array[String]) -> MockStreamReader {
+  { chunks: chunks.map(fn(chunk) { @utf8.encode(chunk) }), index: 0 }
+}
+
+///|
+impl StreamReader for MockStreamReader with read(self) {
+  if self.index >= self.chunks.length() {
+    None
+  } else {
+    let chunk = self.chunks[self.index]
+    self.index += 1
+    Some(chunk)
+  }
+}
+
+///|
+struct TimeoutStreamReader {
+  dummy : Int
+}
+
+///|
+fn TimeoutStreamReader::new() -> TimeoutStreamReader {
+  { dummy: 0 }
+}
+
+///|
+impl StreamReader for TimeoutStreamReader with read(self) {
+  ignore(self.dummy)
+  raise transport_timeout_error()
+}
+
+///|
+struct MockStreamingTransport {
+  mut last_url : String
+  mut last_body : String
+  response_status : Int
+  chunks : Array[String]
+}
+
+///|
+fn MockStreamingTransport::new(
+  status : Int,
+  chunks : Array[String],
+) -> MockStreamingTransport {
+  { last_url: "", last_body: "", response_status: status, chunks }
+}
+
+///|
+impl StreamingHttpTransport for MockStreamingTransport with request_stream(
+  self,
+  req,
+) {
+  self.last_url = req.url
+  self.last_body = req.body.unwrap_or("")
+  let reader = MockStreamReader::from_strings(self.chunks)
+  { status: self.response_status, reader }
+}
+
+///|
+struct TimeoutReadStreamingTransport {
+  mut last_url : String
+  mut last_body : String
+}
+
+///|
+fn TimeoutReadStreamingTransport::new() -> TimeoutReadStreamingTransport {
+  { last_url: "", last_body: "" }
+}
+
+///|
+impl StreamingHttpTransport for TimeoutReadStreamingTransport with request_stream(
+  self,
+  req,
+) {
+  self.last_url = req.url
+  self.last_body = req.body.unwrap_or("")
+  let reader = TimeoutStreamReader::new()
+  { status: 200, reader }
 }
 
 // =============================================================================
@@ -452,8 +608,11 @@ async test "chat_gateway: Anthropic mixed text+tool_use response" {
     "claude",
   )
   match result {
-    @types.ModelResponse::ToolCalls(c) => assert_eq(c[0].name, "search")
-    _ => fail("expected ToolCalls from mixed Anthropic response")
+    @types.ModelResponse::ToolCallsWithContent(tool_calls~, rich~) => {
+      assert_eq(tool_calls[0].name, "search")
+      assert_eq(rich.content, "Checking...")
+    }
+    _ => fail("expected ToolCallsWithContent from mixed Anthropic response")
   }
 }
 
@@ -478,8 +637,11 @@ async test "chat_gateway: Gemini mixed text+functionCall response" {
     "gemini-pro",
   )
   match result {
-    @types.ModelResponse::ToolCalls(c) => assert_eq(c[0].name, "search")
-    _ => fail("expected ToolCalls from mixed Gemini response")
+    @types.ModelResponse::ToolCallsWithContent(tool_calls~, rich~) => {
+      assert_eq(tool_calls[0].name, "search")
+      assert_eq(rich.content, "Looking...")
+    }
+    _ => fail("expected ToolCallsWithContent from mixed Gemini response")
   }
 }
 
@@ -512,6 +674,541 @@ async test "chat_gateway: 500 raises ApiError" {
     }
   }
   assert_true(caught)
+}
+
+///|
+async test "chat_gateway: sync transport network error becomes HttpError" {
+  let transport = NetworkErrorTransport::new("connection reset")
+  let provider = @gateway.ProviderConfig::new(
+    "openai",
+    @gateway.OpenAICompletions,
+  )
+  let mut caught = false
+  let _result = chat_gateway(
+    { ..provider, base_url: "https://api.openai.com/v1", api_key: "sk" },
+    transport,
+    [@types.ModelMessage::User(content="Hi", name=None, content_parts=None)],
+    [],
+    "gpt-4",
+  ) catch {
+    ClientError::HttpError(message) => {
+      assert_true(message.contains("Transport error: connection reset"))
+      caught = true
+      @types.ModelResponse::ModelError("caught")
+    }
+    other => {
+      ignore(other)
+      @types.ModelResponse::ModelError("wrong error")
+    }
+  }
+  assert_true(caught)
+}
+
+///|
+async test "chat_gateway: responses transport timeout becomes HttpError" {
+  let transport = TimeoutTransport::new()
+  let provider = @gateway.ProviderConfig::new(
+    "anthropic",
+    @gateway.AnthropicMessages,
+  )
+  let mut caught = false
+  let _result = chat_gateway(
+    { ..provider, base_url: "https://api.anthropic.com", api_key: "sk" },
+    transport,
+    [@types.ModelMessage::User(content="Hi", name=None, content_parts=None)],
+    [],
+    "claude-sonnet-4-20250514",
+  ) catch {
+    ClientError::HttpError(message) => {
+      assert_eq(message, "Transport timeout")
+      caught = true
+      @types.ModelResponse::ModelError("caught")
+    }
+    other => {
+      ignore(other)
+      @types.ModelResponse::ModelError("wrong error")
+    }
+  }
+  assert_true(caught)
+}
+
+///|
+async test "chat_gateway_responses_stream: transport network error becomes HttpError" {
+  let transport = StreamingNetworkErrorTransport::new("stream offline")
+  let provider = @gateway.ProviderConfig::new(
+    "openai",
+    @gateway.OpenAIResponses,
+  )
+  let mut caught = false
+  let _result = chat_gateway_responses_stream(
+    { ..provider, base_url: "https://api.openai.com/v1", api_key: "sk" },
+    transport,
+    [@types.ModelMessage::User(content="Hi", name=None, content_parts=None)],
+    [],
+    "gpt-4.1",
+    on_event=fn(_event) {  },
+  ) catch {
+    ClientError::HttpError(message) => {
+      assert_true(message.contains("Transport error: stream offline"))
+      caught = true
+      @types.ModelResponse::ModelError("caught")
+    }
+    other => {
+      ignore(other)
+      @types.ModelResponse::ModelError("wrong error")
+    }
+  }
+  assert_true(caught)
+}
+
+///|
+async test "read_all_from_stream concatenates chunks until eof" {
+  let reader = MockStreamReader::from_strings(["Hello", " ", "stream"])
+  let text = read_all_from_stream(reader)
+  assert_eq(text, "Hello stream")
+}
+
+///|
+async test "chat_gateway_responses injects optional params and parses text" {
+  let resp_body =
+    #|{"id":"resp_direct","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Direct text"}]}],"status":"completed"}
+  let transport = MockTransport::new(200, resp_body)
+  let provider = @gateway.ProviderConfig::new(
+    "openai",
+    @gateway.OpenAIResponses,
+  )
+  let result = chat_gateway_responses(
+    { ..provider, base_url: "https://api.openai.com/v1", api_key: "sk-test" },
+    transport,
+    [@types.ModelMessage::User(content="Hi", name=None, content_parts=None)],
+    [],
+    "gpt-4.1",
+    max_tokens=Some(64),
+    temperature=Some(0.2),
+  )
+  match result {
+    @types.ModelResponse::Text(text) => assert_eq(text, "Direct text")
+    _ => fail("expected Text")
+  }
+  assert_true(transport.last_body.contains("max_output_tokens"))
+  assert_true(transport.last_body.contains("\"temperature\":0.2"))
+}
+
+///|
+async test "chat_gateway_responses: 429 returns RateLimited directly" {
+  let transport = MockTransport::new(429, "rate limited")
+  let provider = @gateway.ProviderConfig::new(
+    "anthropic",
+    @gateway.AnthropicMessages,
+  )
+  let result = chat_gateway_responses(
+    { ..provider, base_url: "https://api.anthropic.com", api_key: "sk" },
+    transport,
+    [@types.ModelMessage::User(content="Hi", name=None, content_parts=None)],
+    [],
+    "claude-sonnet-4-20250514",
+  )
+  match result {
+    @types.ModelResponse::RateLimited(..) => ()
+    _ => fail("expected RateLimited")
+  }
+}
+
+///|
+async test "chat_gateway_responses_stream reads non-2xx error body" {
+  let transport = MockStreamingTransport::new(500, [
+    "{\"error\":\"stream failed\"}",
+  ])
+  let provider = @gateway.ProviderConfig::new(
+    "openai",
+    @gateway.OpenAIResponses,
+  )
+  let mut caught = false
+  let _result = chat_gateway_responses_stream(
+    { ..provider, base_url: "https://api.openai.com/v1", api_key: "sk" },
+    transport,
+    [@types.ModelMessage::User(content="Hi", name=None, content_parts=None)],
+    [],
+    "gpt-4.1",
+    on_event=fn(_event) {  },
+  ) catch {
+    ClientError::ApiError(code~, message~) => {
+      assert_eq(code, 500)
+      assert_true(message.contains("stream failed"))
+      caught = true
+      @types.ModelResponse::ModelError("caught")
+    }
+    other => {
+      ignore(other)
+      @types.ModelResponse::ModelError("wrong error")
+    }
+  }
+  assert_true(caught)
+  assert_true(transport.last_url.contains("/responses"))
+  assert_true(transport.last_body.contains("\"model\":\"gpt-4.1\""))
+}
+
+///|
+async test "chat_gateway_responses_stream accumulates native responses text" {
+  let raw_events = [
+    "event: response.output_text.delta\n", "data: {\"type\":\"response.output_text.delta\",\"delta\":\"Hello",
+    " World\",\"sequence_number\":1}\n\n", "event: response.completed\ndata: {\"type\":\"response.completed\",\"sequence_number\":2}\n\n",
+  ]
+  let transport = MockStreamingTransport::new(200, raw_events)
+  let provider = @gateway.ProviderConfig::new(
+    "openai",
+    @gateway.OpenAIResponses,
+  )
+  let seen : Array[String] = []
+  let result = chat_gateway_responses_stream(
+    { ..provider, base_url: "https://api.openai.com/v1", api_key: "sk" },
+    transport,
+    [@types.ModelMessage::User(content="Hi", name=None, content_parts=None)],
+    [],
+    "gpt-4.1",
+    on_event=fn(event) { seen.push(event.0) },
+  )
+  match result {
+    @types.ModelResponse::Text(text) => assert_eq(text, "Hello World")
+    _ => fail("expected Text")
+  }
+  assert_eq(seen, ["response.output_text.delta", "response.completed"])
+  assert_true(transport.last_url.contains("/responses"))
+  assert_true(transport.last_body.contains("\"model\":\"gpt-4.1\""))
+}
+
+///|
+async test "chat_gateway_responses_stream: Anthropic structured JSON stream preserves text and request format" {
+  let raw_events = [
+    "event: content_block_delta\n", "data: {\"delta\":{\"type\":\"text_delta\",\"text\":\"{\\\"answer\\\":\"}}\n\n",
+    "event: content_block_delta\n", "data: {\"delta\":{\"type\":\"text_delta\",\"text\":\"{\\\"url\\\":\\\"https://example.com\\\"}}\"}}\n\n",
+    "event: message_delta\n", "data: {\"delta\":{\"stop_reason\":\"end_turn\"}}\n\n",
+    "event: message_stop\n", "data: {\"type\":\"message_stop\"}\n\n",
+  ]
+  let transport = MockStreamingTransport::new(200, raw_events)
+  let provider = @gateway.ProviderConfig::new(
+    "anthropic",
+    @gateway.AnthropicMessages,
+  )
+  let seen : Array[String] = []
+  let result = chat_gateway_responses_stream(
+    { ..provider, base_url: "https://api.anthropic.com/v1", api_key: "sk" },
+    transport,
+    [
+      @types.ModelMessage::User(
+        content="Return JSON",
+        name=None,
+        content_parts=None,
+      ),
+    ],
+    [],
+    "claude-sonnet-4-20250514",
+    on_event=fn(event) { seen.push(event.0) },
+    response_format=Some(
+      @types.ResponseFormat::JsonSchema(
+        name=Some("answer"),
+        schema={
+          "type": "object",
+          "properties": { "url": { "type": "string", "format": "uri" } },
+        },
+        description=Some("Structured answer"),
+        strict=Some(true),
+      ),
+    ),
+  )
+  match result {
+    @types.ModelResponse::Text(text) =>
+      assert_eq(text, "{\"answer\":{\"url\":\"https://example.com\"}}")
+    _ => fail("expected Text")
+  }
+  assert_true(seen.contains("response.output_text.delta"))
+  assert_true(seen.contains("response.output_text.done"))
+  assert_true(seen.contains("response.completed"))
+  assert_true(transport.last_body.contains("\"stream\":true"))
+  assert_true(
+    transport.last_body.contains(
+      "\"output_config\":{\"format\":{\"type\":\"json_schema\"",
+    ),
+  )
+  assert_true(transport.last_body.contains("\"format\":\"uri\""))
+  assert_true(transport.last_body.contains("\"additionalProperties\":false"))
+}
+
+///|
+async test "chat_gateway_responses_stream: OpenAI structured JSON invalid stream raises ParseError" {
+  let raw_events = [
+    "event: response.output_text.delta\n", "data: {\"type\":\"response.output_text.delta\",\"delta\":\"{\\\"answer\\\":oops}\"}\n\n",
+  ]
+  let transport = MockStreamingTransport::new(200, raw_events)
+  let provider = @gateway.ProviderConfig::new(
+    "openai",
+    @gateway.OpenAIResponses,
+  )
+  let mut caught = false
+  let _result = chat_gateway_responses_stream(
+    { ..provider, base_url: "https://api.openai.com/v1", api_key: "sk" },
+    transport,
+    [
+      @types.ModelMessage::User(
+        content="Return JSON",
+        name=None,
+        content_parts=None,
+      ),
+    ],
+    [],
+    "gpt-4.1",
+    on_event=fn(_event) {  },
+    response_format=Some(@types.ResponseFormat::JsonObject),
+  ) catch {
+    ClientError::ParseError(message) => {
+      assert_true(message.contains("not valid JSON"))
+      caught = true
+      @types.ModelResponse::ModelError("caught")
+    }
+    other => {
+      ignore(other)
+      @types.ModelResponse::ModelError("wrong error")
+    }
+  }
+  assert_true(caught)
+}
+
+///|
+async test "chat_gateway_responses_stream: Gemini structured JSON stream preserves text and request format" {
+  let raw_events = [
+    "data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"{\\\"answer\\\":\"}]}}]}\n\n",
+    "data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"{\\\"url\\\":\\\"https://example.com\\\"}}\"}]}}]}\n\n",
+    "data: {\"candidates\":[{\"finishReason\":\"STOP\",\"content\":{\"role\":\"model\",\"parts\":[]}}]}\n\n",
+  ]
+  let transport = MockStreamingTransport::new(200, raw_events)
+  let provider = @gateway.ProviderConfig::new(
+    "gemini",
+    @gateway.GoogleGenerativeAI,
+  )
+  let seen : Array[String] = []
+  let result = chat_gateway_responses_stream(
+    {
+      ..provider,
+      base_url: "https://generativelanguage.googleapis.com/v1beta",
+      api_key: "k",
+    },
+    transport,
+    [
+      @types.ModelMessage::User(
+        content="Return JSON",
+        name=None,
+        content_parts=None,
+      ),
+    ],
+    [],
+    "gemini-2.0-flash",
+    on_event=fn(event) { seen.push(event.0) },
+    response_format=Some(
+      @types.ResponseFormat::JsonSchema(
+        name=Some("answer"),
+        schema={
+          "type": "object",
+          "properties": { "url": { "type": "string", "format": "uri" } },
+        },
+        description=Some("Structured answer"),
+        strict=Some(true),
+      ),
+    ),
+  )
+  match result {
+    @types.ModelResponse::Text(text) =>
+      assert_eq(text, "{\"answer\":{\"url\":\"https://example.com\"}}")
+    _ => fail("expected Text")
+  }
+  assert_true(seen.contains("response.output_text.delta"))
+  assert_true(seen.contains("response.output_text.done"))
+  assert_true(seen.contains("response.completed"))
+  assert_true(
+    transport.last_body.contains("\"responseMimeType\":\"application/json\""),
+  )
+  assert_true(transport.last_body.contains("\"responseJsonSchema\""))
+  assert_true(transport.last_body.contains("\"format\":\"uri\""))
+  assert_false(transport.last_body.contains("\"additionalProperties\":false"))
+}
+
+///|
+async test "chat_gateway_responses_stream: Anthropic structured JSON schema mismatch raises ParseError" {
+  let raw_events = [
+    "event: content_block_delta\n", "data: {\"delta\":{\"type\":\"text_delta\",\"text\":\"{\\\"url\\\":\\\"not-a-uri\\\"}\"}}\n\n",
+    "event: message_delta\n", "data: {\"delta\":{\"stop_reason\":\"end_turn\"}}\n\n",
+    "event: message_stop\n", "data: {\"type\":\"message_stop\"}\n\n",
+  ]
+  let transport = MockStreamingTransport::new(200, raw_events)
+  let provider = @gateway.ProviderConfig::new(
+    "anthropic",
+    @gateway.AnthropicMessages,
+  )
+  let mut caught = false
+  let _result = chat_gateway_responses_stream(
+    { ..provider, base_url: "https://api.anthropic.com/v1", api_key: "sk" },
+    transport,
+    [
+      @types.ModelMessage::User(
+        content="Return JSON",
+        name=None,
+        content_parts=None,
+      ),
+    ],
+    [],
+    "claude-sonnet-4-20250514",
+    on_event=fn(_event) {  },
+    response_format=Some(
+      @types.ResponseFormat::JsonSchema(
+        name=Some("answer"),
+        schema={
+          "type": "object",
+          "required": ["url"],
+          "properties": { "url": { "type": "string", "format": "uri" } },
+          "additionalProperties": false,
+        },
+        description=Some("Structured answer"),
+        strict=Some(true),
+      ),
+    ),
+  ) catch {
+    ClientError::ParseError(message) => {
+      assert_true(message.contains("response schema"))
+      assert_true(message.contains("$.url"))
+      caught = true
+      @types.ModelResponse::ModelError("caught")
+    }
+    other => {
+      ignore(other)
+      @types.ModelResponse::ModelError("wrong error")
+    }
+  }
+  assert_true(caught)
+}
+
+///|
+async test "chat_gateway_responses: Anthropic structured JSON sync preserves raw schema semantics" {
+  let resp_body =
+    #|{"id":"msg_1","type":"message","role":"assistant","model":"claude-sonnet-4-20250514","content":[{"type":"text","text":"{\"answer\":{\"url\":\"https://example.com\"}}"}],"stop_reason":"end_turn"}
+  let transport = MockTransport::new(200, resp_body)
+  let provider = @gateway.ProviderConfig::new(
+    "anthropic",
+    @gateway.AnthropicMessages,
+  )
+  let result = chat_gateway_responses(
+    { ..provider, base_url: "https://api.anthropic.com/v1", api_key: "sk" },
+    transport,
+    [
+      @types.ModelMessage::User(
+        content="Return JSON",
+        name=None,
+        content_parts=None,
+      ),
+    ],
+    [],
+    "claude-sonnet-4-20250514",
+    response_format=Some(
+      @types.ResponseFormat::JsonSchema(
+        name=Some("answer"),
+        schema={
+          "type": "object",
+          "properties": { "url": { "type": "string", "format": "uri" } },
+        },
+        description=Some("Structured answer"),
+        strict=Some(true),
+      ),
+    ),
+  )
+  match result {
+    @types.ModelResponse::Text(text) =>
+      assert_eq(text, "{\"answer\":{\"url\":\"https://example.com\"}}")
+    _ => fail("expected Text")
+  }
+  assert_true(
+    transport.last_body.contains("\"format\":{\"type\":\"json_schema\""),
+  )
+  assert_true(transport.last_body.contains("\"format\":\"uri\""))
+  assert_true(transport.last_body.contains("\"additionalProperties\":false"))
+}
+
+///|
+async test "chat_gateway_responses: Gemini structured JSON sync preserves raw schema semantics" {
+  let resp_body =
+    #|{"candidates":[{"content":{"role":"model","parts":[{"text":"{\"answer\":{\"url\":\"https://example.com\"}}"}]},"finishReason":"STOP"}]}
+  let transport = MockTransport::new(200, resp_body)
+  let provider = @gateway.ProviderConfig::new(
+    "gemini",
+    @gateway.GoogleGenerativeAI,
+  )
+  let result = chat_gateway_responses(
+    {
+      ..provider,
+      base_url: "https://generativelanguage.googleapis.com/v1beta",
+      api_key: "k",
+    },
+    transport,
+    [
+      @types.ModelMessage::User(
+        content="Return JSON",
+        name=None,
+        content_parts=None,
+      ),
+    ],
+    [],
+    "gemini-2.0-flash",
+    response_format=Some(
+      @types.ResponseFormat::JsonSchema(
+        name=Some("answer"),
+        schema={
+          "type": "object",
+          "properties": { "url": { "type": "string", "format": "uri" } },
+        },
+        description=Some("Structured answer"),
+        strict=Some(true),
+      ),
+    ),
+  )
+  match result {
+    @types.ModelResponse::Text(text) =>
+      assert_eq(text, "{\"answer\":{\"url\":\"https://example.com\"}}")
+    _ => fail("expected Text")
+  }
+  assert_true(
+    transport.last_body.contains("\"responseMimeType\":\"application/json\""),
+  )
+  assert_true(transport.last_body.contains("\"responseJsonSchema\""))
+  assert_true(transport.last_body.contains("\"format\":\"uri\""))
+  assert_false(transport.last_body.contains("\"additionalProperties\":false"))
+}
+
+///|
+async test "chat_gateway_responses_stream converts stream read timeout to HttpError" {
+  let transport = TimeoutReadStreamingTransport::new()
+  let provider = @gateway.ProviderConfig::new(
+    "openai",
+    @gateway.OpenAIResponses,
+  )
+  let mut caught = false
+  let _result = chat_gateway_responses_stream(
+    { ..provider, base_url: "https://api.openai.com/v1", api_key: "sk" },
+    transport,
+    [@types.ModelMessage::User(content="Hi", name=None, content_parts=None)],
+    [],
+    "gpt-4.1",
+    on_event=fn(_event) {  },
+  ) catch {
+    ClientError::HttpError(message) => {
+      assert_eq(message, "Stream read timeout")
+      caught = true
+      @types.ModelResponse::ModelError("caught")
+    }
+    other => {
+      ignore(other)
+      @types.ModelResponse::ModelError("wrong error")
+    }
+  }
+  assert_true(caught)
+  assert_true(transport.last_url.contains("/responses"))
+  assert_true(transport.last_body.contains("\"model\":\"gpt-4.1\""))
 }
 
 // =============================================================================
@@ -640,13 +1337,14 @@ async test "chat_gateway/multi-tool/anthropic mixed: text + 1 tool via transform
     "claude-sonnet-4-20250514",
   )
   match result {
-    @types.ModelResponse::ToolCalls(c) => {
-      assert_eq(c.length(), 1)
-      assert_eq(c[0].name, "get_weather")
-      assert_true(c[0].id.length() > 0) // tool call ID present
-      assert_true(c[0].arguments.stringify().contains("Tokyo"))
+    @types.ModelResponse::ToolCallsWithContent(tool_calls~, rich~) => {
+      assert_eq(tool_calls.length(), 1)
+      assert_eq(tool_calls[0].name, "get_weather")
+      assert_true(tool_calls[0].id.length() > 0) // tool call ID present
+      assert_true(tool_calls[0].arguments.stringify().contains("Tokyo"))
+      assert_true(rich.content.contains("weather in Tokyo"))
     }
-    _ => fail("expected ToolCalls from Anthropic mixed fixture")
+    _ => fail("expected ToolCallsWithContent from Anthropic mixed fixture")
   }
 }
 

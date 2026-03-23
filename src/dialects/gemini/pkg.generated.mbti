@@ -11,7 +11,7 @@ pub fn accumulate_gemini(String) -> @types.ModelResponse
 
 pub fn auth_headers() -> Map[String, String]
 
-pub fn build_body(Array[@types.ModelMessage], Array[@types.ToolDefinition], max_tokens? : Int?, temperature? : Double?, top_p? : Double?, top_k? : Int?) -> Json
+pub fn build_body(Array[@types.ModelMessage], Array[@types.ToolDefinition], max_tokens? : Int?, temperature? : Double?, top_p? : Double?, top_k? : Int?, response_format? : @types.ResponseFormat?) -> Json
 
 pub fn chat_request_to_gemini(String, @types.TransformContext) -> String
 

@@ -6,37 +6,23 @@
 /// which uses Responses API as the intermediate format.
 
 ///|
-pub async fn chat_gateway(
+fn build_chat_gateway_request(
   provider : @gateway.ProviderConfig,
-  transport : &HttpTransport,
   messages : Array[@types.ModelMessage],
   tools : Array[@types.ToolDefinition],
   model : String,
-  max_tokens? : Int? = None,
-  temperature? : Double? = None,
-) -> @types.ModelResponse raise ClientError {
+  max_tokens : Int?,
+  temperature : Double?,
+  response_format : @types.ResponseFormat?,
+) -> TransportRequest {
   let api = provider.api
-  let target = api.to_dialect()
-  // Cross-dialect or native Responses API → Responses API intermediate
-  if target != @gateway.GatewaySurface::OpenAI ||
-    api == @gateway.OpenAIResponses {
-    return chat_gateway_responses(
-      provider,
-      transport,
-      messages,
-      tools,
-      model,
-      max_tokens~,
-      temperature~,
-    )
-  }
-  // Same dialect: Chat Completions pass through (no translation)
   let body = @openai.build_chat_body(
     model,
     messages,
     tools,
     max_tokens~,
     temperature~,
+    response_format~,
   ).stringify()
   let base_url = if provider.base_url.is_empty() {
     api.default_base_url()
@@ -52,18 +38,18 @@ pub async fn chat_gateway(
     provider.api_key,
   )
   let url = upstream.origin + upstream.path
-  let req : TransportRequest = {
+  {
     url,
     http_method: "POST",
     headers: upstream.headers,
     body: Some(upstream.body),
   }
-  let resp = transport.request(req) catch {
-    TransportError::NetworkError(msg) =>
-      raise ClientError::HttpError("Transport error: " + msg)
-    TransportError::TimeoutError =>
-      raise ClientError::HttpError("Transport timeout")
-  }
+}
+
+///|
+fn parse_chat_gateway_transport_response(
+  resp : TransportResponse,
+) -> @types.ModelResponse raise ClientError {
   if resp.status == 429 {
     return @types.ModelResponse::RateLimited(retry_after=60)
   }
@@ -74,4 +60,44 @@ pub async fn chat_gateway(
     err => raise ClientError::ParseError("JSON parse error: " + err.to_string())
   }
   @openai.parse_chat_response(json)
+}
+
+///|
+pub async fn chat_gateway(
+  provider : @gateway.ProviderConfig,
+  transport : &HttpTransport,
+  messages : Array[@types.ModelMessage],
+  tools : Array[@types.ToolDefinition],
+  model : String,
+  max_tokens? : Int? = None,
+  temperature? : Double? = None,
+  response_format? : @types.ResponseFormat? = None,
+) -> @types.ModelResponse raise ClientError {
+  let api = provider.api
+  let target = api.to_dialect()
+  // Cross-dialect or native Responses API → Responses API intermediate
+  if target != @gateway.GatewaySurface::OpenAI ||
+    api == @gateway.OpenAIResponses {
+    return chat_gateway_responses(
+      provider,
+      transport,
+      messages,
+      tools,
+      model,
+      max_tokens~,
+      temperature~,
+      response_format~,
+    )
+  }
+  // Same dialect: Chat Completions pass through (no translation)
+  let req = build_chat_gateway_request(
+    provider, messages, tools, model, max_tokens, temperature, response_format,
+  )
+  let resp = transport.request(req) catch {
+    TransportError::NetworkError(msg) =>
+      raise ClientError::HttpError("Transport error: " + msg)
+    TransportError::TimeoutError =>
+      raise ClientError::HttpError("Transport timeout")
+  }
+  parse_chat_gateway_transport_response(resp)
 }

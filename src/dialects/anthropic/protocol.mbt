@@ -190,6 +190,13 @@ fn content_parts_to_anthropic_json(
           "type": "document",
           "source": { "type": "file", "file_id": file_id },
         })
+      // Ref: docs/upstream/anthropic-files-api.md —
+      // Anthropic documents use uploaded file IDs or inline bytes, not remote URLs.
+      @types.ContentPart::FileUrl(url~) =>
+        result.push({
+          "type": "text",
+          "text": "[Remote file URL input not supported by Anthropic Messages API; upload via Files API first] \{url}",
+        })
       // Inference: docs/upstream/anthropic-messages-api.md:74-80,193-250
       // documents text/image/document request blocks for MessageParam.content;
       // video input blocks are not part of the published ContentBlockParam union.
@@ -387,6 +394,7 @@ pub fn build_body(
   max_tokens? : Int? = None,
   system? : String = "",
   temperature? : Double? = None,
+  response_format? : @types.ResponseFormat? = None,
 ) -> Json {
   let system_msg = if system.length() > 0 {
     system
@@ -397,27 +405,30 @@ pub fn build_body(
   // Ref: docs/upstream/anthropic-messages-api.md:13-21 — max_tokens is a
   // required request body field.
   let effective_max_tokens = max_tokens.unwrap_or(8192)
-  let mut body : Json = {
-    "model": model,
-    "max_tokens": effective_max_tokens,
+  let body : Map[String, Json] = {
+    "model": Json::string(model),
     "messages": Json::array(msgs),
   }
-  if system_msg.length() > 0 {
-    body = @utils.set_json_field(body, "system", Json::string(system_msg))
+  let params : @types.GenerationParams = {
+    ..@types.GenerationParams::empty(),
+    max_tokens: Json::number(effective_max_tokens.to_double()),
+    temperature: match temperature {
+      Some(temp) => Json::number(temp)
+      None => Json::null()
+    },
+    response_format,
   }
-  match temperature {
-    Some(temp) =>
-      body = @utils.set_json_field(body, "temperature", Json::number(temp))
-    None => ()
+  params.apply_to_anthropic(body, {
+    max_tokens: effective_max_tokens,
+    max_tokens_field: "max_tokens",
+  })
+  if system_msg.length() > 0 {
+    body["system"] = Json::string(system_msg)
   }
   if tools.length() > 0 {
-    body = @utils.set_json_field(
-      body,
-      "tools",
-      Json::array(tools_to_json(tools)),
-    )
+    body["tools"] = Json::array(tools_to_json(tools))
   }
-  body
+  Json::object(body)
 }
 
 // =============================================================================

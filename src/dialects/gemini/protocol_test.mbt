@@ -52,6 +52,29 @@ test "message_to_content converts ImageUrl to text placeholder" {
 }
 
 ///|
+test "message_to_content converts FileUrl to text placeholder" {
+  let msg = @types.ModelMessage::User(
+    content="",
+    name=None,
+    content_parts=Some([
+      @types.ContentPart::FileUrl(url="https://example.com/report.pdf"),
+    ]),
+  )
+  match message_to_content(msg) {
+    Some(content) => {
+      inspect(content.role, content="user")
+      inspect(content.parts.length(), content="1")
+      match content.parts[0] {
+        GeminiPart::Text(text) =>
+          inspect(text, content="[File: https://example.com/report.pdf]")
+        _ => fail("Expected Text placeholder")
+      }
+    }
+    None => fail("Expected Some content")
+  }
+}
+
+///|
 test "message_to_content converts Assistant with tool_calls" {
   let calls = [
     @types.ToolCallRequest::new(id="gemini_search_0", name="search", arguments={
@@ -245,6 +268,39 @@ test "build_body lifts system messages into systemInstruction" {
       }
     }
     _ => fail("Expected systemInstruction in request body")
+  }
+}
+
+///|
+test "build_body emits responseJsonSchema for structured output" {
+  let body = build_body(
+    [
+      @types.ModelMessage::User(
+        content="Return JSON",
+        name=None,
+        content_parts=None,
+      ),
+    ],
+    [],
+    response_format=Some(
+      @types.ResponseFormat::JsonSchema(
+        name=None,
+        schema={ "type": "object", "required": ["answer"] },
+        description=None,
+        strict=None,
+      ),
+    ),
+  )
+  match body {
+    {
+      "generationConfig": {
+        "responseMimeType": "application/json",
+        "responseJsonSchema": { "type": "object", .. },
+        ..
+      },
+      ..
+    } => ()
+    _ => fail("Expected Gemini responseJsonSchema")
   }
 }
 
@@ -543,6 +599,29 @@ test "parse_stream_chunk extracts executableCode and codeExecutionResult" {
       assert_true(text.contains("4"))
     }
     None => fail("Expected parsed chunk")
+  }
+}
+
+///|
+test "parse_response canonicalizes wrapped Gemini structured output" {
+  let response : Json = {
+    "candidates": [
+      {
+        "content": {
+          "role": "model",
+          "parts": [
+            {
+              "text": "```json\n{\"lookup_verification_url_response\":{\"content\":\"{\\\"url\\\":\\\"https://example.com/interop-check\\\"}\"}}\n```",
+            },
+          ],
+        },
+      },
+    ],
+  }
+  match parse_response(response) {
+    @types.ModelResponse::Text(text) =>
+      assert_eq(text, "{\"url\":\"https://example.com/interop-check\"}")
+    _ => fail("Expected normalized Gemini text response")
   }
 }
 

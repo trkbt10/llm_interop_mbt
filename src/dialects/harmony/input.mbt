@@ -350,6 +350,12 @@ fn extract_content_parts(content : Json) -> Array[@types.ContentPart]? {
             parts.push(@types.ContentPart::FileRef(file_id~, media_type=None))
             has_non_text = true
           }
+          // Ref: docs/upstream/openai-file-inputs.md —
+          // Responses API InputFile also accepts file_url.
+          { "type": String("input_file"), "file_url": String(url), .. } => {
+            parts.push(@types.ContentPart::FileUrl(url~))
+            has_non_text = true
+          }
           // Ref: OpenAI Responses API InputFile with inline data — {"type":"input_file","file_data":"data:...;base64,..."}
           { "type": String("input_file"), "file_data": String(file_data), .. } =>
             // Parse data URL to extract media_type and data

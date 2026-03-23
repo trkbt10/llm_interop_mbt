@@ -182,6 +182,16 @@ pub(all) enum ContentPart {
   /// - Gemini: {"fileData":{"fileUri":"files/...","mimeType":"..."}}
   ///   Ref: Gemini Files API
   FileRef(file_id~ : String, media_type~ : String?)
+  /// Remote file URL (OpenAI Responses API only)
+  /// - OpenAI Responses: {"type":"input_file","file_url":"https://..."}
+  ///   Ref: docs/upstream/openai-file-inputs.md
+  /// - OpenAI Chat: no documented file_url field for FileContentPart
+  ///   Ref: docs/upstream/openai-chat-completions.md:194-218
+  /// - Anthropic: no documented remote document URL source
+  ///   Ref: docs/upstream/anthropic-files-api.md
+  /// - Gemini: generic HTTP(S) document URLs are not documented fileData URIs
+  ///   Ref: docs/upstream/gemini-files-api.md
+  FileUrl(url~ : String)
   /// Video content (base64-encoded)
   /// - Gemini: {"inlineData":{"mimeType":"video/mp4","data":"..."}}
   ///   Ref: https://ai.google.dev/gemini-api/docs/video-understanding

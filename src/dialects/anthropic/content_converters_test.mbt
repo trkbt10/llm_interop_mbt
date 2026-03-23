@@ -48,6 +48,19 @@ test "image: is_image_block detection" {
   assert_false(is_image_block({ "type": "text", "text": "hello" }))
 }
 
+///|
+test "image: invalid or non-image blocks fall back to empty URL" {
+  match convert_claude_image_to_responses({ "type": "image", "source": {} }) {
+    { "image_url": String(url), .. } => assert_eq(url, "")
+    _ => fail("Expected empty input_image fallback")
+  }
+
+  match convert_claude_image_to_responses({ "type": "text", "text": "hello" }) {
+    { "image_url": String(url), .. } => assert_eq(url, "")
+    _ => fail("Expected non-image fallback")
+  }
+}
+
 // =============================================================================
 // Tool Result Conversion Tests
 // =============================================================================
@@ -107,6 +120,22 @@ test "tool_result: is_tool_result_block detection" {
   assert_false(is_tool_result_block({ "type": "tool_use" }))
 }
 
+///|
+test "tool_result: fallback shape is empty" {
+  match convert_claude_tool_result_to_responses({ "type": "text" }) {
+    {
+      "type": String("function_call_output"),
+      "call_id": String(call_id),
+      "output": String(output),
+      ..
+    } => {
+      assert_eq(call_id, "")
+      assert_eq(output, "")
+    }
+    _ => fail("Expected empty function_call_output fallback")
+  }
+}
+
 // =============================================================================
 // Tool Use Conversion Tests
 // =============================================================================
@@ -134,6 +163,34 @@ test "tool_use: converts to function_call format" {
     }
     _ => fail("Expected function_call format")
   }
+}
+
+///|
+test "tool_use/text helpers fall back cleanly on unsupported blocks" {
+  match convert_claude_tool_use_to_responses({ "type": "text" }) {
+    {
+      "type": String("function_call"),
+      "name": String(name),
+      "arguments": String(arguments),
+      ..
+    } => {
+      assert_eq(name, "")
+      assert_eq(arguments, "{}")
+    }
+    _ => fail("Expected empty function_call fallback")
+  }
+
+  assert_true(is_tool_use_block({ "type": "tool_use", "id": "x" }))
+  assert_false(is_tool_use_block({ "type": "text" }))
+
+  match convert_claude_text_to_responses({ "type": "tool_use" }) {
+    { "type": String("output_text"), "text": String(text), .. } =>
+      assert_eq(text, "")
+    _ => fail("Expected empty output_text fallback")
+  }
+
+  assert_true(is_text_block({ "type": "text", "text": "hello" }))
+  assert_false(is_text_block({ "type": "tool_use" }))
 }
 
 // =============================================================================
@@ -205,6 +262,79 @@ test "web_search_call: converts to web_search tool_use format" {
 }
 
 ///|
+test "function_call/tool_result converters cover id and fallback branches" {
+  let by_id = convert_responses_function_call_to_claude({
+    "type": "function_call",
+    "id": "fc_01XYZ",
+    "name": "lookup",
+    "arguments": "{}",
+  })
+  match by_id {
+    { "type": String("tool_use"), "id": String(id), "name": String(name), .. } => {
+      assert_true(id.has_prefix("toolu_"))
+      assert_eq(name, "lookup")
+    }
+    _ => fail("Expected tool_use converted from id field")
+  }
+
+  let web_search_without_action = convert_responses_function_call_to_claude({
+    "type": "web_search_call",
+    "id": "ws_missing",
+  })
+  match web_search_without_action {
+    {
+      "type": String("tool_use"),
+      "name": String(name),
+      "input": Object(input),
+      ..
+    } => {
+      assert_eq(name, "web_search")
+      assert_eq(input.length(), 0)
+    }
+    _ => fail("Expected empty web_search input fallback")
+  }
+
+  match convert_responses_function_call_to_claude({ "type": "text" }) {
+    {
+      "type": String("tool_use"),
+      "id": String(id),
+      "name": String(name),
+      "input": Object(input),
+      ..
+    } => {
+      assert_eq(id, "")
+      assert_eq(name, "")
+      assert_eq(input.length(), 0)
+    }
+    _ => fail("Expected generic tool_use fallback")
+  }
+
+  match convert_responses_function_call_output_to_claude({ "type": "text" }) {
+    {
+      "type": String("tool_result"),
+      "tool_use_id": String(tool_use_id),
+      "content": String(content),
+      ..
+    } => {
+      assert_eq(tool_use_id, "")
+      assert_eq(content, "")
+    }
+    _ => fail("Expected generic tool_result fallback")
+  }
+
+  let generated_id = convert_responses_function_call_to_claude({
+    "type": "function_call",
+    "name": "lookup",
+    "arguments": "{}",
+  })
+  match generated_id {
+    { "type": String("tool_use"), "id": String(id), .. } =>
+      assert_true(id.has_prefix("toolu_"))
+    _ => fail("Expected generated anthropic tool_use id")
+  }
+}
+
+///|
 test "function_call_output: converts to tool_result format" {
   let block : Json = {
     "type": "function_call_output",
@@ -265,6 +395,18 @@ test "input_image: converts data URI to Claude base64 format" {
       assert_eq(data, "dGVzdA==")
     }
     _ => fail("Expected image with base64 source")
+  }
+}
+
+///|
+test "input_image: non-image blocks fall back to empty Claude URL" {
+  match convert_responses_image_to_claude({ "type": "text" }) {
+    {
+      "type": String("image"),
+      "source": { "type": String("url"), "url": String(url), .. },
+      ..
+    } => assert_eq(url, "")
+    _ => fail("Expected empty Claude image fallback")
   }
 }
 

@@ -406,6 +406,29 @@ test "responses_input_to_messages parses input_file video file_data" {
 }
 
 ///|
+test "responses_input_to_messages parses input_file with file_url" {
+  let input : Array[Json] = [
+    {
+      "role": "user",
+      "content": Json::array([
+        { "type": "input_text", "text": "Read this remote file" },
+        { "type": "input_file", "file_url": "https://example.com/report.pdf" },
+      ]),
+    },
+  ]
+  let messages = responses_input_to_messages(input)
+  match messages[0] {
+    @types.ModelMessage::User(content_parts=Some(parts), ..) =>
+      match parts[1] {
+        @types.ContentPart::FileUrl(url~) =>
+          inspect(url, content="https://example.com/report.pdf")
+        _ => fail("Expected FileUrl from input_file.file_url")
+      }
+    _ => fail("Expected User with content_parts")
+  }
+}
+
+///|
 test "responses_input_to_messages parses OpenAI Chat file content part" {
   let input : Array[Json] = [
     {
@@ -667,6 +690,75 @@ test "model_response_to_responses_json: rich text annotations stay on their text
         }
         _ => fail("Expected message output")
       }
+    _ => fail("Expected valid response JSON")
+  }
+}
+
+///|
+test "model_response_to_responses_json: ToolCallsWithContent preserves mixed ordering" {
+  let response = @types.ModelResponse::ToolCallsWithContent(
+    tool_calls=[
+      @types.ToolCallRequest::new(id="fc_001", name="get_weather", arguments={
+        "city": "Tokyo",
+      }),
+    ],
+    rich=@types.RichTextResponse::from_parts(
+      content="Checking now",
+      content_parts=[
+        @types.ResponseContentPart::Thinking(text="Need current weather"),
+        @types.ResponseContentPart::OutputText("Checking now"),
+      ],
+      tool_traces=[
+        @types.ToolCallTrace::new(
+          id="ws_001",
+          name="web_search",
+          kind=@types.ToolCallKind::WebSearch,
+          statuses=[@types.ToolCallStatus::Completed],
+          arguments={ "query": "Tokyo weather now" },
+        ),
+      ],
+    ),
+  )
+  let json = model_response_to_responses_json(
+    response,
+    response_id=test_response_id,
+    model=test_model,
+  )
+  match json {
+    { "output": Array(output), .. } => {
+      assert_eq(output.length(), 4)
+      match output[0] {
+        { "type": String("reasoning"), "summary": Array(summary), .. } =>
+          assert_eq(summary.length(), 1)
+        _ => fail("Expected reasoning item")
+      }
+      match output[1] {
+        { "type": String("web_search_call"), "id": String(id), .. } =>
+          assert_eq(id, "ws_001")
+        _ => fail("Expected web_search_call trace")
+      }
+      match output[2] {
+        {
+          "type": String("function_call"),
+          "call_id": String(call_id),
+          "name": String(name),
+          ..
+        } => {
+          assert_eq(call_id, "fc_001")
+          assert_eq(name, "get_weather")
+        }
+        _ => fail("Expected function_call")
+      }
+      match output[3] {
+        { "type": String("message"), "content": Array(content), .. } =>
+          match content[0] {
+            { "type": String("output_text"), "text": String(text), .. } =>
+              assert_eq(text, "Checking now")
+            _ => fail("Expected output_text content")
+          }
+        _ => fail("Expected message output")
+      }
+    }
     _ => fail("Expected valid response JSON")
   }
 }

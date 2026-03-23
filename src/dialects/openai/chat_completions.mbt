@@ -95,10 +95,13 @@ fn content_parts_to_openai_json(
           "type": "input_audio",
           "input_audio": { "data": data, "format": format },
         })
-      // Ref: docs/upstream/openai-chat-completions.md:194-218 —
-      // FileContentPart accepts base64 file_data with an optional filename.
-      @types.ContentPart::Document(data~, title~, ..) => {
-        let file : Map[String, Json] = { "file_data": Json::string(data) }
+      // Ref: docs/upstream/openai-chat-completions.md:194-218 and
+      // docs/upstream/openai-file-inputs.md:334-367 —
+      // Chat file_data uses a data URL carrier, not bare base64.
+      @types.ContentPart::Document(data~, media_type~, title~) => {
+        let file : Map[String, Json] = {
+          "file_data": Json::string("data:\{media_type};base64,\{data}"),
+        }
         match title {
           Some(name) => file["filename"] = Json::string(name)
           None => ()
@@ -109,6 +112,13 @@ fn content_parts_to_openai_json(
       // FileContentPart accepts uploaded file_id references.
       @types.ContentPart::FileRef(file_id~, ..) =>
         result.push({ "type": "file", "file": { "file_id": file_id } })
+      // Ref: docs/upstream/openai-file-inputs.md —
+      // file_url is documented for Responses API, not Chat Completions.
+      @types.ContentPart::FileUrl(url~) =>
+        result.push({
+          "type": "text",
+          "text": "[Remote file URL input — not supported by Chat Completions API; use Responses API or upload via Files API] \{url}",
+        })
       // Ref: docs/upstream/openai-chat-completions.md:126-218 —
       // ChatCompletionContentPart covers text, image_url, input_audio, and file;
       // there is no native video content part in the published union.
@@ -272,32 +282,31 @@ pub fn build_chat_body(
   tools : Array[@types.ToolDefinition],
   max_tokens? : Int? = None,
   temperature? : Double? = None,
+  response_format? : @types.ResponseFormat? = None,
 ) -> Json {
   let msgs = messages_to_json(messages)
-  let mut body : Json = { "model": model, "messages": Json::array(msgs) }
-  match max_tokens {
-    Some(max) =>
-      body = @utils.set_json_field(
-        body,
-        "max_tokens",
-        Json::number(max.to_double()),
-      )
-    None => ()
+  let body : Map[String, Json] = {
+    "model": Json::string(model),
+    "messages": Json::array(msgs),
   }
-  match temperature {
-    Some(temp) =>
-      body = @utils.set_json_field(body, "temperature", Json::number(temp))
-    None => ()
+  let params : @types.GenerationParams = {
+    ..@types.GenerationParams::empty(),
+    max_tokens: match max_tokens {
+      Some(max) => Json::number(max.to_double())
+      None => Json::null()
+    },
+    temperature: match temperature {
+      Some(temp) => Json::number(temp)
+      None => Json::null()
+    },
+    response_format,
   }
+  params.apply_to_openai(body, @types.TransformContext::default())
   if tools.length() > 0 {
-    body = @utils.set_json_field(
-      body,
-      "tools",
-      Json::array(tools_to_json(tools)),
-    )
-    body = @utils.set_json_field(body, "tool_choice", Json::string("auto"))
+    body["tools"] = Json::array(tools_to_json(tools))
+    body["tool_choice"] = Json::string("auto")
   }
-  body
+  Json::object(body)
 }
 
 // =============================================================================

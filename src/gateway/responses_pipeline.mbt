@@ -32,7 +32,11 @@ pub fn prepare_responses_api_upstream(
   let api = provider.api
   let converted_body = convert_responses_request(api, responses_body, stream)
   let (origin, base_path) = @utils.parse_url(base_url)
-  let path = api.completion_path(base_path, model, api_key)
+  let path = match (api, stream) {
+    (GoogleGenerativeAI, true) =>
+      @gemini.stream_completion_path(base_path, model, api_key)
+    _ => api.completion_path(base_path, model, api_key)
+  }
   let headers = api.auth_headers(api_key)
   for key, value in provider.headers {
     headers[key] = value

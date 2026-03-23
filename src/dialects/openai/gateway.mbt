@@ -37,7 +37,8 @@ pub fn chat_completions_resolve(
   body : String,
 ) -> (String, String)? {
   if path == "/v1/chat/completions" && meth == "POST" {
-    return Some(("", body))
+    let model = @utils.extract_json_field(body, "model").unwrap_or("")
+    return Some((model, body))
   }
   None
 }
@@ -86,7 +87,8 @@ pub fn responses_api_resolve(
   body : String,
 ) -> (String, String)? {
   if path == "/v1/responses" && meth == "POST" {
-    return Some(("", body))
+    let model = @utils.extract_json_field(body, "model").unwrap_or("")
+    return Some((model, body))
   }
   None
 }

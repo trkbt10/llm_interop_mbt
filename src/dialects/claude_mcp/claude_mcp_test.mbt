@@ -228,6 +228,46 @@ test "chat_request_to_prompt: multipart content" {
 }
 
 ///|
+test "chat_request_to_prompt/tools_result_to_chat cover fallback defaults" {
+  let ctx = @types.TransformContext::default()
+  let no_model_body =
+    #|{"messages":[{"role":"user","content":"Only prompt"}]}
+  let prompt_json = @json.parse(chat_request_to_prompt(no_model_body, ctx)) catch {
+    _ => fail("Failed to parse fallback prompt json")
+  }
+  match prompt_json {
+    { "model": String(model), "prompt": String(prompt), .. } => {
+      assert_eq(model, "claude-code-tools")
+      assert_eq(prompt, "Only prompt")
+    }
+    _ => fail("Expected fallback model in prompt transform")
+  }
+
+  let multipart_body =
+    #|{"messages":[{"role":"user","content":[{"type":"image_url","image_url":{"url":"https://example.com/a.png"}},{"type":"text","text":"Only prompt"}]}]}
+  let multipart_json = @json.parse(chat_request_to_prompt(multipart_body, ctx)) catch {
+    _ => fail("Failed to parse multipart prompt json")
+  }
+  match multipart_json {
+    { "prompt": String(prompt), .. } => assert_eq(prompt, "Only prompt")
+    _ => fail("Expected multipart prompt transform")
+  }
+
+  let non_tool_result =
+    #|{"jsonrpc":"2.0","method":"notifications/initialized"}
+  let response_json = @json.parse(tools_result_to_chat(non_tool_result)) catch {
+    _ => fail("Failed to parse simple chat response")
+  }
+  match response_json {
+    {
+      "choices": Array([{ "message": { "content": String(content), .. }, .. }]),
+      ..
+    } => assert_eq(content, non_tool_result)
+    _ => fail("Expected simple chat fallback response")
+  }
+}
+
+///|
 test "chat_request_to_prompt: system only" {
   let body =
     #|{"model":"m","messages":[{"role":"system","content":"System prompt only"}]}

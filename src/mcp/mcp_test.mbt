@@ -343,6 +343,22 @@ test "McpContentItem::from_json: EmbeddedResource minimal" {
 }
 
 ///|
+test "McpContentItem::from_json: EmbeddedResource missing uri defaults to empty string" {
+  let json : Json = {
+    "type": "resource",
+    "resource": { "mimeType": "text/plain", "text": "content only" },
+  }
+  match McpContentItem::from_json(json) {
+    Some(Resource(uri~, mime_type~, text~)) => {
+      assert_eq(uri, "")
+      assert_eq(mime_type, Some("text/plain"))
+      assert_eq(text, Some("content only"))
+    }
+    _ => fail("Should parse resource with empty fallback uri")
+  }
+}
+
+///|
 test "McpContentItem::from_json: invalid (no type)" {
   assert_eq(McpContentItem::from_json({ "text": "no type" }), None)
 }
@@ -364,6 +380,15 @@ test "McpContentItem::from_json: image missing mimeType falls through to text fa
   // No mimeType → doesn't match Image pattern
   // No text field → returns None
   assert_eq(McpContentItem::from_json(json), None)
+}
+
+///|
+test "McpContentItem::from_json: unknown type with text uses fallback Text" {
+  let json : Json = { "type": "notice", "text": "fallback text" }
+  match McpContentItem::from_json(json) {
+    Some(Text(text)) => assert_eq(text, "fallback text")
+    _ => fail("Expected text fallback")
+  }
 }
 
 // =============================================================================
@@ -421,6 +446,24 @@ test "McpContentItem::to_json roundtrip: Resource" {
       assert_eq(text, Some("content"))
     }
     _ => fail("Roundtrip failed for Resource")
+  }
+}
+
+///|
+test "McpContentItem::to_json roundtrip: Resource without optional fields" {
+  let item = McpContentItem::Resource(
+    uri="resource://opaque",
+    mime_type=None,
+    text=None,
+  )
+  let json = item.to_json()
+  match McpContentItem::from_json(json) {
+    Some(Resource(uri~, mime_type~, text~)) => {
+      assert_eq(uri, "resource://opaque")
+      assert_eq(mime_type, None)
+      assert_eq(text, None)
+    }
+    _ => fail("Roundtrip failed for minimal Resource")
   }
 }
 
@@ -596,6 +639,25 @@ test "parse_tools_call_result: isError absent means false" {
   }
   match parse_tools_call_result(json) {
     Some(result) => assert_eq(result.is_error, false)
+    None => fail("Failed to parse")
+  }
+}
+
+///|
+test "parse_tools_call_result: malformed content items are skipped" {
+  let json : Json = {
+    "result": {
+      "content": [
+        { "type": "text", "text": "ok" },
+        { "type": "image", "data": "missing mime type" },
+      ],
+    },
+  }
+  match parse_tools_call_result(json) {
+    Some(result) => {
+      assert_eq(result.is_error, false)
+      assert_eq(result.content.length(), 1)
+    }
     None => fail("Failed to parse")
   }
 }

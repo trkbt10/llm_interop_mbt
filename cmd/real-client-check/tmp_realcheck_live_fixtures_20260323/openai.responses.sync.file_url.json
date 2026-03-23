@@ -1,0 +1,9 @@
+{
+  "name": "openai.responses.sync.file_url",
+  "model": "gpt-4.1-mini",
+  "mode": "sync",
+  "request_url": "https://api.openai.com/v1/responses",
+  "carrier_summary": "responses:input_file.file_url + text.format normalized(openai)",
+  "event_types": [],
+  "response_text": "{\"company\":\"Berkshire Hathaway\"}"
+}

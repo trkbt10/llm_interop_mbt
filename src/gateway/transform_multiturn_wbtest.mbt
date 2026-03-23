@@ -10,6 +10,20 @@ fn openai_multiturn_request() -> String {
 }
 
 ///|
+fn openai_first_turn_tool_choice_request() -> String {
+  let s =
+    #|{"model":"test","messages":[{"role":"system","content":"Call the tool exactly once."},{"role":"user","content":"Look up the verification URL for anth-stream."}],"tools":[{"type":"function","function":{"name":"lookup_verification_url","description":"Return the verification URL for a label","parameters":{"type":"object","properties":{"label":{"type":"string"}},"required":["label"]}}}],"tool_choice":{"type":"function","function":{"name":"lookup_verification_url"}},"stream":true,"max_tokens":128}
+  s
+}
+
+///|
+fn openai_first_turn_gemini_request() -> String {
+  let s =
+    #|{"model":"test","messages":[{"role":"system","content":"Call the tool exactly once."},{"role":"user","content":"Look up the verification URL for gem-stream."}],"tools":[{"type":"function","function":{"name":"lookup_verification_url","description":"Return the verification URL for a label","parameters":{"type":"object","properties":{"label":{"type":"string"}},"required":["label"]}}}],"tool_choice":{"type":"function","function":{"name":"lookup_verification_url"}},"stream":true,"max_tokens":128}
+  s
+}
+
+///|
 fn default_tc() -> @types.TransformContext {
   @types.TransformContext::default()
 }
@@ -94,6 +108,34 @@ test "multiturn/req/oai→anth: all user content preserved" {
   assert_true(result.contains("Sunny"))
 }
 
+///|
+test "multiturn/req/oai→anth: explicit function tool_choice and stream survive first turn" {
+  let req = openai_first_turn_tool_choice_request()
+  let result = transform_request(req, OpenAI, Anthropic, "test", default_tc())
+  let json : Json = @json.parse(result) catch { _ => fail("parse") }
+  match json {
+    {
+      "stream": True,
+      "system": String(system),
+      "tool_choice": {
+        "type": String(choice_type),
+        "name": String(choice_name),
+        ..
+      },
+      "messages": [
+        { "role": String("user"), "content": String(user_content), .. },
+      ],
+      ..
+    } => {
+      assert_eq(system, "Call the tool exactly once.")
+      assert_eq(choice_type, "tool")
+      assert_eq(choice_name, "lookup_verification_url")
+      assert_true(user_content.contains("anth-stream"))
+    }
+    _ => fail("bad structure")
+  }
+}
+
 // =============================================================================
 // B. OpenAI → Gemini: multi-turn tool conversation
 // =============================================================================
@@ -170,4 +212,54 @@ test "multiturn/req/oai→gem: all user content preserved" {
   let result = transform_request(req, OpenAI, Gemini, "test", default_tc())
   assert_true(result.contains("weather?") || result.contains("weather"))
   assert_true(result.contains("Thanks"))
+}
+
+///|
+test "multiturn/req/oai→gem: first turn preserves system, tools, and user content" {
+  let req = openai_first_turn_gemini_request()
+  let result = transform_request(req, OpenAI, Gemini, "test", default_tc())
+  let json : Json = @json.parse(result) catch { _ => fail("parse") }
+  match json {
+    {
+      "systemInstruction": { "parts": Array(system_parts), .. },
+      "tools": [{ "functionDeclarations": Array(decls), .. }],
+      "contents": [{ "role": String("user"), "parts": Array(user_parts), .. }],
+      ..
+    } => {
+      let mut found_system = false
+      for part in system_parts {
+        match part {
+          { "text": String(text), .. } => {
+            assert_eq(text, "Call the tool exactly once.")
+            found_system = true
+          }
+          _ => ()
+        }
+      }
+      assert_true(found_system)
+      let mut found_decl = false
+      for decl in decls {
+        match decl {
+          { "name": String(name), .. } =>
+            if name == "lookup_verification_url" {
+              found_decl = true
+            }
+          _ => ()
+        }
+      }
+      assert_true(found_decl)
+      let mut found_user = false
+      for part in user_parts {
+        match part {
+          { "text": String(text), .. } => {
+            assert_true(text.contains("gem-stream"))
+            found_user = true
+          }
+          _ => ()
+        }
+      }
+      assert_true(found_user)
+    }
+    _ => fail("bad structure")
+  }
 }

@@ -33,24 +33,12 @@ pub fn responses_request_to_chat_completions(
   let body : Map[String, Json] = {
     "model": Json::string(model),
     "messages": Json::array(msgs_json),
-    "stream": Json::boolean(stream),
   }
-  // Pass through optional parameters
-  match request {
-    { "temperature": Number(t, ..), .. } =>
-      body["temperature"] = Json::number(t)
-    _ => ()
-  }
-  match request {
-    { "top_p": Number(p, ..), .. } => body["top_p"] = Json::number(p)
-    _ => ()
-  }
-  // Responses API: max_output_tokens → Chat Completions: max_tokens
-  match request {
-    { "max_output_tokens": Number(n, ..), .. } =>
-      body["max_tokens"] = Json::number(n)
-    _ => ()
-  }
+  @types.GenerationParams::from_responses(request).apply_to_openai(
+    body,
+    @types.TransformContext::default(),
+  )
+  body["stream"] = Json::boolean(stream)
   // Convert tools
   match request {
     { "tools": Array(tools), .. } =>

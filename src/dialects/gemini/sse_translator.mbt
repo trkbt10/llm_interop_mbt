@@ -253,7 +253,7 @@ fn GeminiToResponsesTranslator::close_current_message(
   if not(self.has_open_message) {
     return
   }
-  let text = self.current_message_text
+  let text = normalize_structured_output_text(self.current_message_text)
   events.push(
     (
       "response.output_text.done",

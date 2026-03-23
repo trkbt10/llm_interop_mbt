@@ -47,15 +47,51 @@ fn inject_optional_params(
 }
 
 ///|
-pub async fn chat_gateway_responses(
+/// Apply response_format to the final upstream request body using the target
+/// provider's native request surface. This avoids OpenAI-specific schema
+/// normalization leaking into Anthropic/Gemini requests.
+fn apply_response_format_to_transport_body(
+  api : @gateway.ModelApi,
+  body : String,
+  response_format : @types.ResponseFormat?,
+) -> String {
+  match response_format {
+    None => body
+    Some(format) => {
+      let json = @json.parse(body) catch { _ => return body }
+      match json {
+        Object(obj) => {
+          let params : @types.GenerationParams = {
+            ..@types.GenerationParams::empty(),
+            response_format: Some(format),
+          }
+          match api {
+            @gateway.OpenAIResponses => params.apply_to_responses(obj)
+            @gateway.AnthropicMessages =>
+              params.apply_to_anthropic(obj, @types.TransformContext::default())
+            @gateway.GoogleGenerativeAI =>
+              params.apply_to_gemini(obj, @types.TransformContext::default())
+            _ => params.apply_to_openai(obj, @types.TransformContext::default())
+          }
+          Json::object(obj).stringify()
+        }
+        _ => body
+      }
+    }
+  }
+}
+
+///|
+fn build_responses_transport_request(
   provider : @gateway.ProviderConfig,
-  transport : &HttpTransport,
   messages : Array[@types.ModelMessage],
   tools : Array[@types.ToolDefinition],
   model : String,
-  max_tokens? : Int? = None,
-  temperature? : Double? = None,
-) -> @types.ModelResponse raise ClientError {
+  max_tokens : Int?,
+  temperature : Double?,
+  response_format : @types.ResponseFormat?,
+  stream : Bool,
+) -> TransportRequest {
   let responses_body = @openai.build_responses_api_body(model, messages, tools)
   inject_optional_params(responses_body, max_tokens, temperature)
   let base_url = if provider.base_url.is_empty() {
@@ -69,27 +105,81 @@ pub async fn chat_gateway_responses(
     model,
     base_url,
     provider.api_key,
+    stream~,
   )
   let url = upstream.origin + upstream.path
-  let req : TransportRequest = {
+  let final_body = apply_response_format_to_transport_body(
+    provider.api,
+    upstream.body,
+    response_format,
+  )
+  {
     url,
     http_method: "POST",
     headers: upstream.headers,
-    body: Some(upstream.body),
+    body: Some(final_body),
   }
-  let resp = transport.request(req) catch {
-    TransportError::NetworkError(msg) =>
-      raise ClientError::HttpError("Transport error: " + msg)
-    TransportError::TimeoutError =>
-      raise ClientError::HttpError("Transport timeout")
-  }
+}
+
+///|
+fn parse_responses_transport_response(
+  api : @gateway.ModelApi,
+  model : String,
+  resp : TransportResponse,
+) -> @types.ModelResponse raise ClientError {
   if resp.status == 429 {
     return @types.ModelResponse::RateLimited(retry_after=60)
   }
   if resp.status < 200 || resp.status >= 300 {
     raise ClientError::ApiError(code=resp.status, message=resp.body)
   }
-  @gateway.parse_responses_api_result(provider.api, resp.body, model~)
+  @gateway.parse_responses_api_result(api, resp.body, model~)
+}
+
+///|
+fn process_responses_stream_chunk(
+  translator : @gateway.ResponsesApiTranslator,
+  acc : @openai.ResponsesApiAccumulator,
+  validator : StructuredStreamValidator,
+  sse_buffer : String,
+  bytes : Bytes,
+  on_event : ((String, Json)) -> Unit,
+) -> String raise ClientError {
+  let text = bytes_to_string_lossy(bytes)
+  let parsed = @sse.parse_sse_chunk(sse_buffer + text)
+  for event in parsed.events {
+    let responses_events = translator.translate(event)
+    for re in responses_events {
+      let (event_type, event_data) = re
+      validator.feed(event_type, event_data)
+      on_event((event_type, event_data))
+      acc.feed({ event: event_type, data: event_data })
+    }
+  }
+  parsed.remaining
+}
+
+///|
+pub async fn chat_gateway_responses(
+  provider : @gateway.ProviderConfig,
+  transport : &HttpTransport,
+  messages : Array[@types.ModelMessage],
+  tools : Array[@types.ToolDefinition],
+  model : String,
+  max_tokens? : Int? = None,
+  temperature? : Double? = None,
+  response_format? : @types.ResponseFormat? = None,
+) -> @types.ModelResponse raise ClientError {
+  let req = build_responses_transport_request(
+    provider, messages, tools, model, max_tokens, temperature, response_format, false,
+  )
+  let resp = transport.request(req) catch {
+    TransportError::NetworkError(msg) =>
+      raise ClientError::HttpError("Transport error: " + msg)
+    TransportError::TimeoutError =>
+      raise ClientError::HttpError("Transport timeout")
+  }
+  parse_responses_transport_response(provider.api, model, resp)
 }
 
 // =============================================================================
@@ -116,29 +206,11 @@ pub async fn chat_gateway_responses_stream(
   on_event~ : ((String, Json)) -> Unit,
   max_tokens? : Int? = None,
   temperature? : Double? = None,
+  response_format? : @types.ResponseFormat? = None,
 ) -> @types.ModelResponse raise ClientError {
-  let responses_body = @openai.build_responses_api_body(model, messages, tools)
-  inject_optional_params(responses_body, max_tokens, temperature)
-  let base_url = if provider.base_url.is_empty() {
-    provider.api.default_base_url()
-  } else {
-    provider.base_url
-  }
-  let upstream = @gateway.prepare_responses_api_upstream(
-    provider,
-    responses_body,
-    model,
-    base_url,
-    provider.api_key,
-    stream=true,
+  let req = build_responses_transport_request(
+    provider, messages, tools, model, max_tokens, temperature, response_format, true,
   )
-  let url = upstream.origin + upstream.path
-  let req : TransportRequest = {
-    url,
-    http_method: "POST",
-    headers: upstream.headers,
-    body: Some(upstream.body),
-  }
   let streaming_resp = transport.request_stream(req) catch {
     TransportError::NetworkError(msg) =>
       raise ClientError::HttpError("Transport error: " + msg)
@@ -162,6 +234,7 @@ pub async fn chat_gateway_responses_stream(
     model~,
   )
   let acc = @openai.ResponsesApiAccumulator::new()
+  let validator = StructuredStreamValidator::new(response_format)
   let mut sse_buffer = ""
   while true {
     let chunk = streaming_resp.reader.read() catch {
@@ -172,20 +245,12 @@ pub async fn chat_gateway_responses_stream(
     }
     match chunk {
       None => break
-      Some(bytes) => {
-        let text = bytes_to_string_lossy(bytes)
-        let parsed = @sse.parse_sse_chunk(sse_buffer + text)
-        sse_buffer = parsed.remaining
-        for event in parsed.events {
-          let responses_events = translator.translate(event)
-          for re in responses_events {
-            let (event_type, event_data) = re
-            on_event((event_type, event_data))
-            acc.feed({ event: event_type, data: event_data })
-          }
-        }
-      }
+      Some(bytes) =>
+        sse_buffer = process_responses_stream_chunk(
+          translator, acc, validator, sse_buffer, bytes, on_event,
+        )
     }
   }
+  validator.finish()
   acc.finish()
 }

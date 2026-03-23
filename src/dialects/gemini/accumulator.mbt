@@ -45,6 +45,7 @@ pub fn GeminiAccumulator::finish(
   self : GeminiAccumulator,
 ) -> @types.ModelResponse {
   self.finished = true
+  let content = normalize_structured_output_text(self.text.to_string())
   if self.tool_calls.length() > 0 {
     let calls : Array[@types.ToolCallRequest] = []
     for tc in self.tool_calls {
@@ -53,7 +54,6 @@ pub fn GeminiAccumulator::finish(
         @types.ToolCallRequest::new(id=tc.id, name=tc.name, arguments~),
       )
     }
-    let content = self.text.to_string()
     if content.length() > 0 {
       @types.ModelResponse::ToolCallsWithContent(
         tool_calls=calls,
@@ -65,7 +65,7 @@ pub fn GeminiAccumulator::finish(
       @types.ModelResponse::ToolCalls(calls)
     }
   } else {
-    @types.ModelResponse::Text(self.text.to_string())
+    @types.ModelResponse::Text(content)
   }
 }
 

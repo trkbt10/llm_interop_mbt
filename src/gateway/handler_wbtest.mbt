@@ -345,6 +345,135 @@ test "prepare_upstream: cross-dialect transforms body" {
   }
 }
 
+///|
+test "prepare_upstream: OpenAI tool_choice and stream carry through Anthropic transform" {
+  let provider : ProviderConfig = {
+    id: "anthropic",
+    base_url: "https://api.anthropic.com",
+    api_key: "key",
+    auth: ApiKey,
+    api: AnthropicMessages,
+    headers: {},
+    auth_header: true,
+    models: [],
+    model_patterns: [],
+    models_from_endpoint: true,
+    codex: None,
+    claude_mcp: None,
+    model_aliases: {},
+  }
+  let body =
+    #|{"model":"claude-sonnet-4-6","messages":[{"role":"system","content":"Call the tool exactly once."},{"role":"user","content":"Look up anth-stream"}],"tools":[{"type":"function","function":{"name":"lookup_verification_url","description":"Return URL","parameters":{"type":"object","properties":{"label":{"type":"string"}},"required":["label"]}}}],"tool_choice":{"type":"function","function":{"name":"lookup_verification_url"}},"stream":true}
+  let req = prepare_upstream(
+    provider,
+    body,
+    OpenAI,
+    "claude-sonnet-4-6",
+    "https://api.anthropic.com",
+    "key",
+  )
+  let parsed = @json.parse(req.body) catch {
+    _ => fail("failed to parse transformed body")
+  }
+  match parsed {
+    {
+      "stream": True,
+      "tool_choice": {
+        "type": String(choice_type),
+        "name": String(choice_name),
+        ..
+      },
+      "messages": [
+        { "role": String("user"), "content": String(user_content), .. },
+      ],
+      ..
+    } => {
+      assert_eq(choice_type, "tool")
+      assert_eq(choice_name, "lookup_verification_url")
+      assert_true(user_content.contains("anth-stream"))
+    }
+    _ => fail("expected transformed Anthropic body with tool_choice")
+  }
+}
+
+///|
+test "prepare_upstream: OpenAI stream tool request survives Gemini transform" {
+  let provider : ProviderConfig = {
+    id: "gemini",
+    base_url: "https://generativelanguage.googleapis.com/v1",
+    api_key: "key",
+    auth: ApiKey,
+    api: GoogleGenerativeAI,
+    headers: {},
+    auth_header: true,
+    models: [],
+    model_patterns: [],
+    models_from_endpoint: true,
+    codex: None,
+    claude_mcp: None,
+    model_aliases: {},
+  }
+  let body =
+    #|{"model":"gemini-2.0-flash","messages":[{"role":"system","content":"Call the tool exactly once."},{"role":"user","content":"Look up gem-stream"}],"tools":[{"type":"function","function":{"name":"lookup_verification_url","description":"Return URL","parameters":{"type":"object","properties":{"label":{"type":"string"}},"required":["label"]}}}],"tool_choice":{"type":"function","function":{"name":"lookup_verification_url"}},"stream":true}
+  let req = prepare_upstream(
+    provider,
+    body,
+    OpenAI,
+    "gemini-2.0-flash",
+    "https://generativelanguage.googleapis.com/v1",
+    "key",
+  )
+  assert_true(req.path.contains("gemini-2.0-flash:generateContent"))
+  assert_false(req.path.contains(":streamGenerateContent"))
+  assert_false(req.body.contains("\"stream\":true"))
+  let parsed = @json.parse(req.body) catch {
+    _ => fail("failed to parse transformed body")
+  }
+  match parsed {
+    {
+      "systemInstruction": { "parts": Array(system_parts), .. },
+      "tools": [{ "functionDeclarations": Array(decls), .. }],
+      "contents": [{ "role": String("user"), "parts": Array(user_parts), .. }],
+      ..
+    } => {
+      let mut found_system = false
+      for part in system_parts {
+        match part {
+          { "text": String(text), .. } => {
+            assert_eq(text, "Call the tool exactly once.")
+            found_system = true
+          }
+          _ => ()
+        }
+      }
+      assert_true(found_system)
+      let mut found_decl = false
+      for decl in decls {
+        match decl {
+          { "name": String(name), .. } =>
+            if name == "lookup_verification_url" {
+              found_decl = true
+            }
+          _ => ()
+        }
+      }
+      assert_true(found_decl)
+      let mut found_user = false
+      for part in user_parts {
+        match part {
+          { "text": String(text), .. } => {
+            assert_true(text.contains("gem-stream"))
+            found_user = true
+          }
+          _ => ()
+        }
+      }
+      assert_true(found_user)
+    }
+    _ => fail("expected transformed Gemini body")
+  }
+}
+
 // =============================================================================
 // prepare_models_request tests
 // =============================================================================

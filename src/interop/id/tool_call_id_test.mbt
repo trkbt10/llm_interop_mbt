@@ -200,6 +200,27 @@ test "detect_provider: returns Unknown for unrecognized format" {
   )
 }
 
+///|
+test "convert_message_tool_call_ids leaves assistant without tool calls unchanged" {
+  let messages = [
+    @types.ModelMessage::Assistant(content="No tools here", tool_calls=None),
+  ]
+  let converted = convert_message_tool_call_ids(
+    messages,
+    ToolCallIdProvider::AnthropicClaude,
+  )
+  match converted[0] {
+    @types.ModelMessage::Assistant(content~, tool_calls~) => {
+      assert_eq(content, "No tools here")
+      match tool_calls {
+        None => ()
+        Some(_) => fail("Expected tool_calls to stay None")
+      }
+    }
+    _ => fail("Expected assistant message")
+  }
+}
+
 // =============================================================================
 // Common ID patterns (from TypeScript tests)
 // =============================================================================

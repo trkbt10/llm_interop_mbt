@@ -2,7 +2,7 @@
 
 These files are local snapshots of upstream vendor documentation saved in Markdown form for offline reference and agent consumption.
 
-Checked on: 2026-03-22
+Checked on: 2026-03-23
 
 ## OpenAI
 
@@ -12,6 +12,10 @@ Checked on: 2026-03-22
   - Source: `https://developers.openai.com/api/reference/resources/responses/methods/create/index.md`
 - `openai-reasoning-guide.md`
   - Source: `https://platform.openai.com/docs/guides/reasoning.md`
+- `openai-file-inputs.md`
+  - Source: `https://developers.openai.com/api/docs/guides/file-inputs.md`
+- `openai-tools-file-search.md`
+  - Source: `https://developers.openai.com/api/docs/guides/tools-file-search.md`
 
 ## Anthropic
 

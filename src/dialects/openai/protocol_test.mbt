@@ -146,6 +146,30 @@ test "tool_to_responses_api_json preserves generic builtin config" {
 }
 
 ///|
+test "chat_completions_resolve extracts model from request body" {
+  let body = "{\"model\":\"gpt-4.1-mini\",\"messages\":[]}"
+  match chat_completions_resolve("POST", "/v1/chat/completions", body) {
+    Some((model, resolved_body)) => {
+      assert_eq(model, "gpt-4.1-mini")
+      assert_eq(resolved_body, body)
+    }
+    None => fail("Expected chat completion route")
+  }
+}
+
+///|
+test "responses_api_resolve extracts model from request body" {
+  let body = "{\"model\":\"gpt-4.1-mini\",\"input\":\"hi\"}"
+  match responses_api_resolve("POST", "/v1/responses", body) {
+    Some((model, resolved_body)) => {
+      assert_eq(model, "gpt-4.1-mini")
+      assert_eq(resolved_body, body)
+    }
+    None => fail("Expected responses route")
+  }
+}
+
+///|
 test "messages_to_responses_input preserves builtin assistant tool items" {
   let messages = [
     @types.ModelMessage::Assistant(
@@ -247,6 +271,42 @@ test "messages_to_responses_input restores builtin tool result identifier fields
   }
 }
 
+///|
+test "messages_to_responses_input restores identifiers across builtin output item families" {
+  let messages = [
+    @types.ModelMessage::ToolResult(
+      tool_call_id="computer_item_123",
+      content="{\"type\":\"computer_call_output\",\"output\":{\"ack\":true}}",
+    ),
+    @types.ModelMessage::ToolResult(
+      tool_call_id="shell_call_456",
+      content="{\"type\":\"shell_call_output\",\"output\":\"ok\"}",
+    ),
+  ]
+  let input = messages_to_responses_input(messages)
+  match input[0] {
+    {
+      "type": String("computer_call_output"),
+      "id": String(id),
+      "output": { "ack": True, .. },
+      ..
+    } => assert_eq(id, "computer_item_123")
+    _ => fail("Expected computer_call_output item")
+  }
+  match input[1] {
+    {
+      "type": String("shell_call_output"),
+      "call_id": String(id),
+      "output": String(output),
+      ..
+    } => {
+      assert_eq(id, "shell_call_456")
+      assert_eq(output, "ok")
+    }
+    _ => fail("Expected shell_call_output item")
+  }
+}
+
 // =============================================================================
 // Request Body Builder Tests (OpenAI Format)
 // =============================================================================
@@ -280,6 +340,31 @@ test "build_chat_body creates valid body" {
 }
 
 ///|
+test "build_chat_body normalizes strict json_schema response format" {
+  let body = build_chat_body(
+    test_model_openai,
+    [@types.ModelMessage::User(content="Hello", name=None, content_parts=None)],
+    [],
+    response_format=Some(
+      @types.ResponseFormat::JsonSchema(
+        name=Some("answer"),
+        schema={
+          "type": "object",
+          "properties": { "url": { "type": "string", "format": "uri" } },
+        },
+        description=None,
+        strict=Some(true),
+      ),
+    ),
+  )
+  match body {
+    { "response_format": { "json_schema": { "schema": schema, .. }, .. }, .. } =>
+      assert_false(schema_needs_normalization(schema))
+    _ => fail("Expected normalized chat response_format")
+  }
+}
+
+///|
 test "build_responses_api_body creates valid body" {
   let messages = [
     @types.ModelMessage::User(
@@ -300,6 +385,37 @@ test "build_responses_api_body creates valid body" {
       inspect(t.length(), content="1")
     }
     _ => fail("Unexpected body format")
+  }
+}
+
+///|
+test "build_responses_api_body sets nested text.format for structured output" {
+  let body = build_responses_api_body(
+    test_model_openai_responses,
+    [
+      @types.ModelMessage::User(
+        content="Return JSON",
+        name=None,
+        content_parts=None,
+      ),
+    ],
+    [],
+    response_format=Some(
+      @types.ResponseFormat::JsonSchema(
+        name=Some("answer"),
+        schema={
+          "type": "object",
+          "properties": { "url": { "type": "string", "format": "uri" } },
+        },
+        description=None,
+        strict=Some(true),
+      ),
+    ),
+  )
+  match body {
+    { "text": { "format": { "schema": schema, .. }, .. }, .. } =>
+      assert_false(schema_needs_normalization(schema))
+    _ => fail("Expected nested Responses text.format")
   }
 }
 
@@ -1022,6 +1138,104 @@ test "model_response_to_responses_json preserves builtin hosted tool traces" {
 }
 
 ///|
+test "model_response_to_responses_json preserves hosted builtin trace subtypes" {
+  let response = @types.ModelResponse::RichText(
+    @types.RichTextResponse::new(content="Hosted tools finished.", tool_traces=[
+      @types.ToolCallTrace::new(
+        id="ts_001",
+        name="tool_search_output",
+        kind=@types.ToolCallKind::Builtin(builtin_type="tool_search_output"),
+        statuses=[@types.ToolCallStatus::Completed],
+        arguments={
+          "type": "tool_search_output",
+          "id": "ts_001",
+          "status": "completed",
+          "results": Json::array([{ "tool": "docs_lookup" }]),
+        },
+      ),
+      @types.ToolCallTrace::new(
+        id="img_001",
+        name="image_generation_call",
+        kind=@types.ToolCallKind::Builtin(builtin_type="image_generation_call"),
+        statuses=[@types.ToolCallStatus::Completed],
+        arguments={
+          "type": "image_generation_call",
+          "id": "img_001",
+          "status": "completed",
+          "result": "https://example.com/generated.png",
+        },
+      ),
+      @types.ToolCallTrace::new(
+        id="ci_001",
+        name="code_interpreter_call",
+        kind=@types.ToolCallKind::Builtin(builtin_type="code_interpreter_call"),
+        statuses=[@types.ToolCallStatus::Completed],
+        arguments={
+          "type": "code_interpreter_call",
+          "id": "ci_001",
+          "status": "completed",
+          "code": "print(1)",
+        },
+      ),
+      @types.ToolCallTrace::new(
+        id="mcp_list_001",
+        name="mcp_list_tools",
+        kind=@types.ToolCallKind::Builtin(builtin_type="mcp_list_tools"),
+        statuses=[@types.ToolCallStatus::Completed],
+        arguments={
+          "type": "mcp_list_tools",
+          "id": "mcp_list_001",
+          "server_label": "docs",
+          "tools": Json::array([{ "name": "lookup_docs" }]),
+        },
+      ),
+    ]),
+  )
+  let json = model_response_to_responses_json(
+    response,
+    response_id=test_response_id,
+    model=test_model_openai_responses,
+  )
+  match json {
+    { "output": Array(output), .. } => {
+      assert_eq(output.length(), 5)
+      match output[0] {
+        { "type": String("tool_search_output"), "results": Array(results), .. } =>
+          assert_eq(results.length(), 1)
+        _ => fail("Expected tool_search_output")
+      }
+      match output[1] {
+        { "type": String("image_generation_call"), "result": String(url), .. } =>
+          assert_eq(url, "https://example.com/generated.png")
+        _ => fail("Expected image_generation_call")
+      }
+      match output[2] {
+        { "type": String("code_interpreter_call"), "code": String(code), .. } =>
+          assert_eq(code, "print(1)")
+        _ => fail("Expected code_interpreter_call")
+      }
+      match output[3] {
+        {
+          "type": String("mcp_list_tools"),
+          "server_label": String(label),
+          "tools": Array(tools),
+          ..
+        } => {
+          assert_eq(label, "docs")
+          assert_eq(tools.length(), 1)
+        }
+        _ => fail("Expected mcp_list_tools")
+      }
+      match output[4] {
+        { "type": String("message"), .. } => ()
+        _ => fail("Expected trailing message output")
+      }
+    }
+    _ => fail("Expected response JSON")
+  }
+}
+
+///|
 test "messages_to_responses_input handles document via input_file" {
   let messages = [
     @types.ModelMessage::User(
@@ -1054,6 +1268,30 @@ test "messages_to_responses_input handles document via input_file" {
 }
 
 ///|
+test "messages_to_responses_input handles remote file url via input_file" {
+  let messages = [
+    @types.ModelMessage::User(
+      content="Read this remote file",
+      name=None,
+      content_parts=Some([
+        @types.ContentPart::Text("Read this remote file"),
+        @types.ContentPart::FileUrl(url="https://example.com/report.pdf"),
+      ]),
+    ),
+  ]
+  let input = messages_to_responses_input(messages)
+  match input[0] {
+    { "role": "user", "content": Array(blocks), .. } =>
+      match blocks[1] {
+        { "type": "input_file", "file_url": String(url), .. } =>
+          assert_eq(url, "https://example.com/report.pdf")
+        _ => fail("Expected input_file with file_url")
+      }
+    _ => fail("Expected user with array content")
+  }
+}
+
+///|
 test "Chat Completions document renders as file content part" {
   let msg = @types.ModelMessage::User(
     content="Read this",
@@ -1076,7 +1314,7 @@ test "Chat Completions document renders as file content part" {
           "file": { "file_data": String(data), "filename": String(name), .. },
           ..
         } => {
-          assert_eq(data, "base64pdf")
+          assert_eq(data, "data:application/pdf;base64,base64pdf")
           assert_eq(name, "report.pdf")
         }
         _ => fail("Expected file content part for PDF in Chat Completions")
@@ -1108,7 +1346,7 @@ test "Chat Completions text/plain document uses file_data" {
           "file": { "file_data": String(data), "filename": String(name), .. },
           ..
         } => {
-          assert_eq(data, "SGVsbG8gV29ybGQ=")
+          assert_eq(data, "data:text/plain;base64,SGVsbG8gV29ybGQ=")
           assert_eq(name, "readme.txt")
         }
         _ => fail("Expected file content part")
@@ -1134,6 +1372,30 @@ test "Chat Completions file ref uses file_id content part" {
         { "type": "file", "file": { "file_id": String(id), .. }, .. } =>
           assert_eq(id, "file_123")
         _ => fail("Expected file_id content part")
+      }
+    _ => fail("Expected array content")
+  }
+}
+
+///|
+test "Chat Completions file url falls back to text part" {
+  let msg = @types.ModelMessage::User(
+    content="Read this file",
+    name=None,
+    content_parts=Some([
+      @types.ContentPart::Text("Read this file"),
+      @types.ContentPart::FileUrl(url="https://example.com/report.pdf"),
+    ]),
+  )
+  let json = message_to_json(msg)
+  match json {
+    { "role": "user", "content": Array(parts), .. } =>
+      match parts[1] {
+        { "type": "text", "text": String(text), .. } => {
+          assert_true(text.contains("Remote file URL input"))
+          assert_true(text.contains("https://example.com/report.pdf"))
+        }
+        _ => fail("Expected text fallback content part")
       }
     _ => fail("Expected array content")
   }

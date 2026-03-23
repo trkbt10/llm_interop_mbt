@@ -121,6 +121,82 @@ test "non_streaming_to_synthetic_events preserves code_execution_tool_result" {
 }
 
 ///|
+test "non_streaming_to_synthetic_events preserves tool inputs and redacted thinking" {
+  let response : Json = {
+    "content": Json::array([
+      {
+        "type": "tool_use",
+        "id": "toolu_789",
+        "name": "lookup",
+        "input": { "q": "moonbit" },
+      },
+      {
+        "type": "server_tool_use",
+        "id": "srvtoolu_123",
+        "name": "web_search",
+        "input": { "query": "coverage" },
+      },
+      { "type": "redacted_thinking", "data": "encrypted_blob" },
+      { "type": "unknown_block" },
+    ]),
+    "stop_reason": "end_turn",
+    "model": "claude-sonnet-4-20250514",
+  }
+  let events = non_streaming_to_synthetic_events(response)
+  let mut saw_tool_use_input = false
+  let mut saw_server_tool_input = false
+  let mut saw_redacted_thinking = false
+  for event in events {
+    match event.data {
+      {
+        "delta": {
+          "type": String("input_json_delta"),
+          "partial_json": String(partial_json),
+          ..
+        },
+        "index": Number(index, ..),
+        ..
+      } => {
+        if index.to_int() == 0 {
+          assert_true(partial_json.contains("\"moonbit\""))
+          saw_tool_use_input = true
+        }
+        if index.to_int() == 1 {
+          assert_true(partial_json.contains("\"coverage\""))
+          saw_server_tool_input = true
+        }
+      }
+      {
+        "delta": {
+          "type": String("redacted_thinking_delta"),
+          "data": String(data),
+          ..
+        },
+        ..
+      } => {
+        assert_eq(data, "encrypted_blob")
+        saw_redacted_thinking = true
+      }
+      _ => ()
+    }
+  }
+  assert_true(saw_tool_use_input)
+  assert_true(saw_server_tool_input)
+  assert_true(saw_redacted_thinking)
+}
+
+///|
+test "non_streaming_to_synthetic_events tolerates responses without content" {
+  let events = non_streaming_to_synthetic_events({
+    "id": "msg_empty",
+    "stop_reason": "end_turn",
+  })
+  assert_eq(events.length(), 2)
+  assert_eq(events[0].event, "message_start")
+  assert_eq(events[1].event, "message_stop")
+}
+
+///|
 test "AnthropicToResponsesTranslator coalesces thinking deltas into one reasoning item" {
   let translator = AnthropicToResponsesTranslator::new(
     response_id="resp_thinking",
@@ -282,5 +358,19 @@ test "AnthropicToResponsesTranslator emits encrypted reasoning for redacted thin
       ..
     } => assert_eq(data, "enc_blob")
     _ => fail("Expected encrypted reasoning item")
+  }
+}
+
+///|
+test "AnthropicMessagesAccumulator ignores malformed delta payloads" {
+  let acc = AnthropicMessagesAccumulator::new()
+  acc.feed({
+    event: "content_block_delta",
+    data: { "delta": { "type": "unknown_delta" } },
+  })
+  acc.feed({ event: "message_delta", data: { "delta": { "unexpected": true } } })
+  match acc.finish() {
+    @types.ModelResponse::Text(text) => assert_eq(text, "")
+    _ => fail("Expected empty text response")
   }
 }

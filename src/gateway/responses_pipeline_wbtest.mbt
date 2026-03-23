@@ -1,0 +1,404 @@
+///|
+/// Responses pipeline helper tests
+
+///|
+test "prepare_responses_api_upstream applies model aliases, auth, headers, and stream" {
+  let provider = {
+    ..ProviderConfig::new("openai", OpenAIResponses),
+    headers: { "X-Test": "1" },
+    model_aliases: { "gpt-4.1": "backend-gpt" },
+  }
+  let upstream = prepare_responses_api_upstream(
+    provider,
+    { "model": "gpt-4.1", "input": "Hello" },
+    "gpt-4.1",
+    "https://api.example.com/v1",
+    "sk-test",
+    stream=true,
+  )
+  assert_eq(upstream.origin, "https://api.example.com")
+  assert_eq(upstream.path, "/v1/responses")
+  assert_eq(upstream.headers.get("Authorization"), Some("Bearer sk-test"))
+  assert_eq(upstream.headers.get("X-Test"), Some("1"))
+
+  let body : Json = @json.parse(upstream.body) catch {
+    _ => fail("parse error")
+  }
+  match body {
+    { "model": String(model), "stream": True, .. } =>
+      assert_eq(model, "backend-gpt")
+    _ => fail("Expected aliased stream body")
+  }
+}
+
+///|
+test "prepare_responses_api_upstream preserves native body when aliasing is not needed" {
+  let provider = ProviderConfig::new("openai", OpenAIResponses)
+  let upstream = prepare_responses_api_upstream(
+    provider,
+    { "model": "gpt-4.1", "input": "Hello" },
+    "gpt-4.1",
+    "https://api.example.com/v1",
+    "sk-test",
+  )
+  let body : Json = @json.parse(upstream.body) catch {
+    _ => fail("parse error")
+  }
+  match body {
+    { "model": String(model), .. } => {
+      assert_eq(model, "gpt-4.1")
+      assert_false(upstream.body.contains("\"stream\":true"))
+    }
+    _ => fail("Expected original model in body")
+  }
+}
+
+///|
+test "response ID helpers delegate to interop SoT" {
+  assert_eq(
+    extract_response_id("{\"id\":\"chatcmpl-123\"}", "gpt-4"),
+    "chatcmpl-123",
+  )
+  assert_eq(
+    extract_response_id("{\"status\":\"ok\"}", "gpt-4.1"),
+    "resp_gpt-4.1",
+  )
+  assert_eq(fallback_response_id("gpt-4.1"), "resp_gpt-4.1")
+}
+
+///|
+test "create_responses_api_translator selects correct variants" {
+  match
+    create_responses_api_translator(
+      OpenAIResponses,
+      response_id="resp_1",
+      model="gpt-4.1",
+    ) {
+    PassThrough => ()
+    _ => fail("Expected pass-through translator")
+  }
+
+  match
+    create_responses_api_translator(
+      OpenAICompletions,
+      response_id="resp_1",
+      model="gpt-4.1",
+    ) {
+    Harmony(_) => ()
+    _ => fail("Expected harmony translator")
+  }
+
+  match
+    create_responses_api_translator(
+      AnthropicMessages,
+      response_id="resp_1",
+      model="claude-sonnet",
+    ) {
+    Anthropic(_) => ()
+    _ => fail("Expected anthropic translator")
+  }
+
+  match
+    create_responses_api_translator(
+      GoogleGenerativeAI,
+      response_id="resp_1",
+      model="gemini-2.5-flash",
+    ) {
+    Gemini(_) => ()
+    _ => fail("Expected gemini translator")
+  }
+}
+
+///|
+test "prepare_responses_api_upstream converts harmony, anthropic, and gemini request bodies" {
+  let request : Json = {
+    "model": "demo",
+    "input": [{ "role": "user", "content": "Hello" }],
+  }
+
+  let harmony_provider = ProviderConfig::new("openai", OpenAICompletions)
+  let harmony_upstream = prepare_responses_api_upstream(
+    harmony_provider, request, "demo", "https://api.example.com/v1", "sk-test",
+  )
+  let harmony_json : Json = @json.parse(harmony_upstream.body) catch {
+    _ => fail("parse error")
+  }
+  match harmony_json {
+    { "messages": Array(messages), "stream": False, .. } =>
+      assert_eq(messages.length(), 1)
+    _ => fail("Expected chat-completions request body")
+  }
+
+  let anthropic_provider = ProviderConfig::new("anthropic", AnthropicMessages)
+  let anthropic_upstream = prepare_responses_api_upstream(
+    anthropic_provider, request, "demo", "https://api.anthropic.com/v1", "sk-test",
+  )
+  let anthropic_json : Json = @json.parse(anthropic_upstream.body) catch {
+    _ => fail("parse error")
+  }
+  match anthropic_json {
+    { "messages": Array(messages), .. } => assert_eq(messages.length(), 1)
+    _ => fail("Expected anthropic request body")
+  }
+
+  let anthropic_stream = prepare_responses_api_upstream(
+    anthropic_provider,
+    request,
+    "demo",
+    "https://api.anthropic.com/v1",
+    "sk-test",
+    stream=true,
+  )
+  let anthropic_stream_json : Json = @json.parse(anthropic_stream.body) catch {
+    _ => fail("parse error")
+  }
+  match anthropic_stream_json {
+    { "messages": Array(messages), "stream": True, .. } =>
+      assert_eq(messages.length(), 1)
+    _ => fail("Expected anthropic streaming request body")
+  }
+
+  let gemini_provider = ProviderConfig::new("gemini", GoogleGenerativeAI)
+  let gemini_upstream = prepare_responses_api_upstream(
+    gemini_provider, request, "demo", "https://generativelanguage.googleapis.com/v1beta",
+    "ignored",
+  )
+  let gemini_json : Json = @json.parse(gemini_upstream.body) catch {
+    _ => fail("parse error")
+  }
+  match gemini_json {
+    { "contents": Array(contents), .. } => assert_eq(contents.length(), 1)
+    _ => fail("Expected gemini request body")
+  }
+}
+
+///|
+test "prepare_responses_api_upstream preserves structured output across streaming request conversions" {
+  let request : Json = {
+    "model": "demo",
+    "input": [{ "role": "user", "content": "Return JSON" }],
+    "text": {
+      "format": {
+        "type": "json_schema",
+        "name": "answer",
+        "description": "Structured answer",
+        "schema": {
+          "type": "object",
+          "properties": { "url": { "type": "string", "format": "uri" } },
+        },
+        "strict": true,
+      },
+    },
+  }
+
+  let harmony_provider = ProviderConfig::new("openai", OpenAICompletions)
+  let harmony_upstream = prepare_responses_api_upstream(
+    harmony_provider,
+    request,
+    "demo",
+    "https://api.example.com/v1",
+    "sk-test",
+    stream=true,
+  )
+  let harmony_json : Json = @json.parse(harmony_upstream.body) catch {
+    _ => fail("parse error")
+  }
+  match harmony_json {
+    {
+      "stream": True,
+      "response_format": {
+        "type": "json_schema",
+        "json_schema": {
+          "name": "answer",
+          "description": "Structured answer",
+          "schema": {
+            "properties": { "url": { "type": String("string"), .. }, .. },
+            "required": ["url"],
+            "additionalProperties": False,
+            ..
+          },
+          "strict": True,
+          ..
+        },
+        ..
+      },
+      ..
+    } => ()
+    _ => fail("Expected streaming chat request with normalized response_format")
+  }
+
+  let anthropic_provider = ProviderConfig::new("anthropic", AnthropicMessages)
+  let anthropic_upstream = prepare_responses_api_upstream(
+    anthropic_provider,
+    request,
+    "demo",
+    "https://api.anthropic.com/v1",
+    "sk-test",
+    stream=true,
+  )
+  let anthropic_json : Json = @json.parse(anthropic_upstream.body) catch {
+    _ => fail("parse error")
+  }
+  match anthropic_json {
+    {
+      "stream": True,
+      "output_config": {
+        "format": {
+          "type": "json_schema",
+          "schema": {
+            "properties": {
+              "url": { "type": String("string"), "format": String("uri"), .. },
+              ..
+            },
+            ..
+          },
+          ..
+        },
+        ..
+      },
+      ..
+    } => ()
+    _ => fail("Expected Anthropic streaming request with preserved schema body")
+  }
+
+  let gemini_provider = ProviderConfig::new("gemini", GoogleGenerativeAI)
+  let gemini_upstream = prepare_responses_api_upstream(
+    gemini_provider,
+    request,
+    "demo",
+    "https://generativelanguage.googleapis.com/v1beta",
+    "ignored",
+    stream=true,
+  )
+  let gemini_json : Json = @json.parse(gemini_upstream.body) catch {
+    _ => fail("parse error")
+  }
+  match gemini_json {
+    {
+      "generationConfig": {
+        "responseMimeType": "application/json",
+        "responseJsonSchema": {
+          "properties": {
+            "url": { "type": String("string"), "format": String("uri"), .. },
+            ..
+          },
+          ..
+        },
+        ..
+      },
+      ..
+    } => ()
+    _ => fail("Expected Gemini streaming request with structured output config")
+  }
+  assert_true(
+    gemini_upstream.path.contains(":streamGenerateContent?alt=sse&key="),
+  )
+}
+
+///|
+test "ResponsesApiTranslator::translate passthrough preserves native events" {
+  let event : @sse.SseEvent = {
+    event: "response.completed",
+    data: { "type": "response.completed" },
+  }
+  let translated = PassThrough.translate(event)
+  assert_eq(translated.length(), 1)
+  assert_eq(translated[0].0, "response.completed")
+  match translated[0].1 {
+    { "type": String(type_), .. } => assert_eq(type_, "response.completed")
+    _ => fail("Expected passthrough event payload")
+  }
+}
+
+///|
+test "ResponsesApiTranslator::translate covers anthropic and gemini translators" {
+  let anthropic = create_responses_api_translator(
+    AnthropicMessages,
+    response_id="resp_a",
+    model="claude",
+  )
+  let anthropic_events = anthropic.translate({
+    event: "message_start",
+    data: { "type": "message_start", "message": { "id": "msg_1" } },
+  })
+  assert_true(anthropic_events.length() > 0)
+
+  let gemini = create_responses_api_translator(
+    GoogleGenerativeAI,
+    response_id="resp_g",
+    model="gemini-2.5-flash",
+  )
+  let gemini_events = gemini.translate({
+    event: "",
+    data: { "candidates": [{ "content": { "parts": [{ "text": "Hi" }] } }] },
+  })
+  assert_true(gemini_events.length() > 0)
+}
+
+///|
+test "to_synthetic_sse_events returns expected events for supported backends" {
+  assert_eq(
+    to_synthetic_sse_events(OpenAIResponses, "{\"id\":\"resp_1\"}").length(),
+    0,
+  )
+  assert_eq(to_synthetic_sse_events(OpenAICompletions, "not json").length(), 0)
+
+  let chat_response =
+    #|{"id":"chatcmpl-1","object":"chat.completion","model":"gpt-4","choices":[{"index":0,"message":{"role":"assistant","content":"Hello!"},"finish_reason":"stop"}]}
+  let events = to_synthetic_sse_events(OpenAICompletions, chat_response)
+  assert_eq(events.length(), 3)
+  assert_eq(events[0].event, "")
+  assert_eq(events[2].event, "")
+
+  assert_true(
+    to_synthetic_sse_events(
+      AnthropicMessages,
+      "{\"content\":[{\"type\":\"text\",\"text\":\"Hi\"}],\"stop_reason\":\"end_turn\",\"model\":\"claude\"}",
+    ).length() >
+    0,
+  )
+  assert_eq(
+    to_synthetic_sse_events(
+      GoogleGenerativeAI,
+      "{\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"Hi\"}]}}]}",
+    ).length(),
+    1,
+  )
+}
+
+///|
+test "parse_responses_api_result handles native responses and translated chat completions" {
+  let native_model = "gpt-4.1"
+  let native = parse_responses_api_result(
+    OpenAIResponses,
+    "{\"id\":\"resp_1\",\"output\":[{\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"output_text\",\"text\":\"Hi there!\"}]}]}",
+    model=native_model,
+  )
+  match native {
+    @types.ModelResponse::Text(text) => assert_eq(text, "Hi there!")
+    _ => fail("Expected native text response")
+  }
+
+  let chat_body =
+    #|{"id":"chatcmpl-1","object":"chat.completion","model":"gpt-4","choices":[{"index":0,"message":{"role":"assistant","content":"Hello!"},"finish_reason":"stop"}]}
+  let translated_model = "gpt-4"
+  let translated = parse_responses_api_result(
+    OpenAICompletions,
+    chat_body,
+    model=translated_model,
+  )
+  match translated {
+    @types.ModelResponse::Text(text) => assert_eq(text, "Hello!")
+    _ => fail("Expected translated text response")
+  }
+}
+
+///|
+test "parse_responses_api_result reports native JSON parse errors" {
+  match
+    parse_responses_api_result(OpenAIResponses, "not json", model="gpt-4.1") {
+    @types.ModelResponse::ModelError(message) =>
+      assert_eq(message, "JSON parse error")
+    _ => fail("Expected model error")
+  }
+}

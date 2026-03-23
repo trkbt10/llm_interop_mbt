@@ -149,7 +149,7 @@ fn build_responses_output_from_gemini(parts : Array[Json]) -> Array[Json] {
     }
   }
   @openai.assemble_responses_output(
-    text_parts,
+    normalize_output_text_json_items(text_parts),
     tool_outputs,
     reasoning_outputs~,
   )

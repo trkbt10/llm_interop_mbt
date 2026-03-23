@@ -70,6 +70,10 @@ pub fn messages_to_responses_input(
                     "type": "input_file",
                     "file_id": file_id,
                   })
+                // Ref: docs/upstream/openai-file-inputs.md —
+                // Responses API also accepts remote file URLs.
+                @types.ContentPart::FileUrl(url~) =>
+                  content_blocks.push({ "type": "input_file", "file_url": url })
                 // Ref: docs/upstream/openai-responses-create.md:165-177
                 // Map video bytes through the generic input_file.file_data shape.
                 @types.ContentPart::Video(data~, media_type~) =>
@@ -659,18 +663,23 @@ pub fn build_responses_api_body(
   model : String,
   messages : Array[@types.ModelMessage],
   tools : Array[@types.ToolDefinition],
+  response_format? : @types.ResponseFormat? = None,
 ) -> Json {
   let input = messages_to_responses_input(messages)
-  if tools.length() > 0 {
-    {
-      "model": model,
-      "input": Json::array(input),
-      "tools": Json::array(tools_to_responses_api_json(tools)),
-      "tool_choice": "auto",
-    }
-  } else {
-    { "model": model, "input": Json::array(input) }
+  let body : Map[String, Json] = {
+    "model": Json::string(model),
+    "input": Json::array(input),
   }
+  let params : @types.GenerationParams = {
+    ..@types.GenerationParams::empty(),
+    response_format,
+  }
+  params.apply_to_responses(body)
+  if tools.length() > 0 {
+    body["tools"] = Json::array(tools_to_responses_api_json(tools))
+    body["tool_choice"] = Json::string("auto")
+  }
+  Json::object(body)
 }
 
 // =============================================================================

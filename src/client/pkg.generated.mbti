@@ -7,11 +7,11 @@ import {
 }
 
 // Values
-pub async fn chat_gateway(@gateway.ProviderConfig, &HttpTransport, Array[@types.ModelMessage], Array[@types.ToolDefinition], String, max_tokens? : Int?, temperature? : Double?) -> @types.ModelResponse raise ClientError
+pub async fn chat_gateway(@gateway.ProviderConfig, &HttpTransport, Array[@types.ModelMessage], Array[@types.ToolDefinition], String, max_tokens? : Int?, temperature? : Double?, response_format? : @types.ResponseFormat?) -> @types.ModelResponse raise ClientError
 
-pub async fn chat_gateway_responses(@gateway.ProviderConfig, &HttpTransport, Array[@types.ModelMessage], Array[@types.ToolDefinition], String, max_tokens? : Int?, temperature? : Double?) -> @types.ModelResponse raise ClientError
+pub async fn chat_gateway_responses(@gateway.ProviderConfig, &HttpTransport, Array[@types.ModelMessage], Array[@types.ToolDefinition], String, max_tokens? : Int?, temperature? : Double?, response_format? : @types.ResponseFormat?) -> @types.ModelResponse raise ClientError
 
-pub async fn chat_gateway_responses_stream(@gateway.ProviderConfig, &StreamingHttpTransport, Array[@types.ModelMessage], Array[@types.ToolDefinition], String, on_event~ : ((String, Json)) -> Unit, max_tokens? : Int?, temperature? : Double?) -> @types.ModelResponse raise ClientError
+pub async fn chat_gateway_responses_stream(@gateway.ProviderConfig, &StreamingHttpTransport, Array[@types.ModelMessage], Array[@types.ToolDefinition], String, on_event~ : ((String, Json)) -> Unit, max_tokens? : Int?, temperature? : Double?, response_format? : @types.ResponseFormat?) -> @types.ModelResponse raise ClientError
 
 pub fn transport_network_error(String) -> TransportError
 

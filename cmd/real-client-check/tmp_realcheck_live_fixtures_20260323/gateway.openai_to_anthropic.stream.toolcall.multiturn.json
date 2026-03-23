@@ -1,0 +1,18 @@
+{
+  "name": "gateway.openai_to_anthropic.stream.toolcall.multiturn",
+  "model": "claude-sonnet-4-6",
+  "mode": "stream",
+  "request_url": "https://api.anthropic.com/v1/messages",
+  "carrier_summary": "gateway openai->toolcall followup anthropic tool_use_id mapped",
+  "event_types": [
+    "response.function_call_arguments.delta",
+    "response.output_item.done",
+    "response.completed",
+    "response.created",
+    "response.output_text.delta",
+    "response.output_text.delta",
+    "response.output_text.done",
+    "response.completed"
+  ],
+  "response_text": "{\"url\":\"https://example.com/interop-check/gateway-anthropic-stream\"}"
+}

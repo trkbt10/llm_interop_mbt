@@ -98,6 +98,14 @@ pub fn chat_request_to_anthropic(
   }
   // Extract and apply generation parameters (includes max_tokens default)
   @types.GenerationParams::from_openai(json).apply_to_anthropic(result, ctx)
+  match json {
+    { "tool_choice": tool_choice, .. } =>
+      match convert_tool_choice_to_anthropic(tool_choice) {
+        Some(choice) => result["tool_choice"] = choice
+        None => ()
+      }
+    _ => ()
+  }
   // Extract system message and convert messages
   let messages : Array[Json] = []
   match json {
