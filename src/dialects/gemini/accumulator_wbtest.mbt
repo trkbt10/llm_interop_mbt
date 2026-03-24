@@ -2,11 +2,14 @@
 /// Whitebox coverage for Gemini accumulator paths
 
 ///|
-test "GeminiAccumulator accumulates text and ignores unparsable chunks" {
+test "GeminiAccumulator accumulates text and ignores documented metadata-only chunks" {
   let acc = GeminiAccumulator::new()
   assert_false(acc.finished)
 
-  acc.feed({ event: "data", data: { "other": true } })
+  acc.feed({
+    event: "data",
+    data: { "usageMetadata": { "totalTokenCount": 1 } },
+  })
   acc.feed({
     event: "data",
     data: {
@@ -26,7 +29,13 @@ test "GeminiAccumulator accumulates text and ignores unparsable chunks" {
 }
 
 ///|
-test "GeminiAccumulator returns tool calls with content and falls back invalid arguments" {
+test "panic GeminiAccumulator rejects malformed stream chunks" {
+  let acc = GeminiAccumulator::new()
+  acc.feed({ event: "data", data: { "other": true } })
+}
+
+///|
+test "GeminiAccumulator returns tool calls with content" {
   let acc = GeminiAccumulator::new()
   acc.feed({
     event: "data",
@@ -55,22 +64,75 @@ test "GeminiAccumulator returns tool calls with content and falls back invalid a
     }
     _ => fail("Expected tool calls with content")
   }
+}
 
+///|
+test "GeminiAccumulator preserves grounding annotations" {
+  let acc = GeminiAccumulator::new()
+  acc.feed({
+    event: "data",
+    data: {
+      "candidates": [
+        {
+          "content": {
+            "role": "model",
+            "parts": [{ "text": "Weather details" }],
+          },
+          "groundingMetadata": {
+            "groundingChunks": [
+              {
+                "web": {
+                  "uri": "https://example.com/weather",
+                  "title": "Weather Source",
+                },
+              },
+            ],
+            "groundingSupports": [
+              {
+                "groundingChunkIndices": [0],
+                "segment": { "text": "Weather", "startIndex": 0, "endIndex": 7 },
+              },
+            ],
+          },
+        },
+      ],
+    },
+  })
+
+  match acc.finish() {
+    @types.ModelResponse::RichText(rich) => {
+      assert_eq(rich.content, "Weather details")
+      assert_eq(rich.annotations.length(), 1)
+      match rich.annotations[0] {
+        @types.ResponseAnnotation::UrlCitation(
+          title~,
+          url~,
+          start_index~,
+          end_index~
+        ) => {
+          assert_eq(title, Some("Weather Source"))
+          assert_eq(url, "https://example.com/weather")
+          assert_eq(start_index, 0)
+          assert_eq(end_index, 7)
+        }
+        _ => fail("Expected grounding annotation")
+      }
+    }
+    _ => fail("Expected grounded RichText response")
+  }
+}
+
+///|
+test "panic GeminiAccumulator rejects malformed tool arguments" {
   let bad_args = StringBuilder::new()
   bad_args.write_string("{")
   let invalid_acc : GeminiAccumulator = {
     text: StringBuilder::new(),
     tool_calls: [{ id: "call_1", name: "lookup", arguments: bad_args }],
+    annotations: [],
     finished: false,
   }
-  match invalid_acc.finish() {
-    @types.ModelResponse::ToolCalls(calls) => {
-      assert_eq(calls.length(), 1)
-      assert_eq(calls[0].name, "lookup")
-      assert_eq(calls[0].arguments, {})
-    }
-    _ => fail("Expected tool calls fallback")
-  }
+  invalid_acc.finish() |> ignore
 }
 
 ///|

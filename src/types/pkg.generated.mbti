@@ -10,6 +10,8 @@ pub fn finalize_accumulation(Bool, Array[ToolCallAcc], StringBuilder) -> ModelRe
 
 pub fn normalize_json_schema_for_openai(Json) -> Json
 
+pub fn parse_interop_response_annotation(Json) -> ResponseAnnotation
+
 pub fn process_tool_call_delta(Array[ToolCallAcc], Json) -> Unit
 
 pub fn schema_needs_normalization(Json) -> Bool
@@ -84,8 +86,21 @@ pub(all) enum ParameterType {
 
 pub(all) enum ResponseAnnotation {
   UrlCitation(title~ : String?, url~ : String, start_index~ : Int, end_index~ : Int)
+  DocumentCharCitation(cited_text~ : String, document_index~ : Int, document_title~ : String, file_id~ : String, start_char_index~ : Int, end_char_index~ : Int, start_index~ : Int, end_index~ : Int)
+  DocumentPageCitation(cited_text~ : String, document_index~ : Int, document_title~ : String, file_id~ : String, start_page_number~ : Int, end_page_number~ : Int, start_index~ : Int, end_index~ : Int)
+  DocumentContentBlockCitation(cited_text~ : String, document_index~ : Int, document_title~ : String, file_id~ : String, start_block_index~ : Int, end_block_index~ : Int, start_index~ : Int, end_index~ : Int)
+  WebSearchResultCitation(cited_text~ : String, encrypted_index~ : String, title~ : String, url~ : String, start_index~ : Int, end_index~ : Int)
+  SearchResultCitation(cited_text~ : String, search_result_index~ : Int, source~ : String, title~ : String, start_block_index~ : Int, end_block_index~ : Int, start_index~ : Int, end_index~ : Int)
 }
+pub fn ResponseAnnotation::document_char_citation(cited_text~ : String, document_index~ : Int, document_title~ : String, file_id~ : String, start_char_index~ : Int, end_char_index~ : Int, start_index~ : Int, end_index~ : Int) -> Self
+pub fn ResponseAnnotation::document_content_block_citation(cited_text~ : String, document_index~ : Int, document_title~ : String, file_id~ : String, start_block_index~ : Int, end_block_index~ : Int, start_index~ : Int, end_index~ : Int) -> Self
+pub fn ResponseAnnotation::document_page_citation(cited_text~ : String, document_index~ : Int, document_title~ : String, file_id~ : String, start_page_number~ : Int, end_page_number~ : Int, start_index~ : Int, end_index~ : Int) -> Self
+pub fn ResponseAnnotation::end_index(Self) -> Int
+pub fn ResponseAnnotation::search_result_citation(cited_text~ : String, search_result_index~ : Int, source~ : String, title~ : String, start_block_index~ : Int, end_block_index~ : Int, start_index~ : Int, end_index~ : Int) -> Self
+pub fn ResponseAnnotation::start_index(Self) -> Int
+pub fn ResponseAnnotation::to_interop_json(Self) -> Json
 pub fn ResponseAnnotation::url_citation(url~ : String, start_index~ : Int, end_index~ : Int, title? : String?) -> Self
+pub fn ResponseAnnotation::web_search_result_citation(cited_text~ : String, encrypted_index~ : String, title~ : String, url~ : String, start_index~ : Int, end_index~ : Int) -> Self
 pub impl Eq for ResponseAnnotation
 pub impl Show for ResponseAnnotation
 

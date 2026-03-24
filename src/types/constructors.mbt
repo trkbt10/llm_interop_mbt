@@ -71,6 +71,122 @@ pub fn ResponseAnnotation::url_citation(
 }
 
 ///|
+/// Create document char citation annotation
+pub fn ResponseAnnotation::document_char_citation(
+  cited_text~ : String,
+  document_index~ : Int,
+  document_title~ : String,
+  file_id~ : String,
+  start_char_index~ : Int,
+  end_char_index~ : Int,
+  start_index~ : Int,
+  end_index~ : Int,
+) -> ResponseAnnotation {
+  DocumentCharCitation(
+    cited_text~,
+    document_index~,
+    document_title~,
+    file_id~,
+    start_char_index~,
+    end_char_index~,
+    start_index~,
+    end_index~,
+  )
+}
+
+///|
+/// Create document page citation annotation
+pub fn ResponseAnnotation::document_page_citation(
+  cited_text~ : String,
+  document_index~ : Int,
+  document_title~ : String,
+  file_id~ : String,
+  start_page_number~ : Int,
+  end_page_number~ : Int,
+  start_index~ : Int,
+  end_index~ : Int,
+) -> ResponseAnnotation {
+  DocumentPageCitation(
+    cited_text~,
+    document_index~,
+    document_title~,
+    file_id~,
+    start_page_number~,
+    end_page_number~,
+    start_index~,
+    end_index~,
+  )
+}
+
+///|
+/// Create document content-block citation annotation
+pub fn ResponseAnnotation::document_content_block_citation(
+  cited_text~ : String,
+  document_index~ : Int,
+  document_title~ : String,
+  file_id~ : String,
+  start_block_index~ : Int,
+  end_block_index~ : Int,
+  start_index~ : Int,
+  end_index~ : Int,
+) -> ResponseAnnotation {
+  DocumentContentBlockCitation(
+    cited_text~,
+    document_index~,
+    document_title~,
+    file_id~,
+    start_block_index~,
+    end_block_index~,
+    start_index~,
+    end_index~,
+  )
+}
+
+///|
+/// Create web search result citation annotation
+pub fn ResponseAnnotation::web_search_result_citation(
+  cited_text~ : String,
+  encrypted_index~ : String,
+  title~ : String,
+  url~ : String,
+  start_index~ : Int,
+  end_index~ : Int,
+) -> ResponseAnnotation {
+  WebSearchResultCitation(
+    cited_text~,
+    encrypted_index~,
+    title~,
+    url~,
+    start_index~,
+    end_index~,
+  )
+}
+
+///|
+/// Create search result citation annotation
+pub fn ResponseAnnotation::search_result_citation(
+  cited_text~ : String,
+  search_result_index~ : Int,
+  source~ : String,
+  title~ : String,
+  start_block_index~ : Int,
+  end_block_index~ : Int,
+  start_index~ : Int,
+  end_index~ : Int,
+) -> ResponseAnnotation {
+  SearchResultCitation(
+    cited_text~,
+    search_result_index~,
+    source~,
+    title~,
+    start_block_index~,
+    end_block_index~,
+    start_index~,
+    end_index~,
+  )
+}
+
+///|
 /// Create tool call trace
 pub fn ToolCallTrace::new(
   id~ : String,

@@ -1,7 +1,7 @@
 ///|
 /// `claude mcp serve` ↔ OpenAI Chat Completions transforms
 ///
-/// Request: OpenAI messages → prompt extraction (for tool dispatch in cmd layer)
+/// Request: OpenAI messages → prompt extraction (internal helper for tool dispatch)
 /// Response: MCP tools/call result → OpenAI Chat Completion response
 
 // =============================================================================
@@ -9,27 +9,19 @@
 // =============================================================================
 
 ///|
-/// Extract prompt from OpenAI Chat Completion request.
-/// The cmd layer decides which `claude mcp serve` tool to invoke.
-pub fn chat_request_to_prompt(
+/// Extract the prompt text from an OpenAI Chat Completion request.
+/// This is kept package-private; the public request-side entrypoint is
+/// `prepare_chat_upstream(...)` in session.mbt.
+fn extract_prompt_from_chat(
   body : String,
   _ctx : @types.TransformContext,
-) -> String {
-  let json = @json.parse(body) catch { _ => return body }
-  let model = match json {
-    { "model": String(m), .. } => m
-    _ => "claude-code-tools"
-  }
+) -> String? {
+  let json = @json.parse(body) catch { _ => return None }
   let messages = match json {
     { "messages": Array(msgs), .. } => msgs
-    _ => return body
+    _ => return None
   }
-  let prompt = build_prompt_from_messages(messages)
-  let obj : Map[String, Json] = {}
-  obj["prompt"] = Json::string(prompt)
-  obj["model"] = Json::string(model)
-  obj["messages"] = Json::array(messages)
-  Json::object(obj).stringify()
+  Some(build_prompt_from_messages(messages))
 }
 
 ///|

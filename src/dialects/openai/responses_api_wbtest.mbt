@@ -1,5 +1,5 @@
 ///|
-/// Whitebox coverage for Responses API helpers and fallback branches
+/// Whitebox coverage for Responses API helpers and validation branches
 
 ///|
 test "messages_to_responses_input covers system, multimodal user parts, assistant tool variants, and fallback tool results" {
@@ -227,6 +227,27 @@ test "private responses helpers cover scalar configs, embedded result parsing, i
       "end_index": 4,
     },
   )
+  assert_eq(
+    response_annotation_to_json(
+      @types.ResponseAnnotation::web_search_result_citation(
+        cited_text="Berkshire Hathaway",
+        encrypted_index="enc_berkshire",
+        title="Berkshire Hathaway",
+        url="https://example.com/berkshire",
+        start_index=0,
+        end_index=18,
+      ),
+    ),
+    {
+      "type": "web_search_result_location",
+      "cited_text": "Berkshire Hathaway",
+      "encrypted_index": "enc_berkshire",
+      "title": "Berkshire Hathaway",
+      "url": "https://example.com/berkshire",
+      "start_index": 0,
+      "end_index": 18,
+    },
+  )
   assert_eq(tool_trace_status_to_json([]), Json::string("completed"))
   assert_eq(
     tool_trace_status_to_json([@types.ToolCallStatus::InProgress]),
@@ -380,7 +401,7 @@ test "output builders cover error responses, builtin web-search alias, rich deco
 }
 
 ///|
-test "parser helpers cover error fallbacks, builtin traces, reasoning parsing, annotations, and mixed outputs" {
+test "parser helpers cover provider errors, builtin traces, reasoning parsing, annotations, and mixed outputs" {
   match parse_responses_api_response({ "error": { "message": "boom" } }) {
     @types.ModelResponse::ModelError(message) => assert_eq(message, "boom")
     _ => fail("Expected provider error")
@@ -409,34 +430,28 @@ test "parser helpers cover error fallbacks, builtin traces, reasoning parsing, a
             ]),
           },
           { "type": "refusal", "refusal": "No" },
-          { "type": "ignored" },
         ]),
       },
       {
         "type": "function_call",
         "id": "call_id_only",
         "name": "lookup",
-        "arguments": "{",
+        "arguments": "{\"q\":\"moonbit\"}",
       },
       {
         "type": "function_call",
-        "name": "lookup_missing_id",
+        "id": "call_second",
+        "name": "lookup_second",
         "arguments": "{}",
       },
       { "type": "web_search_call", "id": "ws_1", "status": "in_progress" },
       {
         "type": "reasoning",
-        "content": Json::array([
-          { "type": "text", "text": "Thinking" },
-          { "type": "ignored" },
-        ]),
+        "content": Json::array([{ "type": "text", "text": "Thinking" }]),
       },
       {
         "type": "reasoning",
-        "summary": Json::array([
-          { "type": "summary_text", "text": "Summary" },
-          { "type": "ignored" },
-        ]),
+        "summary": Json::array([{ "type": "summary_text", "text": "Summary" }]),
         "encrypted_content": "ENC",
       },
       { "type": "local_shell_call", "id": "shell_1", "status": "calling" },
@@ -445,14 +460,12 @@ test "parser helpers cover error fallbacks, builtin traces, reasoning parsing, a
         "approval_request_id": "trace_1",
         "status": "searching",
       },
-      { "type": "unknown_item" },
-      {},
     ]) {
     @types.ModelResponse::ToolCallsWithContent(tool_calls~, rich~) => {
       assert_eq(tool_calls.length(), 3)
       assert_eq(tool_calls[0].id, "call_id_only")
-      assert_eq(tool_calls[0].arguments, {})
-      assert_eq(tool_calls[1].id, "")
+      assert_eq(tool_calls[0].arguments, { "q": "moonbit" })
+      assert_eq(tool_calls[1].id, "call_second")
       assert_eq(tool_calls[2].id, "shell_1")
       assert_eq(rich.content, "Hello")
       match rich.content_parts {
@@ -465,10 +478,6 @@ test "parser helpers cover error fallbacks, builtin traces, reasoning parsing, a
     _ => fail("Expected mixed tool-call response")
   }
 
-  assert_eq(
-    append_response_message_contents([{ "type": "ignored" }], [], []),
-    (false, false),
-  )
   let reasoning_parts : Array[@types.ResponseContentPart] = []
   assert_true(
     append_response_reasoning_item(
@@ -502,10 +511,20 @@ test "parser helpers cover error fallbacks, builtin traces, reasoning parsing, a
         "start_index": 1,
         "end_index": 3,
       },
-      { "type": "ignored" },
+      {
+        "type": "char_location",
+        "cited_text": "MoonBit",
+        "document_index": 0,
+        "document_title": "Guide",
+        "file_id": "file_guide",
+        "start_char_index": 10,
+        "end_char_index": 17,
+        "start_index": 4,
+        "end_index": 11,
+      },
     ]),
   )
-  assert_eq(annotations.length(), 1)
+  assert_eq(annotations.length(), 2)
 
   let trace = parse_web_search_trace({ "id": "ws_2" }, "ws_2")
   assert_eq(trace.statuses.length(), 0)
@@ -534,7 +553,6 @@ test "parser helpers cover error fallbacks, builtin traces, reasoning parsing, a
   assert_eq(builtin_call.name, "mcp_call")
 
   assert_eq(extract_responses_tool_item_id({ "call_id": "call_3" }), "call_3")
-  assert_eq(extract_responses_tool_item_id({}), "")
   assert_eq(parse_responses_tool_statuses({ "status": "searching" }), [
     @types.ToolCallStatus::Searching,
   ])
@@ -542,4 +560,51 @@ test "parser helpers cover error fallbacks, builtin traces, reasoning parsing, a
     @types.ToolCallStatus::InProgress,
   ])
   assert_eq(parse_responses_tool_statuses({}), [])
+}
+
+///|
+test "panic extract_responses_tool_item_id rejects missing ids" {
+  extract_responses_tool_item_id({}) |> ignore
+}
+
+///|
+test "panic parse_responses_output rejects unknown output item types" {
+  parse_responses_output([{ "type": "unknown_item" }]) |> ignore
+}
+
+///|
+test "panic append_response_message_contents rejects unknown content types" {
+  append_response_message_contents([{ "type": "ignored" }], [], []) |> ignore
+}
+
+///|
+test "panic append_response_reasoning_item rejects unknown reasoning blocks" {
+  append_response_reasoning_item(
+    { "content": Json::array([{ "type": "ignored" }]) },
+    [],
+  )
+  |> ignore
+}
+
+///|
+test "panic parse_response_annotation_json rejects unknown annotations" {
+  parse_response_annotation_json({ "type": "ignored" }) |> ignore
+}
+
+///|
+test "panic parse_responses_api_response rejects malformed function call arguments" {
+  parse_responses_api_response({
+    "id": "resp_bad",
+    "model": "gpt-4.1",
+    "status": "completed",
+    "output": Json::array([
+      {
+        "type": "function_call",
+        "call_id": "call_bad",
+        "name": "lookup",
+        "arguments": "not-json",
+      },
+    ]),
+  })
+  |> ignore
 }

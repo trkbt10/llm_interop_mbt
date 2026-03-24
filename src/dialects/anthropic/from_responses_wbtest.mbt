@@ -4,6 +4,7 @@
 ///|
 test "responses_request_to_anthropic covers defaults, instructions, tools, and tool_choice" {
   let request : Json = {
+    "model": "claude-sonnet-4-6",
     "instructions": "Be concise",
     "input": Json::array([
       {
@@ -14,7 +15,6 @@ test "responses_request_to_anthropic covers defaults, instructions, tools, and t
     "tools": Json::array([
       { "type": "function", "name": "lookup" },
       { "type": "builtin_alpha", "description": "kept in config", "flag": true },
-      Json::number(1.0),
     ]),
     "tool_choice": { "type": "function", "name": "lookup" },
   }
@@ -33,7 +33,7 @@ test "responses_request_to_anthropic covers defaults, instructions, tools, and t
       },
       ..
     } => {
-      assert_eq(model, "")
+      assert_eq(model, "claude-sonnet-4-6")
       assert_eq(messages.length(), 1)
       assert_eq(max_tokens.to_int(), 8192)
       assert_eq(system, "Be concise")
@@ -55,9 +55,13 @@ test "responses_request_to_anthropic covers defaults, instructions, tools, and t
       }
 
       match tools[1] {
-        { "type": String(type_), "name": String(name), "flag": True, .. } => {
-          assert_eq(type_, "builtin_alpha")
-          assert_eq(name, "builtin_alpha")
+        Object(tool_obj) => {
+          match Json::object(tool_obj) {
+            { "type": String(type_), "flag": True, .. } =>
+              assert_eq(type_, "builtin_alpha")
+            _ => fail("Expected builtin tool conversion")
+          }
+          assert_false(tool_obj.contains("name"))
         }
         _ => fail("Expected builtin tool conversion")
       }
@@ -69,13 +73,13 @@ test "responses_request_to_anthropic covers defaults, instructions, tools, and t
 ///|
 test "from_responses helpers cover config extraction and stream flag" {
   assert_eq(
-    extract_tool_name({ "name": "custom_name" }, "fallback"),
+    @utils.extract_responses_tool_name({ "name": "custom_name" }),
     "custom_name",
   )
-  assert_eq(extract_tool_name(Json::null(), "fallback"), "fallback")
+  assert_eq(@utils.extract_responses_tool_name(Json::null()), "")
 
   match
-    extract_tool_config({
+    @utils.extract_responses_tool_config({
       "type": "builtin_beta",
       "name": "builtin_beta",
       "description": "ignore",
@@ -85,7 +89,7 @@ test "from_responses helpers cover config extraction and stream flag" {
     { "extra": Number(extra, ..), .. } => assert_eq(extra.to_int(), 1)
     _ => fail("Expected filtered config object")
   }
-  match extract_tool_config(Json::null()) {
+  match @utils.extract_responses_tool_config(Json::null()) {
     Object(obj) => assert_eq(obj.length(), 0)
     _ => fail("Expected empty config object")
   }
@@ -109,12 +113,17 @@ test "from_responses helpers cover config extraction and stream flag" {
   )
   assert_eq(convert_tool_choice_to_anthropic({ "type": "unknown" }), None)
 
-  match responses_request_to_anthropic_stream({}) {
+  match
+    responses_request_to_anthropic_stream({ "model": "claude-sonnet-4-6" }) {
     { "stream": True, .. } => ()
     _ => fail("Expected streaming Anthropic request")
   }
 
-  match responses_request_to_anthropic({ "tool_choice": "none" }) {
+  match
+    responses_request_to_anthropic({
+      "model": "claude-sonnet-4-6",
+      "tool_choice": "none",
+    }) {
     Object(obj) => assert_false(obj.contains("tool_choice"))
     _ => fail("Expected Anthropic request object")
   }
@@ -123,6 +132,7 @@ test "from_responses helpers cover config extraction and stream flag" {
 ///|
 test "responses structured output config maps to Anthropics format" {
   let result = responses_request_to_anthropic({
+    "model": "claude-sonnet-4-6",
     "input": [{ "role": "user", "content": "Return JSON" }],
     "text": { "format": { "type": "json_object" } },
   })
@@ -140,4 +150,21 @@ test "responses structured output config maps to Anthropics format" {
     } => ()
     _ => fail("Expected Anthropics structured output format")
   }
+}
+
+///|
+test "panic responses_request_to_anthropic rejects missing model" {
+  responses_request_to_anthropic({
+    "input": [{ "role": "user", "content": "hi" }],
+  })
+  |> ignore
+}
+
+///|
+test "panic responses_request_to_anthropic rejects unsupported tool items" {
+  responses_request_to_anthropic({
+    "model": "claude-sonnet-4-6",
+    "tools": [Json::number(1.0)],
+  })
+  |> ignore
 }

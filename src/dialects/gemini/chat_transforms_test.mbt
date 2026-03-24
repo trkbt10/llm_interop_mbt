@@ -106,6 +106,44 @@ test "response_to_chat canonicalizes fenced Gemini structured output" {
 }
 
 ///|
+test "response_to_chat preserves Gemini grounding as OpenAI url citations" {
+  let body =
+    #|{"candidates":[{"content":{"parts":[{"text":"Weather details"}],"role":"model"},"groundingMetadata":{"groundingChunks":[{"web":{"uri":"https://example.com/weather","title":"Weather Source"}}],"groundingSupports":[{"groundingChunkIndices":[0],"segment":{"text":"Weather","startIndex":0,"endIndex":7}}]},"finishReason":"STOP"}]}
+  let result = response_to_chat(body)
+  let json : Json = @json.parse(result) catch { _ => fail("parse error") }
+  match json {
+    { "choices": [{ "message": message, .. }], .. } =>
+      match message {
+        {
+          "content": String(content),
+          "annotations": [
+            {
+              "type": String("url_citation"),
+              "url_citation": {
+                "title": String(title),
+                "url": String(url),
+                "start_index": Number(start_index, ..),
+                "end_index": Number(end_index, ..),
+                ..
+              },
+              ..
+            },
+          ],
+          ..
+        } => {
+          assert_eq(content, "Weather details")
+          assert_eq(title, "Weather Source")
+          assert_eq(url, "https://example.com/weather")
+          assert_eq(start_index.to_int(), 0)
+          assert_eq(end_index.to_int(), 7)
+        }
+        _ => fail("Expected OpenAI chat annotation")
+      }
+    _ => fail("unexpected structure: \{result}")
+  }
+}
+
+///|
 test "response_to_chat: multiple functionCall parts" {
   let body =
     #|{"candidates":[{"content":{"parts":[{"functionCall":{"name":"read","args":{"path":"a"}}},{"functionCall":{"name":"write","args":{"path":"b"}}}],"role":"model"},"finishReason":"STOP"}]}

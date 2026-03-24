@@ -193,14 +193,22 @@ test "ResponsesApiAccumulator preserves annotations and web search statuses" {
     #| {"event":"response.output_item.done","data":{"type":"response.output_item.done","item":{"id":"ws_001","type":"web_search_call","status":"completed","action":{"type":"search","query":"current weather in Tokyo"}},"output_index":0,"sequence_number":5}}
     #| {"event":"response.output_text.delta","data":{"type":"response.output_text.delta","delta":"Weather details","sequence_number":6}}
     #| {"event":"response.output_text.annotation.added","data":{"type":"response.output_text.annotation.added","annotation":{"type":"url_citation","url":"https://example.com/weather","title":"Weather Source","start_index":0,"end_index":7},"sequence_number":7}}
-    #| {"event":"response.completed","data":{"type":"response.completed","sequence_number":8}}
+    #| {"event":"response.output_text.annotation.added","data":{"type":"response.output_text.annotation.added","annotation":{"type":"web_search_result_location","cited_text":"Weather details","encrypted_index":"enc_tokyo","title":"Tokyo Weather","url":"https://example.com/tokyo","start_index":8,"end_index":15},"sequence_number":8}}
+    #| {"event":"response.completed","data":{"type":"response.completed","sequence_number":9}}
   let result = accumulate_responses_api(jsonl)
   match result {
     @types.ModelResponse::RichText(rich) => {
       assert_eq(rich.content, "Weather details")
-      assert_eq(rich.annotations.length(), 1)
+      assert_eq(rich.annotations.length(), 2)
       assert_eq(rich.tool_traces.length(), 1)
       assert_eq(rich.tool_traces[0].statuses.length(), 3)
+      match rich.annotations[1] {
+        @types.ResponseAnnotation::WebSearchResultCitation(title~, url~, ..) => {
+          assert_eq(title, "Tokyo Weather")
+          assert_eq(url, "https://example.com/tokyo")
+        }
+        _ => fail("Expected interop web-search citation")
+      }
       match rich.tool_traces[0].arguments {
         { "query": String(query), .. } =>
           assert_eq(query, "current weather in Tokyo")

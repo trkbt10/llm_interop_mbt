@@ -1,5 +1,5 @@
 ///|
-/// Whitebox tests for Anthropic chat transform fallback branches
+/// Whitebox tests for Anthropic chat transform validation branches
 
 ///|
 fn parse_test_json(json : String) -> Json raise Failure {
@@ -50,7 +50,7 @@ test "request and content transforms ignore malformed entries and preserve scala
 }
 
 ///|
-test "response_to_chat and chat_response_to_anthropic cover empty and malformed branches" {
+test "response_to_chat keeps valid text and ignores unknown non-tool blocks" {
   let response = response_to_chat(
     "{\"id\":\"msg_x\",\"model\":\"claude\",\"content\":[{\"type\":\"text\",\"text\":\"hi\"},{\"type\":\"unknown\"}]}",
   )
@@ -62,61 +62,14 @@ test "response_to_chat and chat_response_to_anthropic cover empty and malformed 
       assert_eq(content, "hi")
     _ => fail("Expected OpenAI response")
   }
-
-  let empty_defaults = chat_response_to_anthropic("{}")
-  let empty_defaults_json : Json = @json.parse(empty_defaults) catch {
-    _ => fail("parse error")
-  }
-  match empty_defaults_json {
-    {
-      "id": String(id),
-      "model": String(model),
-      "content": [{ "type": String("text"), "text": String(text), .. }],
-      ..
-    } => {
-      assert_eq(id, "msg-gateway")
-      assert_eq(model, "")
-      assert_eq(text, "")
-    }
-    _ => fail("Expected default Anthropic message")
-  }
-
-  let empty_choices = chat_response_to_anthropic("{\"choices\":[]}")
-  let empty_choices_json : Json = @json.parse(empty_choices) catch {
-    _ => fail("parse error")
-  }
-  match empty_choices_json {
-    { "content": [{ "text": String(text), .. }], .. } => assert_eq(text, "")
-    _ => fail("Expected empty text fallback")
-  }
-
-  let malformed_tool_call = chat_response_to_anthropic(
-    "{\"id\":\"chatcmpl-1\",\"model\":\"gpt-4.1\",\"choices\":[{\"message\":{\"tool_calls\":[{\"id\":\"call_bad\"}]}}]}",
-  )
-  let malformed_tool_call_json : Json = @json.parse(malformed_tool_call) catch {
-    _ => fail("parse error")
-  }
-  match malformed_tool_call_json {
-    {
-      "id": String(id),
-      "model": String(model),
-      "content": [{ "text": String(text), .. }],
-      ..
-    } => {
-      assert_eq(id, "chatcmpl-1")
-      assert_eq(model, "gpt-4.1")
-      assert_eq(text, "")
-    }
-    _ => fail("Expected malformed tool call fallback")
-  }
 }
 
 ///|
-test "Anthropic error helpers expose default messages and extract error payloads" {
+test "Anthropic error helpers preserve payloads and extract error payloads" {
   let openai_error = parse_test_json(error_to_openai({}))
   match openai_error {
     { "error": { "message": String(message), "type": String(kind), .. }, .. } => {
-      assert_eq(message, "Unknown error")
+      assert_eq(message, "{}")
       assert_eq(kind, "api_error")
     }
     _ => fail("Expected OpenAI error shape")
@@ -128,7 +81,7 @@ test "Anthropic error helpers expose default messages and extract error payloads
       "error": { "message": String(message), "status": String(status), .. },
       ..
     } => {
-      assert_eq(message, "Unknown error")
+      assert_eq(message, "{}")
       assert_eq(status, "INVALID_ARGUMENT")
     }
     _ => fail("Expected Gemini error shape")
@@ -137,7 +90,7 @@ test "Anthropic error helpers expose default messages and extract error payloads
   let anthropic_error = parse_test_json(openai_error_to_anthropic("{}"))
   match anthropic_error {
     { "error": { "message": String(message), "type": String(kind), .. }, .. } => {
-      assert_eq(message, "Unknown error")
+      assert_eq(message, "{}")
       assert_eq(kind, "api_error")
     }
     _ => fail("Expected Anthropic error shape")
@@ -151,4 +104,64 @@ test "Anthropic error helpers expose default messages and extract error payloads
     _ => fail("Expected extracted error payload")
   }
   assert_eq(extract_error({}), None)
+}
+
+///|
+test "panic chat_request_to_anthropic rejects malformed tool arguments" {
+  ignore(
+    chat_request_to_anthropic(
+      "{\"messages\":[{\"role\":\"assistant\",\"tool_calls\":[{\"id\":\"call_1\",\"function\":{\"name\":\"lookup\",\"arguments\":\"not-json\"}}]}]}",
+      { max_tokens: 0, max_tokens_field: "max_completion_tokens" },
+    ),
+  )
+}
+
+///|
+test "panic response_to_chat rejects missing ids" {
+  ignore(
+    response_to_chat(
+      "{\"model\":\"claude\",\"content\":[{\"type\":\"text\",\"text\":\"hi\"}]}",
+    ),
+  )
+}
+
+///|
+test "panic response_to_chat rejects malformed tool_use blocks" {
+  ignore(
+    response_to_chat(
+      "{\"id\":\"msg_x\",\"model\":\"claude\",\"content\":[{\"type\":\"tool_use\",\"id\":\"toolu_1\"}]}",
+    ),
+  )
+}
+
+///|
+test "panic chat_response_to_anthropic rejects missing ids" {
+  ignore(chat_response_to_anthropic("{\"model\":\"gpt-4.1\",\"choices\":[]}"))
+}
+
+///|
+test "panic chat_response_to_anthropic rejects empty choices" {
+  ignore(
+    chat_response_to_anthropic(
+      "{\"id\":\"chatcmpl-1\",\"model\":\"gpt-4.1\",\"choices\":[]}",
+    ),
+  )
+}
+
+///|
+test "panic chat_response_to_anthropic rejects malformed tool arguments" {
+  ignore(
+    chat_response_to_anthropic(
+      "{\"id\":\"chatcmpl-1\",\"model\":\"gpt-4.1\",\"choices\":[{\"message\":{\"tool_calls\":[{\"id\":\"call_1\",\"function\":{\"name\":\"lookup\",\"arguments\":\"not-json\"}}]}}]}",
+    ),
+  )
+}
+
+///|
+test "panic chat_response_to_anthropic rejects incomplete tool calls" {
+  ignore(
+    chat_response_to_anthropic(
+      "{\"id\":\"chatcmpl-1\",\"model\":\"gpt-4.1\",\"choices\":[{\"message\":{\"tool_calls\":[{\"id\":\"call_bad\"}]}}]}",
+    ),
+  )
 }

@@ -33,20 +33,9 @@ pub fn message_to_json(message : @types.ModelMessage) -> Json {
           }
       }
     @types.ModelMessage::Assistant(content~, tool_calls~) =>
-      match tool_calls {
-        Some(calls) => {
-          let tool_use : Array[Json] = []
-          for call in calls {
-            tool_use.push({
-              "type": "tool_use",
-              "id": call.id,
-              "name": call.name,
-              "input": call.arguments,
-            })
-          }
-          { "role": "assistant", "content": Json::array(tool_use) }
-        }
-        None => { "role": "assistant", "content": content }
+      {
+        "role": "assistant",
+        "content": assistant_content_to_json(content, tool_calls),
       }
     @types.ModelMessage::ToolResult(tool_call_id~, content~) =>
       {
@@ -79,27 +68,10 @@ pub fn messages_to_json(messages : Array[@types.ModelMessage]) -> Array[Json] {
           None => result.push({ "role": "user", "content": content })
         }
       @types.ModelMessage::Assistant(content~, tool_calls~) =>
-        match tool_calls {
-          Some(calls) if calls.length() > 0 => {
-            let content_blocks : Array[Json] = []
-            if content.length() > 0 {
-              content_blocks.push({ "type": "text", "text": content })
-            }
-            for call in calls {
-              content_blocks.push({
-                "type": "tool_use",
-                "id": call.id,
-                "name": call.name,
-                "input": call.arguments,
-              })
-            }
-            result.push({
-              "role": "assistant",
-              "content": Json::array(content_blocks),
-            })
-          }
-          _ => result.push({ "role": "assistant", "content": content })
-        }
+        result.push({
+          "role": "assistant",
+          "content": assistant_content_to_json(content, tool_calls),
+        })
       @types.ModelMessage::ToolResult(tool_call_id~, content~) =>
         result.push({
           "role": "user",
@@ -164,7 +136,11 @@ fn content_parts_to_anthropic_json(
       // Inference: docs/upstream/anthropic-messages-api.md:74-80,193-250
       // documents text/image/document request blocks for MessageParam.content;
       // audio input blocks are not part of the published ContentBlockParam union.
-      @types.ContentPart::Audio(..) => ()
+      @types.ContentPart::Audio(..) =>
+        result.push({
+          "type": "text",
+          "text": "[Audio input not supported by Anthropic Messages API]",
+        })
       // Ref: docs/upstream/anthropic-messages-api.md:250
       //   DocumentBlockParam = object { source, type, cache_control, context, citations, title }
       @types.ContentPart::Document(data~, media_type~, title~) => {
@@ -200,10 +176,39 @@ fn content_parts_to_anthropic_json(
       // Inference: docs/upstream/anthropic-messages-api.md:74-80,193-250
       // documents text/image/document request blocks for MessageParam.content;
       // video input blocks are not part of the published ContentBlockParam union.
-      @types.ContentPart::Video(..) => ()
+      @types.ContentPart::Video(..) =>
+        result.push({
+          "type": "text",
+          "text": "[Video input not supported by Anthropic Messages API]",
+        })
     }
   }
   result
+}
+
+///|
+fn assistant_content_to_json(
+  content : String,
+  tool_calls : Array[@types.ToolCallRequest]?,
+) -> Json {
+  match tool_calls {
+    Some(calls) if calls.length() > 0 => {
+      let content_blocks : Array[Json] = []
+      if content.length() > 0 {
+        content_blocks.push({ "type": "text", "text": content })
+      }
+      for call in calls {
+        content_blocks.push({
+          "type": "tool_use",
+          "id": call.id,
+          "name": call.name,
+          "input": call.arguments,
+        })
+      }
+      Json::array(content_blocks)
+    }
+    _ => Json::string(content)
+  }
 }
 
 // =============================================================================
@@ -243,7 +248,11 @@ fn build_builtin_tool_json(
       for key, value in fields {
         result[key] = value
       }
-    _ => ()
+    Null => ()
+    _ =>
+      abort(
+        "Anthropic builtin tool config must be an object: " + config.stringify(),
+      )
   }
   Json::object(result)
 }
@@ -266,7 +275,11 @@ fn build_code_execution_input_part(
     "code_execution" => {
       let code = match input {
         { "code": String(value), .. } => value
-        _ => input.stringify()
+        _ =>
+          abort(
+            "Anthropic code_execution tool input is missing required code string: " +
+            input.stringify(),
+          )
       }
       let language = match input {
         { "language": String(value), .. } => value
@@ -277,19 +290,17 @@ fn build_code_execution_input_part(
     "bash_code_execution" => {
       let command = match input {
         { "command": String(value), .. } => value
-        _ => input.stringify()
+        _ =>
+          abort(
+            "Anthropic bash_code_execution tool input is missing required command string: " +
+            input.stringify(),
+          )
       }
       Some(
         @types.ResponseContentPart::CodeExecution(language="bash", code=command),
       )
     }
-    "text_editor_code_execution" =>
-      Some(
-        @types.ResponseContentPart::CodeExecution(
-          language="text_editor",
-          code=input.stringify(),
-        ),
-      )
+    "text_editor_code_execution" => None
     _ => None
   }
 }
@@ -298,29 +309,7 @@ fn build_code_execution_input_part(
 fn build_code_execution_result_part(
   content_obj : Json,
 ) -> @types.ResponseContentPart {
-  let stdout = match content_obj {
-    { "stdout": String(s), .. } => s
-    _ => ""
-  }
-  let stderr = match content_obj {
-    { "stderr": String(s), .. } => s
-    _ => ""
-  }
-  let rc = match content_obj {
-    { "return_code": Number(n, ..), .. } => n.to_int()
-    _ => if stderr.length() > 0 { 1 } else { 0 }
-  }
-  let outcome = if rc == 0 { "success" } else { "failed" }
-  let output = if stdout.length() > 0 && stderr.length() > 0 {
-    "\{stdout}\n[stderr]\n\{stderr}"
-  } else if stderr.length() > 0 {
-    "[stderr]\n\{stderr}"
-  } else if stdout.length() > 0 {
-    stdout
-  } else {
-    "Code execution completed (no output)"
-  }
-  @types.ResponseContentPart::CodeResult(outcome~, output~)
+  normalize_code_execution_result(content_obj).to_response_content_part()
 }
 
 ///|
@@ -332,6 +321,9 @@ fn upsert_tool_trace(
   status : @types.ToolCallStatus,
   arguments : Json,
 ) -> Unit {
+  // web_search/web_fetch result blocks do not carry the original request args,
+  // so `{}` is used as an explicit "arguments unavailable" sentinel and never
+  // overwrites a previously observed non-empty argument object.
   let effective_arguments = match arguments {
     Object(fields) if fields.is_empty() => None
     _ => Some(arguments)
@@ -450,11 +442,20 @@ pub fn parse_response(response_json : Json) -> @types.ModelResponse {
         Array(blocks) => {
           let text = StringBuilder::new()
           let content_parts : Array[@types.ResponseContentPart] = []
+          let annotations : Array[@types.ResponseAnnotation] = []
           let tool_traces : Array[@types.ToolCallTrace] = []
           let mut has_non_text = false
+          let mut text_offset = 0
           for block in blocks {
             match block {
               { "type": String("text"), "text": String(t), .. } => {
+                append_anthropic_text_block_annotations(
+                  annotations,
+                  block,
+                  text_offset,
+                  text_offset + t.length(),
+                )
+                text_offset = text_offset + t.length()
                 if text.to_string().length() > 0 {
                   text.write_char('\n')
                 }
@@ -514,7 +515,17 @@ pub fn parse_response(response_json : Json) -> @types.ModelResponse {
                         content_parts.push(part)
                         has_non_text = true
                       }
-                      None => ()
+                      None => {
+                        upsert_tool_trace(
+                          tool_traces,
+                          trace_id,
+                          name,
+                          @types.ToolCallKind::Builtin(builtin_type=name),
+                          @types.ToolCallStatus::InProgress,
+                          input,
+                        )
+                        has_non_text = true
+                      }
                     }
                 }
               }
@@ -593,17 +604,21 @@ pub fn parse_response(response_json : Json) -> @types.ModelResponse {
                 rich=@types.RichTextResponse::from_parts(
                   content=content_str,
                   content_parts~,
+                  annotations~,
                   tool_traces~,
                 ),
               )
             } else {
               @types.ModelResponse::ToolCalls(tool_calls)
             }
-          } else if has_non_text || tool_traces.length() > 0 {
+          } else if has_non_text ||
+            annotations.length() > 0 ||
+            tool_traces.length() > 0 {
             @types.ModelResponse::RichText(
               @types.RichTextResponse::from_parts(
                 content=content_str,
                 content_parts~,
+                annotations~,
                 tool_traces~,
               ),
             )
@@ -635,13 +650,29 @@ pub fn parse_tool_calls(content : Json) -> Array[@types.ToolCallRequest] {
             "input": input,
             ..
           } =>
-            result.push(
-              @types.ToolCallRequest::new(id~, name~, arguments=input),
+            if name == @types.web_search_tool_name() {
+              let query = match input {
+                { "query": String(q), .. } => Some(q)
+                _ => None
+              }
+              result.push(@types.ToolCallRequest::web_search(id~, query~))
+            } else {
+              result.push(
+                @types.ToolCallRequest::new(id~, name~, arguments=input),
+              )
+            }
+          { "type": String("tool_use"), .. } =>
+            abort(
+              "Anthropic tool_use block is missing required id/name/input fields: " +
+              item.stringify(),
             )
           _ => ()
         }
       }
-    _ => ()
+    _ =>
+      abort(
+        "Anthropic tool_use content must be an array: " + content.stringify(),
+      )
   }
   result
 }

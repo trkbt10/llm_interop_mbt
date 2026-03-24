@@ -1,5 +1,5 @@
 ///|
-/// Whitebox coverage for OpenAI Chat Completions helpers and fallback branches
+/// Whitebox coverage for OpenAI Chat Completions helpers and validation branches
 
 ///|
 test "message and builder helpers cover names, multimodal fallbacks, and builtin tools" {
@@ -136,6 +136,72 @@ test "message and builder helpers cover names, multimodal fallbacks, and builtin
     }
     _ => fail("Expected built chat body")
   }
+
+  let annotations = chat_annotations_from_response_annotations([
+    @types.ResponseAnnotation::url_citation(
+      url="https://example.com/docs",
+      title=Some("Docs"),
+      start_index=0,
+      end_index=4,
+    ),
+    @types.ResponseAnnotation::web_search_result_citation(
+      cited_text="MoonBit",
+      encrypted_index="enc_1",
+      title="MoonBit Search",
+      url="https://example.com/search",
+      start_index=5,
+      end_index=12,
+    ),
+    @types.ResponseAnnotation::document_page_citation(
+      cited_text="MoonBit",
+      document_index=0,
+      document_title="Spec",
+      file_id="file_spec",
+      start_page_number=1,
+      end_page_number=1,
+      start_index=0,
+      end_index=7,
+    ),
+  ])
+  assert_eq(annotations.length(), 2)
+  match annotations[0] {
+    {
+      "type": "url_citation",
+      "url_citation": {
+        "title": String(title),
+        "url": String(url),
+        "start_index": Number(start_index, ..),
+        "end_index": Number(end_index, ..),
+        ..
+      },
+      ..
+    } => {
+      assert_eq(title, "Docs")
+      assert_eq(url, "https://example.com/docs")
+      assert_eq(start_index.to_int(), 0)
+      assert_eq(end_index.to_int(), 4)
+    }
+    _ => fail("Expected UrlCitation chat annotation")
+  }
+  match annotations[1] {
+    {
+      "type": "url_citation",
+      "url_citation": {
+        "title": String(title),
+        "url": String(url),
+        "start_index": Number(start_index, ..),
+        "end_index": Number(end_index, ..),
+        ..
+      },
+      ..
+    } => {
+      assert_eq(title, "MoonBit Search")
+      assert_eq(url, "https://example.com/search")
+      assert_eq(start_index.to_int(), 5)
+      assert_eq(end_index.to_int(), 12)
+    }
+    _ => fail("Expected down-converted web search annotation")
+  }
 }
 
 ///|
@@ -155,8 +221,96 @@ test "parse chat helpers cover audio, malformed tool calls, and error fallbacks"
         },
       ]),
     }) {
-    @types.ModelResponse::Text(text) => assert_eq(text, "Preface")
-    _ => fail("Expected text fallback when tool_calls field is missing")
+    @types.ModelResponse::ModelError(message) =>
+      assert_eq(
+        message, "OpenAI chat response signaled tool_calls without a tool_calls payload",
+      )
+    _ => fail("Expected tool_calls payload error")
+  }
+
+  match
+    parse_chat_response({
+      "choices": Json::array([
+        {
+          "message": {
+            "role": "assistant",
+            "content": "Weather details",
+            "annotations": Json::array([
+              {
+                "type": "url_citation",
+                "url_citation": {
+                  "title": "Weather Source",
+                  "url": "https://example.com/weather",
+                  "start_index": 0,
+                  "end_index": 7,
+                },
+              },
+            ]),
+          },
+          "finish_reason": "stop",
+        },
+      ]),
+    }) {
+    @types.ModelResponse::RichText(rich) => {
+      assert_eq(rich.content, "Weather details")
+      assert_eq(rich.annotations.length(), 1)
+      match rich.annotations[0] {
+        @types.ResponseAnnotation::UrlCitation(
+          title~,
+          url~,
+          start_index~,
+          end_index~
+        ) => {
+          assert_eq(title, Some("Weather Source"))
+          assert_eq(url, "https://example.com/weather")
+          assert_eq(start_index, 0)
+          assert_eq(end_index, 7)
+        }
+        _ => fail("Expected parsed url citation")
+      }
+    }
+    _ => fail("Expected RichText with annotations")
+  }
+
+  match
+    parse_chat_response({
+      "choices": Json::array([
+        {
+          "message": {
+            "role": "assistant",
+            "content": "Checking...",
+            "annotations": Json::array([
+              {
+                "type": "url_citation",
+                "url_citation": {
+                  "title": "Weather Source",
+                  "url": "https://example.com/weather",
+                  "start_index": 0,
+                  "end_index": 7,
+                },
+              },
+            ]),
+            "tool_calls": Json::array([
+              {
+                "id": "call_lookup",
+                "function": {
+                  "name": "lookup",
+                  "arguments": "{\"q\":\"weather\"}",
+                },
+              },
+            ]),
+          },
+          "finish_reason": "tool_calls",
+        },
+      ]),
+    }) {
+    @types.ModelResponse::ToolCallsWithContent(tool_calls~, rich~) => {
+      assert_eq(tool_calls.length(), 1)
+      assert_eq(tool_calls[0].name, "lookup")
+      assert_eq(rich.content, "Checking...")
+      assert_eq(rich.annotations.length(), 1)
+    }
+    _ => fail("Expected ToolCallsWithContent annotations")
   }
 
   match
@@ -226,23 +380,6 @@ test "parse chat helpers cover audio, malformed tool calls, and error fallbacks"
         None => fail("Expected transcript fallback content parts")
       }
     _ => fail("Expected transcript fallback RichText response")
-  }
-
-  match
-    parse_chat_response({
-      "choices": Json::array([
-        {
-          "message": {
-            "role": "assistant",
-            "content": Json::null(),
-            "tool_calls": Json::array([{ "bad": true }]),
-          },
-          "finish_reason": "tool_calls",
-        },
-      ]),
-    }) {
-    @types.ModelResponse::Text(text) => assert_eq(text, "")
-    _ => fail("Expected empty text fallback for malformed tool calls")
   }
 
   match
@@ -325,7 +462,47 @@ test "parse chat helpers cover audio, malformed tool calls, and error fallbacks"
       assert_eq(message, "Unknown response format")
     _ => fail("Expected unknown-format error")
   }
+}
 
-  assert_eq(parse_tool_calls(Json::array([{ "bad": true }])).length(), 0)
-  assert_eq(parse_tool_calls(Json::null()).length(), 0)
+///|
+test "panic parse_chat_response rejects malformed tool call arguments" {
+  parse_chat_response({
+    "choices": Json::array([
+      {
+        "message": {
+          "role": "assistant",
+          "tool_calls": Json::array([
+            {
+              "id": "call_bad",
+              "function": { "name": "lookup", "arguments": "not-json" },
+            },
+          ]),
+        },
+        "finish_reason": "tool_calls",
+      },
+    ]),
+  })
+  |> ignore
+}
+
+///|
+test "panic parse_chat_response rejects malformed tool call payload" {
+  parse_chat_response({
+    "choices": Json::array([
+      {
+        "message": {
+          "role": "assistant",
+          "content": Json::null(),
+          "tool_calls": Json::array([{ "bad": true }]),
+        },
+        "finish_reason": "tool_calls",
+      },
+    ]),
+  })
+  |> ignore
+}
+
+///|
+test "panic parse_tool_calls rejects non-array payloads" {
+  parse_tool_calls(Json::null()) |> ignore
 }

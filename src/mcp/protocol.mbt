@@ -104,8 +104,6 @@ pub fn McpContentItem::from_json(json : Json) -> McpContentItem? {
       }
       Some(Resource(uri~, mime_type~, text~))
     }
-    // Fallback: unknown type with text field
-    { "type": String(_), "text": String(text), .. } => Some(Text(text))
     _ => None
   }
 }

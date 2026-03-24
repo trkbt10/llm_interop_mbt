@@ -383,12 +383,9 @@ test "McpContentItem::from_json: image missing mimeType falls through to text fa
 }
 
 ///|
-test "McpContentItem::from_json: unknown type with text uses fallback Text" {
+test "McpContentItem::from_json: unknown type with text is rejected" {
   let json : Json = { "type": "notice", "text": "fallback text" }
-  match McpContentItem::from_json(json) {
-    Some(Text(text)) => assert_eq(text, "fallback text")
-    _ => fail("Expected text fallback")
-  }
+  assert_eq(McpContentItem::from_json(json), None)
 }
 
 // =============================================================================

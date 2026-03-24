@@ -14,8 +14,11 @@ pub struct AnthropicToResponsesTranslator {
   mut current_tool_call_id : String
   mut current_tool_name : String
   mut current_tool_mode : String
+  mut current_block_type : String
   tool_input_buffer : StringBuilder
   text_buffer : StringBuilder
+  current_text_block : StringBuilder
+  mut current_text_citations : Array[Json]
   thinking_buffer : StringBuilder
   redacted_thinking_buffer : StringBuilder
   mut in_thinking_block : Bool
@@ -34,8 +37,11 @@ pub fn AnthropicToResponsesTranslator::new(
     current_tool_call_id: "",
     current_tool_name: "",
     current_tool_mode: "",
+    current_block_type: "",
     tool_input_buffer: StringBuilder::new(),
     text_buffer: StringBuilder::new(),
+    current_text_block: StringBuilder::new(),
+    current_text_citations: [],
     thinking_buffer: StringBuilder::new(),
     redacted_thinking_buffer: StringBuilder::new(),
     in_thinking_block: false,
@@ -74,6 +80,7 @@ pub fn AnthropicToResponsesTranslator::translate(
           },
           ..
         } => {
+          self.current_block_type = "tool_use"
           // Convert Claude tool use ID to Responses API format
           let call_id = @interop_util.anthropic_to_openai_responses_call_id(id)
           self.current_tool_call_id = call_id
@@ -107,6 +114,7 @@ pub fn AnthropicToResponsesTranslator::translate(
           },
           ..
         } => {
+          self.current_block_type = "server_tool_use"
           let call_id = @interop_util.anthropic_to_openai_responses_call_id(id)
           self.current_tool_call_id = call_id
           self.current_tool_name = name
@@ -143,7 +151,25 @@ pub fn AnthropicToResponsesTranslator::translate(
             self.current_tool_mode = "server_tool"
           }
         }
-        _ => ()
+        { "content_block": { "type": String(type_), .. }, .. } =>
+          if is_anthropic_content_block_start_noop_type(type_) {
+            self.current_block_type = type_
+            if type_ == "text" {
+              self.current_text_block.reset()
+              self.current_text_citations = []
+            }
+            ()
+          } else {
+            abort(
+              "Unsupported Anthropic content_block_start type: " +
+              event.data.stringify(),
+            )
+          }
+        _ =>
+          abort(
+            "Anthropic content_block_start event is missing content_block.type: " +
+            event.data.stringify(),
+          )
       }
     "content_block_delta" =>
       match event.data {
@@ -152,6 +178,7 @@ pub fn AnthropicToResponsesTranslator::translate(
           ..
         } => {
           self.text_buffer.write_string(text)
+          self.current_text_block.write_string(text)
           events.push(
             (
               "response.output_text.delta",
@@ -210,6 +237,22 @@ pub fn AnthropicToResponsesTranslator::translate(
           self.redacted_thinking_buffer.write_string(data)
           self.in_redacted_thinking_block = true
         }
+        {
+          "delta": {
+            "type": String("citations_delta"),
+            "citation": citation,
+            ..
+          },
+          ..
+        } =>
+          if self.current_block_type == "text" {
+            self.current_text_citations.push(citation)
+          } else {
+            abort(
+              "Anthropic citations_delta arrived outside an active text block: " +
+              event.data.stringify(),
+            )
+          }
         // Ref: docs/upstream/anthropic-code-execution-tool.md:1796-1802 — code_execution_result
         {
           "delta": {
@@ -219,23 +262,7 @@ pub fn AnthropicToResponsesTranslator::translate(
           },
           ..
         } => {
-          let stdout = match content_obj {
-            { "stdout": String(s), .. } => s
-            _ => ""
-          }
-          let stderr = match content_obj {
-            { "stderr": String(s), .. } => s
-            _ => ""
-          }
-          let output = if stdout.length() > 0 && stderr.length() > 0 {
-            "Code execution output:\n\{stdout}\n[stderr]\n\{stderr}"
-          } else if stderr.length() > 0 {
-            "Code execution [stderr]:\n\{stderr}"
-          } else if stdout.length() > 0 {
-            "Code execution output:\n\{stdout}"
-          } else {
-            "Code execution completed (no output)"
-          }
+          let output = normalize_code_execution_result(content_obj).to_output_text()
           self.text_buffer.write_string(output)
           events.push(
             (
@@ -248,9 +275,25 @@ pub fn AnthropicToResponsesTranslator::translate(
             ),
           )
         }
-        _ => ()
+        { "delta": { "type": String(type_), .. }, .. } =>
+          if is_anthropic_content_block_delta_noop_type(type_) {
+            ()
+          } else {
+            abort(
+              "Unsupported Anthropic content_block_delta type: " +
+              event.data.stringify(),
+            )
+          }
+        _ =>
+          abort(
+            "Anthropic content_block_delta event is missing delta.type: " +
+            event.data.stringify(),
+          )
       }
-    "content_block_stop" =>
+    "content_block_stop" => {
+      if self.current_block_type == "text" {
+        self.emit_text_annotation_events(events)
+      }
       if self.in_thinking_block {
         // Emit accumulated thinking as a single reasoning item
         let thinking_text = self.thinking_buffer.to_string()
@@ -295,8 +338,13 @@ pub fn AnthropicToResponsesTranslator::translate(
         self.in_redacted_thinking_block = false
       } else if self.current_tool_call_id.length() > 0 {
         if self.current_tool_mode == "web_search" {
-          let input : Json = @json.parse(self.tool_input_buffer.to_string()) catch {
-            _ => Json::object({})
+          let raw_input = self.tool_input_buffer.to_string()
+          let input : Json = @json.parse(raw_input) catch {
+            _ =>
+              abort(
+                "Anthropic web_search tool input must be valid JSON: " +
+                raw_input,
+              )
           }
           events.push(
             (
@@ -340,6 +388,8 @@ pub fn AnthropicToResponsesTranslator::translate(
         self.current_tool_mode = ""
         self.tool_input_buffer.reset()
       }
+      self.current_block_type = ""
+    }
     "message_delta" =>
       match event.data {
         { "delta": { "stop_reason": String(stop_reason), .. }, .. } =>
@@ -361,13 +411,41 @@ pub fn AnthropicToResponsesTranslator::translate(
               )
             }
           }
-        _ => ()
+        { "delta": Object(_), .. } => ()
+        _ =>
+          abort(
+            "Anthropic message_delta event is missing delta object: " +
+            event.data.stringify(),
+          )
       }
     "message_stop" =>
       events.push(("response.completed", { "type": "response.completed" }))
-    _ => () // message_start, ping, etc.
+    "message_start" | "ping" => ()
+    _ =>
+      abort(
+        "Unsupported Anthropic SSE event type: " +
+        event.event +
+        " " +
+        event.data.stringify(),
+      )
   }
   events
+}
+
+///|
+fn is_anthropic_content_block_start_noop_type(type_ : String) -> Bool {
+  [
+    "text", "thinking", "redacted_thinking", "code_execution_tool_result", "bash_code_execution_tool_result",
+    "text_editor_code_execution_tool_result", "web_search_tool_result", "web_fetch_tool_result",
+  ].contains(type_)
+}
+
+///|
+fn is_anthropic_content_block_delta_noop_type(type_ : String) -> Bool {
+  // Ref: docs/upstream/anthropic-messages-api.md:17820-18022
+  // signature_delta is documented metadata without a Responses carrier here.
+  // citations_delta is preserved above as interop annotations.
+  ["signature_delta"].contains(type_)
 }
 
 ///|
@@ -376,4 +454,35 @@ pub fn AnthropicToResponsesTranslator::get_text(
   self : AnthropicToResponsesTranslator,
 ) -> String {
   self.text_buffer.to_string()
+}
+
+///|
+fn AnthropicToResponsesTranslator::emit_text_annotation_events(
+  self : AnthropicToResponsesTranslator,
+  events : Array[(String, Json)],
+) -> Unit {
+  let block_text = self.current_text_block.to_string()
+  let end_index = self.text_buffer.to_string().length()
+  let start_index = end_index - block_text.length()
+  let annotations : Array[@types.ResponseAnnotation] = []
+  append_anthropic_citations(
+    annotations,
+    self.current_text_citations,
+    start_index,
+    end_index,
+  )
+  for annotation in annotations {
+    events.push(
+      (
+        "response.output_text.annotation.added",
+        {
+          "type": "response.output_text.annotation.added",
+          "annotation": annotation.to_interop_json(),
+          "output_index": self.output_index,
+        },
+      ),
+    )
+  }
+  self.current_text_block.reset()
+  self.current_text_citations = []
 }

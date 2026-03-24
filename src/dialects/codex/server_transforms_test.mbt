@@ -458,7 +458,7 @@ test "chat_response_to_events: token usage mapping" {
 }
 
 ///|
-test "chat_response_to_events: roundtrip with events_to_chat" {
+test "chat_response_to_events: roundtrip with response_to_chat" {
   // Verify events produced by server_transforms can be consumed by chat_transforms
   let response =
     #|{"id":"chatcmpl-1","object":"chat.completion","model":"gpt-4o","choices":[{"index":0,"message":{"role":"assistant","content":"Test roundtrip"},"finish_reason":"stop"}],"usage":{"prompt_tokens":20,"completion_tokens":10,"total_tokens":30}}
@@ -469,7 +469,7 @@ test "chat_response_to_events: roundtrip with events_to_chat" {
     event_jsons.push(@json.parse(e) catch { _ => Json::null() })
   }
   let events_array = Json::array(event_jsons).stringify()
-  let result = events_to_chat(events_array)
+  let result = response_to_chat(events_array)
   let json = @json.parse(result) catch { _ => fail("invalid json") }
   match json {
     {
@@ -486,5 +486,64 @@ test "chat_response_to_events: roundtrip with events_to_chat" {
       assert_eq(ct.to_int(), 10)
     }
     _ => fail("unexpected roundtrip result: " + result)
+  }
+}
+
+///|
+test "stream façade: start/delta/success events roundtrip through response_to_chat" {
+  let events : Array[Json] = []
+  for event in build_turn_stream_start_events("turn_9", "item_9") {
+    events.push(@json.parse(event) catch { _ => fail("invalid start event") })
+  }
+  events.push(
+    @json.parse(build_turn_stream_delta_event("item_9", "interop")) catch {
+      _ => fail("invalid delta event")
+    },
+  )
+  for
+    event in build_turn_stream_success_events(
+      "turn_9", "item_9", "interop", 3, 4, 7,
+    ) {
+    events.push(@json.parse(event) catch { _ => fail("invalid success event") })
+  }
+  let result = response_to_chat(Json::array(events).stringify())
+  let json = @json.parse(result) catch { _ => fail("invalid json") }
+  match json {
+    {
+      "choices": [{ "message": { "content": String(content), .. }, .. }, ..],
+      "usage": {
+        "prompt_tokens": Number(input, ..),
+        "completion_tokens": Number(output, ..),
+        "total_tokens": Number(total, ..),
+        ..
+      },
+      ..
+    } => {
+      assert_eq(content, "interop")
+      assert_eq(input.to_int(), 3)
+      assert_eq(output.to_int(), 4)
+      assert_eq(total.to_int(), 7)
+    }
+    _ => fail("unexpected roundtrip result: " + result)
+  }
+}
+
+///|
+test "stream façade: start failure emits started then failed" {
+  let events = build_turn_start_failure_events("turn_fail", "boom")
+  assert_eq(events.length(), 2)
+  let started = @json.parse(events[0]) catch { _ => fail("invalid started") }
+  let failed = @json.parse(events[1]) catch { _ => fail("invalid failed") }
+  match started {
+    { "method": String("turn/started"), .. } => ()
+    _ => fail("expected turn/started")
+  }
+  match failed {
+    {
+      "method": String("turn/completed"),
+      "params": { "turn": { "status": String("failed"), .. }, .. },
+      ..
+    } => ()
+    _ => fail("expected failed turn")
   }
 }

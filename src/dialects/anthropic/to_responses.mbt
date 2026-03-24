@@ -8,20 +8,22 @@
 /// Convert Anthropic Messages API response JSON to Responses API response JSON
 pub fn response_to_responses(response : Json, response_id~ : String) -> Json {
   match response {
-    { "content": Array(content_blocks), .. } => {
-      let output = build_responses_output_from_anthropic(content_blocks)
-      let model = match response {
-        { "model": String(m), .. } => m
-        _ => "unknown"
-      }
-      {
-        "id": response_id,
-        "object": "response",
-        "status": "completed",
-        "output": Json::array(output),
-        "model": model,
-      }
-    }
+    { "content": Array(_), "model": String(model), .. } =>
+      // SoT: reuse the canonical Anthropic parser plus the OpenAI Responses
+      // serializer so rich annotations/tool traces stay aligned across direct,
+      // synthetic-stream, and typed ModelResponse paths.
+      @openai.model_response_to_responses_json(
+        normalize_anthropic_model_response_for_responses(
+          parse_response(response),
+        ),
+        response_id~,
+        model~,
+      )
+    { "content": Array(_), .. } =>
+      abort(
+        "Anthropic success response is missing required model field: " +
+        response.stringify(),
+      )
     { "error": { "message": String(msg), .. }, .. } =>
       { "error": { "type": "error", "message": msg } }
     _ => { "error": { "type": "error", "message": "Unknown response format" } }
@@ -29,138 +31,33 @@ pub fn response_to_responses(response : Json, response_id~ : String) -> Json {
 }
 
 ///|
-/// Build Responses API output array from Anthropic content blocks
-fn build_responses_output_from_anthropic(
-  content_blocks : Array[Json],
-) -> Array[Json] {
-  let tool_outputs : Array[Json] = []
-  let text_parts : Array[Json] = []
-  // Anthropic content blocks → Responses API output items
-  // Ref: https://platform.claude.com/docs/en/api/messages
-  //   TextBlock → output_text
-  //   ThinkingBlock → reasoning (Ref: ResponseReasoningItem)
-  //   RedactedThinkingBlock → reasoning.encrypted_content
-  //   ToolUseBlock → function_call / web_search_call
-  //   CodeExecutionToolResultBlock → output_text (text representation)
-  let reasoning_outputs : Array[Json] = []
-  for block in content_blocks {
-    match block {
-      // Ref: TextBlock — {"type":"text","text":"..."} → output_text
-      { "type": String("text"), "text": String(text), .. } =>
-        text_parts.push({ "type": "output_text", "text": text })
-      // ThinkingBlock: {"type":"thinking","thinking":"...","signature":"..."}
-      // Ref: docs/upstream/anthropic-messages-api.md:3971-3979
-      //   ThinkingBlock = object { signature, thinking, type }
-      { "type": String("thinking"), "thinking": String(thinking_text), .. } =>
-        reasoning_outputs.push(
-          @openai.build_responses_reasoning_item(thinking_text),
-        )
-      // RedactedThinkingBlock → encrypted reasoning item
-      { "type": String("redacted_thinking"), "data": String(data), .. } =>
-        reasoning_outputs.push(
-          @openai.build_responses_reasoning_item(
-            "",
-            encrypted_content=Some(data),
-          ),
-        )
-      // CodeExecutionToolResultBlock
-      // Ref: docs/upstream/anthropic-messages-api.md:1911-1977
-      //   CodeExecutionToolResultBlockParam = object { content, tool_use_id, type }
-      // Ref: docs/upstream/anthropic-code-execution-tool.md:1796-1802
-      //   {"type":"bash_code_execution_tool_result","content":{"stdout":"...","stderr":"","return_code":0}}
-      {
-        "type": String("code_execution_tool_result"),
-        "content": content_obj,
-        ..
-      } => {
-        let stdout = match content_obj {
-          { "stdout": String(s), .. } => s
-          _ => ""
-        }
-        let stderr = match content_obj {
-          { "stderr": String(s), .. } => s
-          _ => ""
-        }
-        let output = if stdout.length() > 0 && stderr.length() > 0 {
-          "Code execution output:\n\{stdout}\n[stderr]\n\{stderr}"
-        } else if stderr.length() > 0 {
-          "Code execution [stderr]:\n\{stderr}"
-        } else if stdout.length() > 0 {
-          "Code execution output:\n\{stdout}"
-        } else {
-          "Code execution completed (no output)"
-        }
-        text_parts.push({ "type": "output_text", "text": output })
-      }
-      {
-        "type": String("bash_code_execution_tool_result"),
-        "content": content_obj,
-        ..
-      }
-      | {
-        "type": String("text_editor_code_execution_tool_result"),
-        "content": content_obj,
-        ..
-      } => {
-        let stdout = match content_obj {
-          { "stdout": String(s), .. } => s
-          _ => ""
-        }
-        let stderr = match content_obj {
-          { "stderr": String(s), .. } => s
-          _ => ""
-        }
-        let output = if stdout.length() > 0 && stderr.length() > 0 {
-          "Code execution output:\n\{stdout}\n[stderr]\n\{stderr}"
-        } else if stderr.length() > 0 {
-          "Code execution [stderr]:\n\{stderr}"
-        } else if stdout.length() > 0 {
-          "Code execution output:\n\{stdout}"
-        } else {
-          "Code execution completed (no output)"
-        }
-        text_parts.push({ "type": "output_text", "text": output })
-      }
-      // ToolUseBlock: {"type":"tool_use","id":"...","name":"...","input":{}}
-      {
-        "type": String("tool_use"),
-        "id": String(id),
-        "name": String(name),
-        "input": input,
-        ..
-      } => {
-        let call_id = @interop_util.anthropic_to_openai_responses_call_id(id)
-        if name == @types.web_search_tool_name() {
-          tool_outputs.push(
-            @openai.build_responses_web_search_call(call_id, input),
-          )
-        } else {
-          tool_outputs.push(
-            @openai.build_responses_function_call(call_id, name, input),
-          )
-        }
-      }
-      {
-        "type": String("server_tool_use"),
-        "id": String(id),
-        "name": String(name),
-        "input": input,
-        ..
-      } =>
-        if name == @types.web_search_tool_name() {
-          let call_id = @interop_util.anthropic_to_openai_responses_call_id(id)
-          tool_outputs.push(
-            @openai.build_responses_web_search_call(call_id, input),
-          )
-        }
-      _ => ()
-    }
+fn normalize_anthropic_model_response_for_responses(
+  response : @types.ModelResponse,
+) -> @types.ModelResponse {
+  match response {
+    @types.ModelResponse::ToolCalls(tool_calls) =>
+      @types.ModelResponse::ToolCalls(
+        tool_calls.map(normalize_anthropic_tool_call_for_responses),
+      )
+    @types.ModelResponse::ToolCallsWithContent(tool_calls~, rich~) =>
+      @types.ModelResponse::ToolCallsWithContent(
+        tool_calls=tool_calls.map(normalize_anthropic_tool_call_for_responses),
+        rich~,
+      )
+    _ => response
   }
-  @openai.assemble_responses_output(
-    text_parts,
-    tool_outputs,
-    reasoning_outputs~,
-  )
+}
+
+///|
+fn normalize_anthropic_tool_call_for_responses(
+  call : @types.ToolCallRequest,
+) -> @types.ToolCallRequest {
+  {
+    id: @interop_util.anthropic_to_openai_responses_call_id(call.id),
+    name: call.name,
+    arguments: call.arguments,
+    kind: call.kind,
+  }
 }
 
 ///|

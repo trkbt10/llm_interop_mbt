@@ -1,5 +1,5 @@
 ///|
-/// Whitebox coverage for Anthropic protocol helpers and fallback branches
+/// Whitebox coverage for Anthropic protocol helpers and normalization branches
 
 ///|
 test "message builders cover named users, multimodal parts, tool results, and explicit body fields" {
@@ -31,7 +31,7 @@ test "message builders cover named users, multimodal parts, tool results, and ex
   )
   match named_user {
     { "role": "user", "name": "alice", "content": Array(parts), .. } => {
-      assert_eq(parts.length(), 6)
+      assert_eq(parts.length(), 8)
       assert_eq(parts[0], { "type": "text", "text": "Look" })
       assert_eq(parts[1], {
         "type": "image",
@@ -46,6 +46,10 @@ test "message builders cover named users, multimodal parts, tool results, and ex
         },
       })
       assert_eq(parts[3], {
+        "type": "text",
+        "text": "[Audio input not supported by Anthropic Messages API]",
+      })
+      assert_eq(parts[4], {
         "type": "document",
         "source": {
           "type": "base64",
@@ -53,13 +57,17 @@ test "message builders cover named users, multimodal parts, tool results, and ex
           "data": "PDF",
         },
       })
-      assert_eq(parts[4], {
+      assert_eq(parts[5], {
         "type": "document",
         "source": { "type": "file", "file_id": "file_123" },
       })
-      assert_eq(parts[5], {
+      assert_eq(parts[6], {
         "type": "text",
         "text": "[Remote file URL input not supported by Anthropic Messages API; upload via Files API first] https://example.com/report.pdf",
+      })
+      assert_eq(parts[7], {
+        "type": "text",
+        "text": "[Video input not supported by Anthropic Messages API]",
       })
     }
     _ => fail("Expected named multimodal user")
@@ -187,18 +195,17 @@ test "message builders cover named users, multimodal parts, tool results, and ex
 
 ///|
 test "private protocol helpers cover builtin tool, code execution, and trace updates" {
-  assert_eq(
-    build_builtin_tool_json("builtin_alpha", "", Json::string("ignored")),
-    { "type": "builtin_alpha" },
-  )
+  assert_eq(build_builtin_tool_json("builtin_alpha", "", Json::null()), {
+    "type": "builtin_alpha",
+  })
 
   match
-    build_code_execution_input_part("code_execution", Json::string("print(1)")) {
+    build_code_execution_input_part("code_execution", { "code": "print(1)" }) {
     Some(@types.ResponseContentPart::CodeExecution(language~, code~)) => {
       assert_eq(language, "python")
-      assert_eq(code, "\"print(1)\"")
+      assert_eq(code, "print(1)")
     }
-    _ => fail("Expected default code execution part")
+    _ => fail("Expected code execution part")
   }
   match
     build_code_execution_input_part("bash_code_execution", {
@@ -210,27 +217,12 @@ test "private protocol helpers cover builtin tool, code execution, and trace upd
     }
     _ => fail("Expected bash code execution part")
   }
-  match
-    build_code_execution_input_part(
-      "bash_code_execution",
-      Json::string("echo hi"),
-    ) {
-    Some(@types.ResponseContentPart::CodeExecution(language~, code~)) => {
-      assert_eq(language, "bash")
-      assert_eq(code, "\"echo hi\"")
-    }
-    _ => fail("Expected bash fallback code execution part")
-  }
-  match
+  assert_eq(
     build_code_execution_input_part("text_editor_code_execution", {
       "edit": "replace",
-    }) {
-    Some(@types.ResponseContentPart::CodeExecution(language~, code~)) => {
-      assert_eq(language, "text_editor")
-      assert_true(code.contains("\"edit\""))
-    }
-    _ => fail("Expected text editor code execution part")
-  }
+    }),
+    None,
+  )
   assert_eq(build_code_execution_input_part("other", {}), None)
 
   assert_eq(
@@ -271,6 +263,21 @@ test "private protocol helpers cover builtin tool, code execution, and trace upd
   assert_eq(traces[0].statuses, [
     @types.ToolCallStatus::InProgress,
     @types.ToolCallStatus::Searching,
+  ])
+  assert_eq(traces[0].arguments, { "url": "https://example.com" })
+
+  upsert_tool_trace(
+    traces,
+    "call_1",
+    "web_fetch",
+    @types.ToolCallKind::Builtin(builtin_type="web_fetch"),
+    @types.ToolCallStatus::Completed,
+    Json::object({}),
+  )
+  assert_eq(traces[0].statuses, [
+    @types.ToolCallStatus::InProgress,
+    @types.ToolCallStatus::Searching,
+    @types.ToolCallStatus::Completed,
   ])
   assert_eq(traces[0].arguments, { "url": "https://example.com" })
 
@@ -359,13 +366,18 @@ test "parse_response covers multiline text, server tools, redacted thinking, and
         }
         None => fail("Expected rich content parts")
       }
-      assert_eq(rich.tool_traces.length(), 1)
+      assert_eq(rich.tool_traces.length(), 2)
       assert_eq(rich.tool_traces[0].name, "web_fetch")
       assert_eq(rich.tool_traces[0].statuses, [
         @types.ToolCallStatus::InProgress,
         @types.ToolCallStatus::Completed,
       ])
       assert_eq(rich.tool_traces[0].arguments, { "url": "https://example.com" })
+      assert_eq(rich.tool_traces[1].name, "unsupported_tool")
+      assert_eq(
+        rich.tool_traces[1].kind,
+        @types.ToolCallKind::Builtin(builtin_type="unsupported_tool"),
+      )
     }
     _ => fail("Expected rich text response")
   }
@@ -384,5 +396,56 @@ test "parse_response covers multiline text, server tools, redacted thinking, and
       assert_eq(message, "Unknown response format")
     _ => fail("Expected unknown format error")
   }
-  assert_eq(parse_tool_calls(Json::null()).length(), 0)
+}
+
+///|
+test "panic private protocol helpers reject malformed builtin config" {
+  build_builtin_tool_json("builtin_alpha", "", Json::string("ignored"))
+  |> ignore
+}
+
+///|
+test "panic private protocol helpers reject malformed code execution input" {
+  build_code_execution_input_part("code_execution", Json::string("print(1)"))
+  |> ignore
+}
+
+///|
+test "panic private protocol helpers reject malformed bash code execution input" {
+  build_code_execution_input_part(
+    "bash_code_execution",
+    Json::string("echo hi"),
+  )
+  |> ignore
+}
+
+///|
+test "panic parse_tool_calls rejects malformed content" {
+  parse_tool_calls(Json::null()) |> ignore
+}
+
+///|
+test "parse_response preserves unknown server tool uses as generic builtin traces" {
+  let response : Json = {
+    "content": Json::array([
+      {
+        "type": "server_tool_use",
+        "id": "srvtoolu_01MCP",
+        "name": "mcp_call",
+        "input": { "server_label": "docs" },
+      },
+    ]),
+    "stop_reason": "end_turn",
+  }
+  match parse_response(response) {
+    @types.ModelResponse::RichText(rich) => {
+      assert_eq(rich.tool_traces.length(), 1)
+      assert_eq(
+        rich.tool_traces[0].kind,
+        @types.ToolCallKind::Builtin(builtin_type="mcp_call"),
+      )
+      assert_eq(rich.tool_traces[0].arguments, { "server_label": "docs" })
+    }
+    _ => fail("Expected builtin trace preservation")
+  }
 }

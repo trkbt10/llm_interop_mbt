@@ -2,9 +2,8 @@
 /// Whitebox coverage for Responses input parsing helpers
 
 ///|
-test "responses_input_to_messages covers pending flushes, builtin fallbacks, and unknown items" {
+test "responses_input_to_messages covers pending flushes and builtin wrappers" {
   let messages = responses_input_to_messages([
-    { "type": "function_call", "name": "missing_id", "arguments": "{}" },
     {
       "type": "function_call",
       "id": "fc_by_id",
@@ -20,9 +19,9 @@ test "responses_input_to_messages covers pending flushes, builtin fallbacks, and
     },
     {
       "type": "function_call",
-      "call_id": "fc_bad_args",
+      "call_id": "fc_calc",
       "name": "calc",
-      "arguments": "{",
+      "arguments": "{\"x\":1}",
     },
     { "role": "assistant", "content": Json::array([Json::string("preface")]) },
     { "type": "web_search_call", "id": "ws_no_action" },
@@ -32,18 +31,15 @@ test "responses_input_to_messages covers pending flushes, builtin fallbacks, and
       "output": { "ok": true },
     },
     { "type": "computer_call", "id": "computer_call_1", "status": "completed" },
-    { "value": 1 },
   ])
 
   assert_eq(messages.length(), 7)
 
   match messages[0] {
     @types.ModelMessage::Assistant(tool_calls=Some(calls), ..) => {
-      assert_eq(calls.length(), 2)
-      assert_eq(calls[0].id, "")
-      assert_eq(calls[0].name, "missing_id")
-      assert_eq(calls[1].id, "fc_by_id")
-      assert_eq(calls[1].name, "lookup")
+      assert_eq(calls.length(), 1)
+      assert_eq(calls[0].id, "fc_by_id")
+      assert_eq(calls[0].name, "lookup")
     }
     _ => fail("Expected flushed function call assistant")
   }
@@ -57,8 +53,8 @@ test "responses_input_to_messages covers pending flushes, builtin fallbacks, and
   match messages[2] {
     @types.ModelMessage::Assistant(tool_calls=Some(calls), ..) => {
       assert_eq(calls.length(), 1)
-      assert_eq(calls[0].id, "fc_bad_args")
-      assert_eq(calls[0].arguments, {})
+      assert_eq(calls[0].id, "fc_calc")
+      assert_eq(calls[0].arguments, { "x": 1 })
     }
     _ => fail("Expected second flushed tool call assistant")
   }
@@ -98,14 +94,13 @@ test "responses_input_to_messages covers pending flushes, builtin fallbacks, and
 }
 
 ///|
-test "input helper functions cover builtin ids, text extraction, multimodal branches, and data-url fallbacks" {
+test "input helper functions cover builtin ids, text extraction, multimodal branches, and data-url parsing" {
   assert_eq(extract_responses_tool_item_id({ "call_id": "call_1" }), "call_1")
   assert_eq(
     extract_responses_tool_item_id({ "approval_request_id": "approval_1" }),
     "approval_1",
   )
   assert_eq(extract_responses_tool_item_id({ "id": "id_1" }), "id_1")
-  assert_eq(extract_responses_tool_item_id({}), "")
 
   assert_eq(
     extract_text_content(
@@ -113,7 +108,6 @@ test "input helper functions cover builtin ids, text extraction, multimodal bran
     ),
     "AB",
   )
-  assert_eq(extract_text_content(Json::boolean(true)), "")
 
   match
     extract_content_parts(
@@ -303,4 +297,45 @@ test "json_array_to_strings ignores non-string values" {
     ]),
     ["a", "b"],
   )
+}
+
+///|
+test "panic responses_input_to_messages rejects missing tool ids" {
+  responses_input_to_messages([
+    { "type": "function_call", "name": "missing_id", "arguments": "{}" },
+  ])
+  |> ignore
+}
+
+///|
+test "panic responses_input_to_messages rejects malformed tool arguments" {
+  responses_input_to_messages([
+    {
+      "type": "function_call",
+      "call_id": "fc_bad_args",
+      "name": "calc",
+      "arguments": "{",
+    },
+  ])
+  |> ignore
+}
+
+///|
+test "panic responses_input_to_messages rejects unknown item types" {
+  responses_input_to_messages([{ "type": "future_widget" }]) |> ignore
+}
+
+///|
+test "panic responses_input_to_messages rejects malformed item shapes" {
+  responses_input_to_messages([{ "value": 1 }]) |> ignore
+}
+
+///|
+test "panic extract_responses_tool_item_id requires an id" {
+  extract_responses_tool_item_id({}) |> ignore
+}
+
+///|
+test "panic extract_text_content rejects unsupported scalar content" {
+  extract_text_content(Json::boolean(true)) |> ignore
 }

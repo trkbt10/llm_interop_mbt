@@ -33,7 +33,10 @@ pub fn anthropic_resolve_completion(
 ) -> (String, String, String)? {
   if (path == "/v1/messages" || path.has_prefix("/v1/messages?")) &&
     meth == "POST" {
-    return Some(("anthropic", "", body))
+    match @utils.extract_json_field(body, "model") {
+      Some(model) => return Some(("anthropic", model, body))
+      None => return None
+    }
   }
   None
 }

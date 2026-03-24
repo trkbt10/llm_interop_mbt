@@ -44,3 +44,53 @@ pub fn inject_json_field(
     _ => body
   }
 }
+
+///|
+/// Parse a Responses API function tool definition.
+/// Missing description/parameters are normalized to empty values.
+pub fn parse_responses_function_tool(tool : Json) -> (String, String, Json)? {
+  match tool {
+    { "type": String("function"), "name": String(name), .. } => {
+      let description = match tool {
+        { "description": String(d), .. } => d
+        _ => ""
+      }
+      let parameters = match tool {
+        { "parameters": params, .. } => params
+        _ => Json::object({})
+      }
+      Some((name, description, parameters))
+    }
+    _ => None
+  }
+}
+
+///|
+/// Extract the optional display name from a Responses tool object.
+pub fn extract_responses_tool_name(tool : Json) -> String {
+  match tool {
+    { "name": String(name), .. } => name
+    _ => ""
+  }
+}
+
+///|
+/// Extract builtin tool config from a Responses tool object by removing the
+/// common tool envelope fields.
+pub fn extract_responses_tool_config(tool : Json) -> Json {
+  match tool {
+    Object(fields) => {
+      let config : Map[String, Json] = {}
+      for key, value in fields {
+        if key != "type" &&
+          key != "name" &&
+          key != "description" &&
+          key != "parameters" {
+          config[key] = value
+        }
+      }
+      Json::object(config)
+    }
+    _ => Json::object({})
+  }
+}

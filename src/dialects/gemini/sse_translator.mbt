@@ -16,6 +16,7 @@ pub struct GeminiToResponsesTranslator {
   mut current_message_output_index : Int
   mut current_message_item_id : String
   mut current_message_text : String
+  mut current_message_annotations : Array[@types.ResponseAnnotation]
   tool_calls : Array[GeminiToolCallState]
   completed_output : Array[Json]
 }
@@ -44,6 +45,7 @@ pub fn GeminiToResponsesTranslator::new(
     current_message_output_index: -1,
     current_message_item_id: "",
     current_message_text: "",
+    current_message_annotations: [],
     tool_calls: [],
     completed_output: [],
   }
@@ -76,6 +78,7 @@ pub fn GeminiToResponsesTranslator::translate(
           ),
         )
       }
+      self.refresh_current_message_annotations(event.data)
       // Tool calls
       for call in calls {
         self.close_current_message(events)
@@ -123,6 +126,7 @@ pub fn GeminiToResponsesTranslator::translate(
     }
     None => ()
   }
+  self.refresh_current_message_annotations(event.data)
   // Check for finish
   // Ref: docs/upstream/gemini-generate-content.md:2948-2950
   //   STOP — Natural stop point of the model or provided stop sequence.
@@ -213,6 +217,7 @@ fn GeminiToResponsesTranslator::ensure_message_started(
     self.current_message_output_index = output_index
     self.current_message_item_id = item_id
     self.current_message_text = ""
+    self.current_message_annotations = []
     self.has_open_message = true
     events.push(
       (
@@ -254,6 +259,20 @@ fn GeminiToResponsesTranslator::close_current_message(
     return
   }
   let text = normalize_structured_output_text(self.current_message_text)
+  let annotation_json : Array[Json] = []
+  for annotation in self.current_message_annotations {
+    events.push(
+      (
+        "response.output_text.annotation.added",
+        {
+          "type": "response.output_text.annotation.added",
+          "annotation": annotation.to_interop_json(),
+          "output_index": self.current_message_output_index,
+        },
+      ),
+    )
+    annotation_json.push(annotation.to_interop_json())
+  }
   events.push(
     (
       "response.output_text.done",
@@ -271,7 +290,13 @@ fn GeminiToResponsesTranslator::close_current_message(
     "type": "message",
     "status": "completed",
     "role": "assistant",
-    "content": [{ "type": "output_text", "text": text, "annotations": [] }],
+    "content": [
+      {
+        "type": "output_text",
+        "text": text,
+        "annotations": Json::array(annotation_json),
+      },
+    ],
   }
   events.push(
     (
@@ -285,6 +310,29 @@ fn GeminiToResponsesTranslator::close_current_message(
   )
   self.completed_output.push(message_item)
   self.has_open_message = false
+  self.current_message_annotations = []
+}
+
+///|
+fn GeminiToResponsesTranslator::refresh_current_message_annotations(
+  self : GeminiToResponsesTranslator,
+  chunk_json : Json,
+) -> Unit {
+  if not(self.has_open_message) || self.current_message_text.length() == 0 {
+    return
+  }
+  match chunk_json {
+    { "candidates": Array(candidates), .. } if candidates.length() > 0 => {
+      let annotations = collect_gemini_grounding_annotations(
+        candidates[0],
+        self.current_message_text,
+      )
+      if annotations.length() > 0 {
+        self.current_message_annotations = annotations
+      }
+    }
+    _ => ()
+  }
 }
 
 ///|

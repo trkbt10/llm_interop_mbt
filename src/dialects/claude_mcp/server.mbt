@@ -90,14 +90,14 @@ pub fn build_ping_result(id : Int) -> String {
 
 ///|
 /// Parsed tools/call parameters
-pub(all) struct ToolsCallParams {
+priv struct ToolsCallParams {
   name : String
   arguments : Json
-} derive(Show, Eq)
+}
 
 ///|
 /// Parse tools/call params from JSON-RPC params field.
-pub fn parse_tools_call_params(params : Json?) -> ToolsCallParams? {
+fn parse_tools_call_params(params : Json?) -> ToolsCallParams? {
   let p = match params {
     Some(p) => p
     None => return None
@@ -116,15 +116,15 @@ pub fn parse_tools_call_params(params : Json?) -> ToolsCallParams? {
 
 ///|
 /// Extracted prompt arguments from tools/call arguments
-pub(all) struct PromptArgs {
+priv struct PromptArgs {
   prompt : String
   system : String
   max_tokens : Int
-} derive(Show, Eq)
+}
 
 ///|
 /// Extract prompt-related arguments from tools/call arguments object.
-pub fn extract_prompt_args(arguments : Json) -> PromptArgs {
+fn extract_prompt_args(arguments : Json) -> PromptArgs {
   let prompt = match arguments {
     { "prompt": String(p), .. } => p
     _ => ""
@@ -138,6 +138,37 @@ pub fn extract_prompt_args(arguments : Json) -> PromptArgs {
     _ => 4096
   }
   { prompt, system, max_tokens }
+}
+
+///|
+/// Canonical server-side bridge:
+/// MCP `tools/call` params -> OpenAI Chat request body for gateway dispatch.
+pub(all) struct ClaudeMcpToolCallChatRequest {
+  model : String
+  body : String
+} derive(Show, Eq)
+
+///|
+/// Convert MCP `tools/call` params into the OpenAI Chat request that the
+/// gateway expects. Callers should use this instead of stitching together
+/// param parsing and request construction manually.
+pub fn tools_call_params_to_chat_request(
+  params : Json?,
+) -> ClaudeMcpToolCallChatRequest? {
+  let call_params = match parse_tools_call_params(params) {
+    Some(call_params) => call_params
+    None => return None
+  }
+  let args = extract_prompt_args(call_params.arguments)
+  Some({
+    model: call_params.name,
+    body: build_chat_request(
+      call_params.name,
+      args.prompt,
+      args.system,
+      args.max_tokens,
+    ),
+  })
 }
 
 // =============================================================================
@@ -191,7 +222,7 @@ pub fn model_to_mcp_tool(
 /// Build an OpenAI Chat Completions request body from prompt arguments.
 /// The gateway transform pipeline will convert this to the target dialect
 /// (Anthropic, Gemini, etc.) as needed via `prepare_upstream`.
-pub fn build_chat_request(
+fn build_chat_request(
   model : String,
   prompt : String,
   system : String,
@@ -224,7 +255,7 @@ pub fn build_chat_request(
 /// Extract assistant content from a gateway-normalized (OpenAI format) response.
 /// The gateway's `transform_response` normalizes all provider responses to
 /// OpenAI format, so this always extracts from choices[0].message.content.
-pub fn extract_assistant_content(response_body : String) -> String {
+fn extract_assistant_content(response_body : String) -> String {
   let json = @json.parse(response_body) catch { _ => return response_body }
   match json {
     {
@@ -232,5 +263,27 @@ pub fn extract_assistant_content(response_body : String) -> String {
       ..
     } => content
     _ => response_body
+  }
+}
+
+///|
+/// Canonical server-side bridge:
+/// gateway-normalized OpenAI Chat response -> MCP `tools/call` result.
+pub fn chat_response_to_tools_call_result(
+  id : Int,
+  response_body : String,
+) -> String {
+  let json = @json.parse(response_body) catch {
+    _ => return build_tools_call_result(id, response_body, false)
+  }
+  match json {
+    { "error": { "message": String(message), .. }, .. } =>
+      build_tools_call_result(id, message, true)
+    _ =>
+      build_tools_call_result(
+        id,
+        extract_assistant_content(response_body),
+        false,
+      )
   }
 }

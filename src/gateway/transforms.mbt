@@ -98,6 +98,12 @@ fn normalize_gemini_params(
 ///|
 /// Transform response body between gateway surface dialects
 /// Handles both success and error responses
+///
+/// Note: the success-response path below pivots through chat-shaped dialect
+/// transforms. That preserves text/tool-call semantics and can preserve the
+/// official OpenAI Chat `url_citation` subset, but provider-specific rich
+/// annotation families remain lossy here. Full annotation-preserving interop
+/// must use the Responses pipeline in `responses_pipeline.mbt`.
 pub fn transform_response(
   body : String,
   from : GatewaySurface,
@@ -106,12 +112,17 @@ pub fn transform_response(
   let json = @json.parse(body) catch { _ => return body }
   // Check for errors first
   match json {
-    { "type": String("error"), "error": error_obj, .. } =>
+    { "type": String("error"), .. } => {
+      let error_obj = match json {
+        { "error": err, .. } => err
+        _ => Json::object({})
+      }
       return match to {
         OpenAI | Codex => @anthropic.error_to_openai(error_obj)
         Gemini => @anthropic.error_to_gemini(error_obj)
         Anthropic => body
       }
+    }
     _ => ()
   }
   if @anthropic.is_openai_error(json) {

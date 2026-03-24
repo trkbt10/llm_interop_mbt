@@ -137,19 +137,3 @@ fn normalize_structured_output_fragments(
     None => join_fragments(fragments, separator)
   }
 }
-
-///|
-fn normalize_output_text_json_items(items : Array[Json]) -> Array[Json] {
-  let texts : Array[String] = []
-  for item in items {
-    match item {
-      { "type": String("output_text"), "text": String(text), .. } =>
-        texts.push(text)
-      _ => return items
-    }
-  }
-  match try_normalize_structured_output_fragments(texts, "\n") {
-    Some(normalized) => [{ "type": "output_text", "text": normalized }]
-    None => items
-  }
-}

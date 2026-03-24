@@ -195,10 +195,21 @@ test "translator handles non-web server tools and ignored events" {
 }
 
 ///|
-test "translator covers malformed deltas and web search fallback parsing" {
+test "translator emits citation annotations and treats signature_delta as no-op" {
+  let text_translator = AnthropicToResponsesTranslator::new(
+    response_id="resp_text_citation",
+  )
   let code_translator = AnthropicToResponsesTranslator::new(
     response_id="resp_code",
   )
+  let text_start : @sse.SseEvent = {
+    event: "content_block_start",
+    data: { "content_block": { "type": "text", "text": "" } },
+  }
+  let text_delta : @sse.SseEvent = {
+    event: "content_block_delta",
+    data: { "delta": { "type": "text_delta", "text": "Hello" } },
+  }
   let stderr_only : @sse.SseEvent = {
     event: "content_block_delta",
     data: {
@@ -212,13 +223,59 @@ test "translator covers malformed deltas and web search fallback parsing" {
     event: "content_block_delta",
     data: { "delta": { "type": "code_execution_result_delta", "content": {} } },
   }
-  let unknown_delta : @sse.SseEvent = {
+  let signature_delta : @sse.SseEvent = {
     event: "content_block_delta",
-    data: { "delta": { "type": "unknown_delta" } },
+    data: { "delta": { "type": "signature_delta", "signature": "sig_123" } },
+  }
+  let citations_delta : @sse.SseEvent = {
+    event: "content_block_delta",
+    data: {
+      "delta": {
+        "type": "citations_delta",
+        "citation": {
+          "type": "web_search_result_location",
+          "url": "https://example.com",
+          "title": "Example",
+          "encrypted_index": "enc_1",
+          "cited_text": "Example",
+        },
+      },
+    },
   }
   let invalid_message_delta : @sse.SseEvent = {
     event: "message_delta",
-    data: { "delta": { "other": true } },
+    data: { "delta": { "usage": { "input_tokens": 1, "output_tokens": 2 } } },
+  }
+  let text_stop : @sse.SseEvent = {
+    event: "content_block_stop",
+    data: { "type": "content_block_stop", "index": 0 },
+  }
+
+  assert_eq(text_translator.translate(text_start).length(), 1)
+  let text_events = text_translator.translate(text_delta)
+  assert_eq(text_events.length(), 1)
+  assert_eq(text_events[0].0, "response.output_text.delta")
+  assert_eq(text_translator.translate(signature_delta).length(), 0)
+  assert_eq(text_translator.translate(citations_delta).length(), 0)
+  let annotation_events = text_translator.translate(text_stop)
+  assert_eq(annotation_events.length(), 1)
+  assert_eq(annotation_events[0].0, "response.output_text.annotation.added")
+  match annotation_events[0].1 {
+    {
+      "annotation": {
+        "type": String("web_search_result_location"),
+        "title": String(title),
+        "start_index": Number(start_index, ..),
+        "end_index": Number(end_index, ..),
+        ..
+      },
+      ..
+    } => {
+      assert_eq(title, "Example")
+      assert_eq(start_index.to_int(), 0)
+      assert_eq(end_index.to_int(), 5)
+    }
+    _ => fail("Expected citation annotation event")
   }
 
   let stderr_events = code_translator.translate(stderr_only)
@@ -233,9 +290,60 @@ test "translator covers malformed deltas and web search fallback parsing" {
       assert_eq(text, "Code execution completed (no output)")
     _ => fail("Expected empty code execution fallback")
   }
-  assert_eq(code_translator.translate(unknown_delta).length(), 0)
   assert_eq(code_translator.translate(invalid_message_delta).length(), 0)
+}
 
+///|
+test "panic translator rejects unsupported delta and malformed message_delta" {
+  let unknown_delta_translator = AnthropicToResponsesTranslator::new(
+    response_id="resp_unknown_delta",
+  )
+  ignore(
+    unknown_delta_translator.translate({
+      event: "content_block_delta",
+      data: { "delta": { "type": "unknown_delta" } },
+    }),
+  )
+}
+
+///|
+test "panic translator rejects malformed message_delta without delta object" {
+  let bad_message_translator = AnthropicToResponsesTranslator::new(
+    response_id="resp_bad_message_delta",
+  )
+  ignore(
+    bad_message_translator.translate({
+      event: "message_delta",
+      data: { "usage": { "input_tokens": 1 } },
+    }),
+  )
+}
+
+///|
+test "panic translator rejects unsupported content block start and event types" {
+  let unknown_start_translator = AnthropicToResponsesTranslator::new(
+    response_id="resp_unknown_start",
+  )
+  ignore(
+    unknown_start_translator.translate({
+      event: "content_block_start",
+      data: { "content_block": { "type": "unknown_block" } },
+    }),
+  )
+}
+
+///|
+test "panic translator rejects unsupported top-level event types" {
+  let unknown_event_translator = AnthropicToResponsesTranslator::new(
+    response_id="resp_unknown_event",
+  )
+  ignore(
+    unknown_event_translator.translate({ event: "mystery_event", data: {} }),
+  )
+}
+
+///|
+test "panic translator rejects malformed web search input JSON" {
   let web_translator = AnthropicToResponsesTranslator::new(
     response_id="resp_web_bad",
   )
@@ -258,11 +366,7 @@ test "translator covers malformed deltas and web search fallback parsing" {
   let web_stop : @sse.SseEvent = { event: "content_block_stop", data: {} }
   let _ = web_translator.translate(web_start)
   let _ = web_translator.translate(web_delta)
-  let web_stop_events = web_translator.translate(web_stop)
-  match web_stop_events[1].1 {
-    { "item": { "action": { "type": String("search"), .. }, .. }, .. } => ()
-    _ => fail("Expected web_search fallback action")
-  }
+  web_translator.translate(web_stop) |> ignore
 }
 
 ///|

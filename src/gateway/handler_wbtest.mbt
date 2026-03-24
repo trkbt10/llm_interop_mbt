@@ -474,6 +474,55 @@ test "prepare_upstream: OpenAI stream tool request survives Gemini transform" {
   }
 }
 
+///|
+test "prepare_upstream: OpenAI chat request survives Codex transform as prompt protocol" {
+  let provider : ProviderConfig = {
+    id: "codex",
+    base_url: "http://localhost/rpc",
+    api_key: "",
+    auth: ApiKey,
+    api: CodexAppServer,
+    headers: {},
+    auth_header: true,
+    models: [],
+    model_patterns: [],
+    models_from_endpoint: true,
+    codex: Some(@codex.CodexConfig::default()),
+    claude_mcp: None,
+    model_aliases: {},
+  }
+  let body =
+    #|{"model":"gpt-5-codex","messages":[{"role":"system","content":"Be terse"},{"role":"user","content":"Explain MoonBit"}],"reasoning_effort":"medium"}
+  let req = prepare_upstream(
+    provider,
+    body,
+    OpenAI,
+    "gpt-5-codex",
+    "http://localhost/rpc",
+    "",
+  )
+  assert_eq(req.origin, "http://localhost")
+  assert_eq(req.path, "/rpc")
+  let parsed = @json.parse(req.body) catch {
+    _ => fail("failed to parse transformed body")
+  }
+  match parsed {
+    {
+      "prompt": String(prompt),
+      "model": String(model),
+      "effort": String(effort),
+      "messages": Array(messages),
+      ..
+    } => {
+      assert_true(prompt.contains("Explain MoonBit"))
+      assert_eq(model, "gpt-5-codex")
+      assert_eq(effort, "medium")
+      assert_eq(messages.length(), 2)
+    }
+    _ => fail("expected Codex prompt protocol body")
+  }
+}
+
 // =============================================================================
 // prepare_models_request tests
 // =============================================================================

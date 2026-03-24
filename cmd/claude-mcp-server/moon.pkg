@@ -1,8 +1,8 @@
 import {
-  "trkbt10/llm_interop/src/gateway" @gw,
-  "trkbt10/llm_interop/src/dialects/claude_mcp" @claude_mcp,
-  "trkbt10/llm_interop/src/jsonrpc" @jsonrpc,
-  "trkbt10/llm_interop/src/mcp" @mcp,
+  "trkbt10/llm_interop/gateway" @gw,
+  "trkbt10/llm_interop/dialects/claude_mcp" @claude_mcp,
+  "trkbt10/llm_interop/jsonrpc" @jsonrpc,
+  "trkbt10/llm_interop/mcp" @mcp,
   "moonbitlang/core/json",
   "moonbitlang/x/sys",
   "moonbitlang/async",

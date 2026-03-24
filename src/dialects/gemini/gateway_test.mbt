@@ -65,6 +65,21 @@ test "resolve_completion rejects non-gemini path" {
 }
 
 ///|
+test "resolve_completion rejects empty model paths" {
+  inspect(
+    resolve_completion("POST", "/v1/models/:generateContent", "{}") is None,
+    content="true",
+  )
+  inspect(
+    resolve_completion(
+      "POST", "/v1/models/:streamGenerateContent?alt=sse&key=abc", "{}",
+    )
+    is None,
+    content="true",
+  )
+}
+
+///|
 test "extract_model_from_path extracts model" {
   inspect(
     extract_model_from_path("/v1/models/gemini-1.5-flash:generateContent"),

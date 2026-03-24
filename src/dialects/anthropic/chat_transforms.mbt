@@ -140,7 +140,9 @@ pub fn chat_request_to_anthropic(
                   },
                   ..
                 } => {
-                  let input : Json = @json.parse(args_str) catch { _ => {} }
+                  let input = parse_tool_input_or_abort(
+                    args_str, "Anthropic request transform",
+                  )
                   let anthropic_id = @interop_util.openai_chat_to_anthropic_tool_use_id(
                     tc_id,
                   )
@@ -270,24 +272,38 @@ fn transform_openai_content_to_anthropic(content : Json) -> Json {
 ///|
 /// Transform Anthropic Messages response to OpenAI Chat Completions format.
 /// Handles both text and tool_use content blocks.
+/// This surface can preserve only the OpenAI Chat `url_citation` subset.
+/// Anthropic citation types without a URL/title equivalent remain lossy here.
 pub fn response_to_chat(body : String) -> String {
   let json = @json.parse(body) catch { _ => return body }
-  let id = match json {
-    { "id": String(id), .. } => id
-    _ => ""
-  }
-  let model = match json {
-    { "model": String(m), .. } => m
-    _ => ""
-  }
+  let id = extract_required_string_field_or_abort(
+    json, "id", "Anthropic response transform",
+  )
+  let model = extract_required_string_field_or_abort(
+    json, "model", "Anthropic response transform",
+  )
   // Extract text and tool_use blocks
   let texts : Array[String] = []
   let tool_calls : Array[Json] = []
+  let annotations : Array[@types.ResponseAnnotation] = []
+  let mut text_offset = 0
   match json {
     { "content": Array(blocks), .. } =>
       for block in blocks {
         match block {
-          { "type": String("text"), "text": String(t), .. } => texts.push(t)
+          { "type": String("text"), "text": String(t), .. } => {
+            if texts.length() > 0 {
+              text_offset = text_offset + 2
+            }
+            append_anthropic_text_block_annotations(
+              annotations,
+              block,
+              text_offset,
+              text_offset + t.length(),
+            )
+            texts.push(t)
+            text_offset = text_offset + t.length()
+          }
           {
             "type": String("tool_use"),
             "id": String(tool_id),
@@ -302,6 +318,11 @@ pub fn response_to_chat(body : String) -> String {
               @openai.build_tool_call_json(openai_id, name, input),
             )
           }
+          { "type": String("tool_use"), .. } =>
+            abort(
+              "Anthropic response transform requires complete tool_use blocks: " +
+              block.stringify(),
+            )
           _ => ()
         }
       }
@@ -310,7 +331,12 @@ pub fn response_to_chat(body : String) -> String {
   let content = texts
     .iter()
     .fold(init="", fn(acc, t) { if acc == "" { t } else { acc + "\n\n" + t } })
-  let choice = @openai.build_chat_choice(0, content, tool_calls)
+  let choice = @openai.build_chat_choice(
+    0,
+    content,
+    tool_calls,
+    annotations=@openai.chat_annotations_from_response_annotations(annotations),
+  )
   @openai.build_chat_response(id, model, [choice])
 }
 
@@ -319,14 +345,12 @@ pub fn response_to_chat(body : String) -> String {
 /// Handles both text and tool_calls.
 pub fn chat_response_to_anthropic(body : String) -> String {
   let json = @json.parse(body) catch { _ => return body }
-  let id = match json {
-    { "id": String(id), .. } => id
-    _ => "msg-gateway"
-  }
-  let model = match json {
-    { "model": String(m), .. } => m
-    _ => ""
-  }
+  let id = extract_required_string_field_or_abort(
+    json, "id", "Anthropic chat response transform",
+  )
+  let model = extract_required_string_field_or_abort(
+    json, "model", "Anthropic chat response transform",
+  )
   // Extract content and tool_calls from first choice
   let content_blocks : Array[Json] = []
   let mut stop_reason = "end_turn"
@@ -359,7 +383,9 @@ pub fn chat_response_to_anthropic(body : String) -> String {
                     },
                     ..
                   } => {
-                    let input : Json = @json.parse(args_str) catch { _ => {} }
+                    let input = parse_tool_input_or_abort(
+                      args_str, "Anthropic response transform",
+                    )
                     let anthropic_id = @interop_util.openai_chat_to_anthropic_tool_use_id(
                       tc_id,
                     )
@@ -371,7 +397,11 @@ pub fn chat_response_to_anthropic(body : String) -> String {
                     content_blocks.push(Json::object(tool_block))
                     stop_reason = "tool_use"
                   }
-                  _ => ()
+                  _ =>
+                    abort(
+                      "Anthropic chat response transform requires complete tool_calls: " +
+                      tc.stringify(),
+                    )
                 }
               }
             _ => ()
@@ -383,7 +413,11 @@ pub fn chat_response_to_anthropic(body : String) -> String {
             _ => ()
           }
         }
-        _ => ()
+        None =>
+          abort(
+            "Anthropic chat response transform requires at least one choice: " +
+            json.stringify(),
+          )
       }
     _ => ()
   }
@@ -409,12 +443,47 @@ pub fn chat_response_to_anthropic(body : String) -> String {
 }
 
 ///|
+fn parse_tool_input_or_abort(args_str : String, context : String) -> Json {
+  @json.parse(args_str) catch {
+    _ => abort(context + " requires valid JSON tool arguments: " + args_str)
+  }
+}
+
+///|
+fn extract_required_string_field_or_abort(
+  json : Json,
+  field : String,
+  context : String,
+) -> String {
+  match json {
+    Object(obj) =>
+      match obj.get(field) {
+        Some(String(value)) => value
+        _ =>
+          abort(
+            context +
+            " is missing required `" +
+            field +
+            "` string field: " +
+            json.stringify(),
+          )
+      }
+    _ => abort(context + " requires a JSON object payload: " + json.stringify())
+  }
+}
+
+///|
+fn normalized_error_message(error_obj : Json) -> String {
+  match error_obj {
+    { "message": String(msg), .. } => msg
+    _ => error_obj.stringify()
+  }
+}
+
+///|
 /// Transform Anthropic error to OpenAI error format
 pub fn error_to_openai(error_obj : Json) -> String {
-  let message = match error_obj {
-    { "message": String(msg), .. } => msg
-    _ => "Unknown error"
-  }
+  let message = normalized_error_message(error_obj)
   let error_type = match error_obj {
     { "type": String(t), .. } => t
     _ => "api_error"
@@ -430,10 +499,7 @@ pub fn error_to_openai(error_obj : Json) -> String {
 ///|
 /// Transform Anthropic error to Gemini error format
 pub fn error_to_gemini(error_obj : Json) -> String {
-  let message = match error_obj {
-    { "message": String(msg), .. } => msg
-    _ => "Unknown error"
-  }
+  let message = normalized_error_message(error_obj)
   let result : Map[String, Json] = {}
   let error : Map[String, Json] = {}
   error["code"] = Json::number(400.0)
@@ -447,12 +513,13 @@ pub fn error_to_gemini(error_obj : Json) -> String {
 /// Transform OpenAI error to Anthropic error format
 pub fn openai_error_to_anthropic(body : String) -> String {
   let json = @json.parse(body) catch { _ => return body }
-  let message = match json {
-    { "error": { "message": String(msg), .. }, .. } => msg
-    _ => "Unknown error"
+  let error_obj = match json {
+    { "error": error_obj, .. } => error_obj
+    _ => json
   }
-  let error_type = match json {
-    { "error": { "type": String(t), .. }, .. } => t
+  let message = normalized_error_message(error_obj)
+  let error_type = match error_obj {
+    { "type": String(t), .. } => t
     _ => "api_error"
   }
   let result : Map[String, Json] = {}

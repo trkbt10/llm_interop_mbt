@@ -543,6 +543,8 @@ pub fn GenerationParams::from_gemini(json : Json) -> GenerationParams {
                 }
                 Json::object(raw)
               }
+              // parse_gemini_response_format only looks at generationConfig, so
+              // a non-object config contributes no raw response-format carrier.
               _ => Json::object({})
             },
           ),

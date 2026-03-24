@@ -66,6 +66,100 @@ test "AnthropicMessagesAccumulator preserves mixed text and tool call stream" {
 }
 
 ///|
+test "AnthropicMessagesAccumulator preserves rich non-tool stream content" {
+  let jsonl =
+    #| {"event":"message_start","data":{"type":"message_start","message":{"id":"msg_rich"}}}
+    #| {"event":"content_block_start","data":{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}}
+    #| {"event":"content_block_delta","data":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello Claude"}}}
+    #| {"event":"content_block_stop","data":{"type":"content_block_stop","index":0}}
+    #| {"event":"content_block_start","data":{"type":"content_block_start","index":1,"content_block":{"type":"thinking","thinking":""}}}
+    #| {"event":"content_block_delta","data":{"type":"content_block_delta","index":1,"delta":{"type":"thinking_delta","thinking":"Plan first"}}}
+    #| {"event":"content_block_stop","data":{"type":"content_block_stop","index":1}}
+    #| {"event":"content_block_start","data":{"type":"content_block_start","index":2,"content_block":{"type":"redacted_thinking","data":""}}}
+    #| {"event":"content_block_delta","data":{"type":"content_block_delta","index":2,"delta":{"type":"redacted_thinking_delta","data":"enc_blob"}}}
+    #| {"event":"content_block_stop","data":{"type":"content_block_stop","index":2}}
+    #| {"event":"content_block_start","data":{"type":"content_block_start","index":3,"content_block":{"type":"code_execution_tool_result"}}}
+    #| {"event":"content_block_delta","data":{"type":"content_block_delta","index":3,"delta":{"type":"code_execution_result_delta","content":{"stdout":"42"}}}}
+    #| {"event":"content_block_stop","data":{"type":"content_block_stop","index":3}}
+    #| {"event":"content_block_start","data":{"type":"content_block_start","index":4,"content_block":{"type":"server_tool_use","id":"srvtoolu_123","name":"web_search"}}}
+    #| {"event":"content_block_delta","data":{"type":"content_block_delta","index":4,"delta":{"type":"input_json_delta","partial_json":"{\"query\":\"moonbit\"}"}}}
+    #| {"event":"content_block_stop","data":{"type":"content_block_stop","index":4}}
+    #| {"event":"message_delta","data":{"type":"message_delta","delta":{"stop_reason":"end_turn"}}}
+    #| {"event":"message_stop","data":{"type":"message_stop"}}
+  let result = accumulate_messages(jsonl)
+  match result {
+    @types.ModelResponse::RichText(rich) => {
+      assert_eq(rich.content, "Hello Claude")
+      match rich.content_parts {
+        Some(parts) => {
+          assert_eq(parts.length(), 4)
+          assert_eq(
+            parts[0],
+            @types.ResponseContentPart::OutputText("Hello Claude"),
+          )
+          assert_eq(
+            parts[1],
+            @types.ResponseContentPart::Thinking(text="Plan first"),
+          )
+          assert_eq(
+            parts[2],
+            @types.ResponseContentPart::RedactedThinking(data="enc_blob"),
+          )
+          match parts[3] {
+            @types.ResponseContentPart::CodeResult(outcome~, output~) => {
+              assert_eq(outcome, "success")
+              assert_eq(output, "42")
+            }
+            _ => fail("Expected CodeResult part")
+          }
+        }
+        None => fail("Expected structured content parts")
+      }
+      assert_eq(rich.tool_traces.length(), 1)
+      match rich.tool_traces[0].kind {
+        @types.ToolCallKind::WebSearch => ()
+        _ => fail("Expected web search tool trace")
+      }
+      assert_eq(rich.tool_traces[0].arguments, { "query": "moonbit" })
+    }
+    _ => fail("Expected RichText response")
+  }
+}
+
+///|
+test "AnthropicMessagesAccumulator preserves mixed tool calls with rich content" {
+  let jsonl =
+    #| {"event":"message_start","data":{"type":"message_start","message":{"id":"msg_mixed"}}}
+    #| {"event":"content_block_start","data":{"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":""}}}
+    #| {"event":"content_block_delta","data":{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"Need tool"}}}
+    #| {"event":"content_block_stop","data":{"type":"content_block_stop","index":0}}
+    #| {"event":"content_block_start","data":{"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"toolu_123","name":"lookup","input":{}}}}
+    #| {"event":"content_block_delta","data":{"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{\"q\":\"moonbit\"}"}}}
+    #| {"event":"content_block_stop","data":{"type":"content_block_stop","index":1}}
+    #| {"event":"message_delta","data":{"type":"message_delta","delta":{"stop_reason":"tool_use"}}}
+    #| {"event":"message_stop","data":{"type":"message_stop"}}
+  let result = accumulate_messages(jsonl)
+  match result {
+    @types.ModelResponse::ToolCallsWithContent(tool_calls~, rich~) => {
+      assert_eq(tool_calls.length(), 1)
+      assert_eq(tool_calls[0].name, "lookup")
+      assert_eq(rich.content, "")
+      match rich.content_parts {
+        Some(parts) => {
+          assert_eq(parts.length(), 1)
+          assert_eq(
+            parts[0],
+            @types.ResponseContentPart::Thinking(text="Need tool"),
+          )
+        }
+        None => fail("Expected thinking part to be preserved")
+      }
+    }
+    _ => fail("Expected ToolCallsWithContent response")
+  }
+}
+
+///|
 test "non_streaming_to_synthetic_events preserves thinking block" {
   // Anthropic response with thinking + text
   let response : Json = {
@@ -183,6 +277,45 @@ test "non_streaming_to_synthetic_events preserves tool inputs and redacted think
   assert_true(saw_tool_use_input)
   assert_true(saw_server_tool_input)
   assert_true(saw_redacted_thinking)
+}
+
+///|
+test "non_streaming_to_synthetic_events preserves text citations" {
+  let response : Json = {
+    "content": Json::array([
+      {
+        "type": "text",
+        "text": "Berkshire Hathaway",
+        "citations": Json::array([
+          {
+            "type": "web_search_result_location",
+            "url": "https://example.com/berkshire",
+            "title": "Berkshire Hathaway",
+            "encrypted_index": "enc_berkshire",
+            "cited_text": "Berkshire Hathaway",
+          },
+        ]),
+      },
+    ]),
+    "stop_reason": "end_turn",
+    "model": "claude-sonnet-4-20250514",
+  }
+  let events = non_streaming_to_synthetic_events(response)
+  let mut saw_citations_delta = false
+  for event in events {
+    match event.data {
+      {
+        "delta": {
+          "type": String("citations_delta"),
+          "citation": { "type": String("web_search_result_location"), .. },
+          ..
+        },
+        ..
+      } => saw_citations_delta = true
+      _ => ()
+    }
+  }
+  assert_true(saw_citations_delta)
 }
 
 ///|
@@ -362,15 +495,81 @@ test "AnthropicToResponsesTranslator emits encrypted reasoning for redacted thin
 }
 
 ///|
-test "AnthropicMessagesAccumulator ignores malformed delta payloads" {
+test "AnthropicMessagesAccumulator preserves text citations and ignores signature deltas" {
+  let acc = AnthropicMessagesAccumulator::new()
+  acc.feed({
+    event: "content_block_start",
+    data: { "content_block": { "type": "text", "text": "" } },
+  })
+  acc.feed({
+    event: "content_block_delta",
+    data: { "delta": { "type": "text_delta", "text": "Hello" } },
+  })
+  acc.feed({
+    event: "content_block_delta",
+    data: { "delta": { "type": "signature_delta", "signature": "sig_123" } },
+  })
+  acc.feed({
+    event: "content_block_delta",
+    data: {
+      "delta": {
+        "type": "citations_delta",
+        "citation": {
+          "type": "web_search_result_location",
+          "url": "https://example.com",
+          "title": "Example",
+          "encrypted_index": "enc_1",
+          "cited_text": "Example",
+        },
+      },
+    },
+  })
+  acc.feed({ event: "content_block_stop", data: {} })
+  acc.feed({ event: "message_delta", data: { "delta": { "usage": {} } } })
+  match acc.finish() {
+    @types.ModelResponse::RichText(rich) => {
+      assert_eq(rich.content, "Hello")
+      assert_eq(rich.annotations.length(), 1)
+      match rich.annotations[0] {
+        @types.ResponseAnnotation::WebSearchResultCitation(
+          title~,
+          url~,
+          start_index~,
+          end_index~,
+          ..
+        ) => {
+          assert_eq(title, "Example")
+          assert_eq(url, "https://example.com")
+          assert_eq(start_index, 0)
+          assert_eq(end_index, 5)
+        }
+        _ => fail("Expected web search result citation annotation")
+      }
+    }
+    _ => fail("Expected rich text response")
+  }
+}
+
+///|
+test "panic AnthropicMessagesAccumulator rejects unsupported delta types" {
   let acc = AnthropicMessagesAccumulator::new()
   acc.feed({
     event: "content_block_delta",
     data: { "delta": { "type": "unknown_delta" } },
   })
-  acc.feed({ event: "message_delta", data: { "delta": { "unexpected": true } } })
-  match acc.finish() {
-    @types.ModelResponse::Text(text) => assert_eq(text, "")
-    _ => fail("Expected empty text response")
-  }
+}
+
+///|
+test "panic AnthropicMessagesAccumulator rejects unsupported start and event types" {
+  let acc = AnthropicMessagesAccumulator::new()
+  acc.feed({
+    event: "content_block_start",
+    data: { "content_block": { "type": "unknown_block" } },
+  })
+}
+
+///|
+test "panic AnthropicMessagesAccumulator rejects malformed message_delta payloads" {
+  let acc = AnthropicMessagesAccumulator::new()
+  acc.feed({ event: "message_delta", data: { "usage": { "output_tokens": 1 } } })
 }

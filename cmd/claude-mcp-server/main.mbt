@@ -115,9 +115,8 @@ async fn handle_tools_call(
   id : Int,
   params : Json?,
 ) -> String {
-  // 1. Parse tools/call params
-  let call_params = match @claude_mcp.parse_tools_call_params(params) {
-    Some(p) => p
+  let chat_request = match @claude_mcp.tools_call_params_to_chat_request(params) {
+    Some(request) => request
     None =>
       return @jsonrpc.build_error_response(
         Some(id),
@@ -125,8 +124,7 @@ async fn handle_tools_call(
         "Invalid tools/call params",
       )
   }
-  let tool_name = call_params.name
-  let args = @claude_mcp.extract_prompt_args(call_params.arguments)
+  let tool_name = chat_request.model
   // 2. Select backend
   let provider = match state.gateway.select_backend(tool_name) {
     Some(p) => p
@@ -137,25 +135,18 @@ async fn handle_tools_call(
         true,
       )
   }
-  // 3. Build chat request (OpenAI format — gateway transforms to target dialect)
-  let request_body = @claude_mcp.build_chat_request(
-    tool_name,
-    args.prompt,
-    args.system,
-    args.max_tokens,
-  )
-  // 4. Prepare upstream
+  // 3. Prepare upstream
   let base_url = expand_env(provider.base_url)
   let api_key = expand_env(provider.api_key)
   let upstream = @gw.prepare_upstream(
     provider,
-    request_body,
+    chat_request.body,
     @gw.GatewaySurface::OpenAI,
     tool_name,
     base_url,
     api_key,
   )
-  // 5. HTTP POST (non-streaming)
+  // 4. HTTP POST (non-streaming)
   let (status, response_body) = http_post(upstream)
   if status != 200 {
     return @claude_mcp.build_tools_call_result(
@@ -164,17 +155,15 @@ async fn handle_tools_call(
       true,
     )
   }
-  // 6. Transform response to OpenAI format if needed
+  // 5. Transform response to OpenAI format if needed
   let from_surface = provider.api.to_dialect()
   let normalized = @gw.transform_response(
     response_body,
     from_surface,
     @gw.GatewaySurface::OpenAI,
   )
-  // 7. Extract content
-  let content = @claude_mcp.extract_assistant_content(normalized)
-  // 8. Build MCP result
-  @claude_mcp.build_tools_call_result(id, content, false)
+  // 6. Build MCP result from the canonical normalized chat response
+  @claude_mcp.chat_response_to_tools_call_result(id, normalized)
 }
 
 // =============================================================================

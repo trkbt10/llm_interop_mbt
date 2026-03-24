@@ -11,8 +11,6 @@ import {
 // Values
 pub fn auth_headers(String) -> Map[String, String]
 
-pub fn build_chat_request(String, String, String, Int) -> String
-
 pub fn build_initialize_result(Int) -> String
 
 pub fn build_ping_result(Int) -> String
@@ -23,23 +21,21 @@ pub fn build_tools_call_result_from_items(Int, Array[@mcp.McpContentItem], Bool)
 
 pub fn build_tools_list_result(Int, Array[@mcp.McpToolDefinition]) -> String
 
-pub fn chat_request_to_prompt(String, @types.TransformContext) -> String
+pub fn chat_response_to_tools_call_result(Int, String) -> String
 
 pub fn default_base_url() -> String
 
-pub fn extract_assistant_content(String) -> String
-
-pub fn extract_prompt_args(Json) -> PromptArgs
-
 pub fn model_to_mcp_tool(String, String, String) -> @mcp.McpToolDefinition
 
-pub fn parse_tools_call_params(Json?) -> ToolsCallParams?
+pub fn prepare_chat_upstream(ClaudeMcpSession, String, @types.TransformContext) -> ClaudeMcpUpstreamRequest
 
 pub fn prepare_initialize(ClaudeMcpSession) -> ClaudeMcpUpstreamRequest
 
 pub fn prepare_tools_call(ClaudeMcpSession, String, Json) -> ClaudeMcpUpstreamRequest
 
 pub fn prepare_tools_list(ClaudeMcpSession) -> ClaudeMcpUpstreamRequest
+
+pub fn tools_call_params_to_chat_request(Json?) -> ClaudeMcpToolCallChatRequest?
 
 pub fn tools_result_to_chat(String) -> String
 
@@ -75,26 +71,18 @@ pub(all) struct ClaudeMcpSession {
 pub fn ClaudeMcpSession::new() -> Self
 pub impl Show for ClaudeMcpSession
 
+pub(all) struct ClaudeMcpToolCallChatRequest {
+  model : String
+  body : String
+}
+pub impl Eq for ClaudeMcpToolCallChatRequest
+pub impl Show for ClaudeMcpToolCallChatRequest
+
 pub(all) struct ClaudeMcpUpstreamRequest {
   steps : Array[@jsonrpc.RpcStep]
   next_session : ClaudeMcpSession
 }
 pub impl Show for ClaudeMcpUpstreamRequest
-
-pub(all) struct PromptArgs {
-  prompt : String
-  system : String
-  max_tokens : Int
-}
-pub impl Eq for PromptArgs
-pub impl Show for PromptArgs
-
-pub(all) struct ToolsCallParams {
-  name : String
-  arguments : Json
-}
-pub impl Eq for ToolsCallParams
-pub impl Show for ToolsCallParams
 
 // Type aliases
 

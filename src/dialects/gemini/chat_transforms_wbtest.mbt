@@ -1,5 +1,5 @@
 ///|
-/// Whitebox coverage for Gemini chat transform helpers and fallbacks
+/// Whitebox coverage for Gemini chat transform helpers and validation
 
 ///|
 test "request_to_chat covers invalid json and skips non-text parts" {
@@ -31,7 +31,7 @@ test "request_to_chat covers invalid json and skips non-text parts" {
 }
 
 ///|
-test "chat request helpers cover tool lookup, multimodal conversion, and malformed tools" {
+test "chat request helpers cover tool lookup and multimodal conversion" {
   assert_eq(
     find_tool_name_for_id(
       [
@@ -45,10 +45,6 @@ test "chat request helpers cover tool lookup, multimodal conversion, and malform
       { "role": "tool", "tool_call_id": "call_1", "content": "done" },
     ),
     "lookup",
-  )
-  assert_eq(
-    find_tool_name_for_id([], { "role": "tool", "tool_call_id": "missing" }),
-    "unknown",
   )
 
   assert_eq(transform_openai_content_to_gemini(Json::string("plain text")), [
@@ -77,7 +73,7 @@ test "chat request helpers cover tool lookup, multimodal conversion, and malform
   assert_eq(transform_openai_content_to_gemini(Json::null()), [])
 
   let gemini_request_body =
-    #|{"messages":[{"role":"system","content":"skip"},{"role":"assistant","content":"","tool_calls":[{"id":"call_1","type":"function","function":{"name":"lookup","arguments":"not-json"}}]},{"role":"tool","content":"done","tool_call_id":"call_1"},{"role":"tool","content":"mystery","tool_call_id":"missing"},{"role":"user","content":[{"type":"text","text":"See image"},{"type":"image_url","image_url":{"url":"data:image/png;base64,QUJD"}},{"type":"image_url","image_url":{"url":"https://example.com/not-supported.png"}}]}],"tools":[{"type":"function","function":{"name":"lookup","description":"Search docs","parameters":{"type":"object"}}},{"type":"web_search_preview"},{"bad":true}],"temperature":0.6}
+    #|{"messages":[{"role":"system","content":"skip"},{"role":"assistant","content":"","tool_calls":[{"id":"call_1","type":"function","function":{"name":"lookup","arguments":"{\"q\":\"moonbit\"}"}}]},{"role":"tool","content":"done","tool_call_id":"call_1"},{"role":"user","content":[{"type":"text","text":"See image"},{"type":"image_url","image_url":{"url":"data:image/png;base64,QUJD"}},{"type":"image_url","image_url":{"url":"https://example.com/not-supported.png"}}]}],"tools":[{"type":"function","function":{"name":"lookup","description":"Search docs","parameters":{"type":"object"}}},{"type":"web_search_preview"},{"bad":true}],"temperature":0.6}
   let gemini_request = chat_request_to_gemini(gemini_request_body, {
     max_tokens: 2048,
     max_tokens_field: "max_tokens",
@@ -92,7 +88,7 @@ test "chat request helpers cover tool lookup, multimodal conversion, and malform
       "generationConfig": { "temperature": Number(temp, ..), .. },
       ..
     } => {
-      assert_eq(contents.length(), 4)
+      assert_eq(contents.length(), 3)
       match contents[0] {
         {
           "role": String("model"),
@@ -105,7 +101,7 @@ test "chat request helpers cover tool lookup, multimodal conversion, and malform
           ..
         } => {
           assert_eq(name, "lookup")
-          assert_eq(args.length(), 0)
+          assert_eq(args, { "q": "moonbit" })
         }
         _ => fail("Expected assistant tool call content")
       }
@@ -118,14 +114,6 @@ test "chat request helpers cover tool lookup, multimodal conversion, and malform
         _ => fail("Expected resolved tool result")
       }
       match contents[2] {
-        {
-          "role": String("user"),
-          "parts": [{ "functionResponse": { "name": String(name), .. }, .. }],
-          ..
-        } => assert_eq(name, "unknown")
-        _ => fail("Expected unknown tool result fallback")
-      }
-      match contents[3] {
         { "role": String("user"), "parts": Array(parts), .. } =>
           assert_eq(parts.length(), 2)
         _ => fail("Expected multimodal user content")
@@ -138,7 +126,7 @@ test "chat request helpers cover tool lookup, multimodal conversion, and malform
 }
 
 ///|
-test "response helpers cover fallback candidates and invalid args" {
+test "response helpers cover empty candidates and valid args" {
   assert_eq(response_to_chat("not json"), "not json")
 
   let response_body =
@@ -164,7 +152,7 @@ test "response helpers cover fallback candidates and invalid args" {
   }
 
   let gemini_response_body =
-    #|{"choices":[{"message":{"content":"Checking...","tool_calls":[{"id":"call_1","type":"function","function":{"name":"lookup","arguments":"not-json"}}]}}]}
+    #|{"choices":[{"message":{"content":"Checking...","tool_calls":[{"id":"call_1","type":"function","function":{"name":"lookup","arguments":"{\"q\":\"moonbit\"}"}}]}}]}
   let gemini_response = chat_response_to_gemini(gemini_response_body)
   let gemini_json : Json = @json.parse(gemini_response) catch {
     _ => fail("Expected Gemini response json")
@@ -192,12 +180,12 @@ test "response helpers cover fallback candidates and invalid args" {
         },
       ],
       ..
-    } => assert_eq(args.length(), 0)
+    } => assert_eq(args, { "q": "moonbit" })
     _ => fail("Expected Gemini response with function call")
   }
 
   let empty_response_body =
-    #|{"choices":[]}
+    #|{"choices":[{"message":{"content":""}}]}
   let empty_response = chat_response_to_gemini(empty_response_body)
   let empty_json : Json = @json.parse(empty_response) catch {
     _ => fail("Expected empty Gemini response json")
@@ -211,6 +199,42 @@ test "response helpers cover fallback candidates and invalid args" {
     } => ()
     _ => fail("Expected empty text fallback candidate")
   }
+}
+
+///|
+test "panic chat request helpers reject unresolved tool results" {
+  let body =
+    #|{"messages":[{"role":"tool","content":"mystery","tool_call_id":"missing"}]}
+  ignore(
+    chat_request_to_gemini(body, {
+      max_tokens: 2048,
+      max_tokens_field: "max_tokens",
+    }),
+  )
+}
+
+///|
+test "panic chat request helpers reject malformed tool arguments" {
+  let body =
+    #|{"messages":[{"role":"assistant","tool_calls":[{"id":"call_1","type":"function","function":{"name":"lookup","arguments":"not-json"}}]}]}
+  ignore(
+    chat_request_to_gemini(body, {
+      max_tokens: 2048,
+      max_tokens_field: "max_tokens",
+    }),
+  )
+}
+
+///|
+test "panic chat response helpers reject malformed tool arguments" {
+  let body =
+    #|{"choices":[{"message":{"tool_calls":[{"id":"call_1","type":"function","function":{"name":"lookup","arguments":"not-json"}}]}}]}
+  ignore(chat_response_to_gemini(body))
+}
+
+///|
+test "panic chat response helpers reject empty choices" {
+  ignore(chat_response_to_gemini("{\"choices\":[]}"))
 }
 
 ///|
@@ -240,7 +264,7 @@ test "structured output helpers unwrap Gemini wrappers and fences" {
 }
 
 ///|
-test "error conversion covers passthrough and unknown fallback" {
+test "error conversion covers passthrough and payload-preserving normalization" {
   assert_eq(openai_error_to_gemini("not json"), "not json")
 
   let empty_error_body =
@@ -254,12 +278,12 @@ test "error conversion covers passthrough and unknown fallback" {
     {
       "error": {
         "code": Number(code, ..),
-        "message": String("Unknown error"),
+        "message": String("{}"),
         "status": String("INVALID_ARGUMENT"),
         ..
       },
       ..
     } => assert_eq(code.to_int(), 400)
-    _ => fail("Expected unknown Gemini error fallback")
+    _ => fail("Expected payload-preserving Gemini error")
   }
 }

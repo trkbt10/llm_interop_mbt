@@ -334,18 +334,56 @@ test "build_ping_result" {
 }
 
 // =============================================================================
-// parse_tools_call_params
+// Canonical server-side bridges
 // =============================================================================
 
 ///|
-test "parse_tools_call_params: valid params" {
+test "tools_call_params_to_chat_request: valid params" {
+  let params : Json = {
+    "name": "gpt-4o",
+    "arguments": {
+      "prompt": "Say hello",
+      "system": "You are helpful",
+      "max_tokens": 1024,
+    },
+  }
+  match tools_call_params_to_chat_request(Some(params)) {
+    Some(request) => {
+      assert_eq(request.model, "gpt-4o")
+      let json = @json.parse(request.body) catch { _ => fail("invalid json") }
+      match json {
+        {
+          "model": String("gpt-4o"),
+          "messages": Array(msgs),
+          "max_tokens": Number(mt, ..),
+          "stream": False,
+          ..
+        } => {
+          assert_eq(msgs.length(), 2)
+          assert_eq(mt.to_int(), 1024)
+        }
+        _ => fail("unexpected request shape")
+      }
+    }
+    None => fail("expected Some")
+  }
+}
+
+///|
+test "tools_call_params_to_chat_request: defaults optional args" {
   let params : Json = { "name": "gpt-4o", "arguments": { "prompt": "Hello" } }
-  match parse_tools_call_params(Some(params)) {
-    Some(p) => {
-      assert_eq(p.name, "gpt-4o")
-      match p.arguments {
-        { "prompt": String("Hello"), .. } => ()
-        _ => fail("invalid arguments")
+  match tools_call_params_to_chat_request(Some(params)) {
+    Some(request) => {
+      let json = @json.parse(request.body) catch { _ => fail("invalid json") }
+      match json {
+        {
+          "messages": [
+            { "role": String("user"), "content": String("Hello"), .. },
+          ],
+          "max_tokens": Number(mt, ..),
+          ..
+        } => assert_eq(mt.to_int(), 4096)
+        _ => fail("unexpected request shape")
       }
     }
     None => fail("expected Some")
@@ -353,63 +391,9 @@ test "parse_tools_call_params: valid params" {
 }
 
 ///|
-test "parse_tools_call_params: no arguments defaults to empty object" {
-  let params : Json = { "name": "gpt-4o" }
-  match parse_tools_call_params(Some(params)) {
-    Some(p) => {
-      assert_eq(p.name, "gpt-4o")
-      match p.arguments {
-        Object(obj) => assert_eq(obj.length(), 0)
-        _ => fail("expected empty object")
-      }
-    }
-    None => fail("expected Some")
-  }
-}
-
-///|
-test "parse_tools_call_params: None params" {
-  assert_eq(parse_tools_call_params(None), None)
-}
-
-///|
-test "parse_tools_call_params: missing name" {
+test "tools_call_params_to_chat_request: rejects missing name" {
   let params : Json = { "arguments": { "prompt": "Hello" } }
-  assert_eq(parse_tools_call_params(Some(params)), None)
-}
-
-// =============================================================================
-// extract_prompt_args
-// =============================================================================
-
-///|
-test "extract_prompt_args: all fields" {
-  let args : Json = {
-    "prompt": "Say hello",
-    "system": "You are helpful",
-    "max_tokens": 1024,
-  }
-  let result = extract_prompt_args(args)
-  assert_eq(result.prompt, "Say hello")
-  assert_eq(result.system, "You are helpful")
-  assert_eq(result.max_tokens, 1024)
-}
-
-///|
-test "extract_prompt_args: prompt only" {
-  let args : Json = { "prompt": "Hello" }
-  let result = extract_prompt_args(args)
-  assert_eq(result.prompt, "Hello")
-  assert_eq(result.system, "")
-  assert_eq(result.max_tokens, 4096)
-}
-
-///|
-test "extract_prompt_args: empty object" {
-  let result = extract_prompt_args(Json::object({}))
-  assert_eq(result.prompt, "")
-  assert_eq(result.system, "")
-  assert_eq(result.max_tokens, 4096)
+  assert_eq(tools_call_params_to_chat_request(Some(params)), None)
 }
 
 // =============================================================================
@@ -439,109 +423,47 @@ test "model_to_mcp_tool: creates tool definition" {
   }
 }
 
-// =============================================================================
-// build_chat_request
-// =============================================================================
-
 ///|
-test "build_chat_request: prompt only" {
-  let body = build_chat_request("gpt-4o", "Hello", "", 4096)
-  let json = @json.parse(body) catch { _ => fail("invalid json") }
-  match json {
-    {
-      "model": String("gpt-4o"),
-      "messages": Array(msgs),
-      "max_tokens": Number(mt, ..),
-      "stream": False,
-      ..
-    } => {
-      assert_eq(msgs.length(), 1) // user only, no system
-      assert_eq(mt.to_int(), 4096)
-      match msgs[0] {
-        { "role": String("user"), "content": String("Hello"), .. } => ()
-        _ => fail("invalid user message")
-      }
-    }
-    _ => fail("unexpected structure: " + body)
-  }
-}
-
-///|
-test "build_chat_request: with system prompt" {
-  let body = build_chat_request("claude-sonnet", "Hi", "Be helpful", 1024)
-  let json = @json.parse(body) catch { _ => fail("invalid json") }
-  match json {
-    { "messages": Array(msgs), "max_tokens": Number(mt, ..), .. } => {
-      assert_eq(msgs.length(), 2) // system + user
-      assert_eq(mt.to_int(), 1024)
-      match msgs[0] {
-        { "role": String("system"), "content": String("Be helpful"), .. } => ()
-        _ => fail("invalid system message")
-      }
-      match msgs[1] {
-        { "role": String("user"), "content": String("Hi"), .. } => ()
-        _ => fail("invalid user message")
-      }
-    }
-    _ => fail("unexpected structure")
-  }
-}
-
-///|
-test "build_chat_request: stream is always false" {
-  let body = build_chat_request("gpt-4o", "test", "", 100)
-  let json = @json.parse(body) catch { _ => fail("invalid json") }
-  match json {
-    { "stream": False, .. } => ()
-    _ => fail("expected stream: false")
-  }
-}
-
-// =============================================================================
-// extract_assistant_content
-// =============================================================================
-
-///|
-test "extract_assistant_content: OpenAI format" {
+test "chat_response_to_tools_call_result: success" {
   let body =
     #|{"choices":[{"message":{"role":"assistant","content":"Hello!"},"finish_reason":"stop"}]}
-  assert_eq(extract_assistant_content(body), "Hello!")
+  let result = chat_response_to_tools_call_result(7, body)
+  let json = @json.parse(result) catch { _ => fail("invalid json") }
+  match @mcp.parse_tools_call_result(json) {
+    Some(parsed) => {
+      assert_eq(parsed.is_error, false)
+      assert_eq(@mcp.extract_text_content(parsed), "Hello!")
+    }
+    None => fail("parse failed")
+  }
 }
 
 ///|
-test "extract_assistant_content: empty content" {
+test "chat_response_to_tools_call_result: openai error becomes MCP error" {
   let body =
-    #|{"choices":[{"message":{"role":"assistant","content":""},"finish_reason":"stop"}]}
-  assert_eq(extract_assistant_content(body), "")
+    #|{"error":{"message":"boom","type":"api_error"}}
+  let result = chat_response_to_tools_call_result(8, body)
+  let json = @json.parse(result) catch { _ => fail("invalid json") }
+  match @mcp.parse_tools_call_result(json) {
+    Some(parsed) => {
+      assert_eq(parsed.is_error, true)
+      assert_eq(@mcp.extract_text_content(parsed), "boom")
+    }
+    None => fail("parse failed")
+  }
 }
 
 ///|
-test "extract_assistant_content: non-JSON fallback" {
-  assert_eq(extract_assistant_content("raw text"), "raw text")
-}
-
-///|
-test "extract_assistant_content: no choices fallback" {
-  let body =
-    #|{"error":"something"}
-  assert_eq(extract_assistant_content(body), body)
-}
-
-///|
-test "extract_assistant_content: works with Anthropic-transformed response" {
-  // Simulate what gateway transform_response produces when converting
-  // Anthropic → OpenAI: an OpenAI-format response
-  let anthropic_as_openai =
-    #|{"id":"msg-123","object":"chat.completion","model":"claude-sonnet","choices":[{"index":0,"message":{"role":"assistant","content":"Bonjour!"},"finish_reason":"stop"}]}
-  assert_eq(extract_assistant_content(anthropic_as_openai), "Bonjour!")
-}
-
-///|
-test "extract_assistant_content: works with Gemini-transformed response" {
-  // Simulate gateway transform_response Gemini → OpenAI output
-  let gemini_as_openai =
-    #|{"id":"gemini-resp","object":"chat.completion","model":"gemini-pro","choices":[{"index":0,"message":{"role":"assistant","content":"Hola!"},"finish_reason":"stop"}]}
-  assert_eq(extract_assistant_content(gemini_as_openai), "Hola!")
+test "chat_response_to_tools_call_result: non-json falls back to text" {
+  let result = chat_response_to_tools_call_result(9, "raw text")
+  let json = @json.parse(result) catch { _ => fail("invalid json") }
+  match @mcp.parse_tools_call_result(json) {
+    Some(parsed) => {
+      assert_eq(parsed.is_error, false)
+      assert_eq(@mcp.extract_text_content(parsed), "raw text")
+    }
+    None => fail("parse failed")
+  }
 }
 
 // =============================================================================
@@ -634,35 +556,54 @@ test "IO flow: client-side parser can consume server-side responses" {
 }
 
 ///|
-test "IO flow: build_chat_request is valid OpenAI for all providers" {
-  // The key insight: build_chat_request produces OpenAI format,
-  // and the gateway transform_request converts it to Anthropic/Gemini/etc.
-  // Verify the request body is valid for the OpenAI transform entry point.
-  let body = build_chat_request("gpt-4o", "Hello", "Be helpful", 2048)
-  let json = @json.parse(body) catch { _ => fail("invalid json") }
-  // Must have model, messages, max_tokens — the minimum for OpenAI
-  match json {
-    { "model": String(_), "messages": Array(msgs), "max_tokens": Number(_), .. } => {
-      assert_true(msgs.length() > 0)
-      // First message should be system
-      match msgs[0] {
-        { "role": String("system"), "content": String(_), .. } => ()
-        _ => fail("expected system message first")
-      }
-    }
-    _ => fail("not valid OpenAI request body")
+test "IO flow: tools_call_params_to_chat_request is valid OpenAI for all providers" {
+  let params_with_system : Json = {
+    "name": "gpt-4o",
+    "arguments": {
+      "prompt": "Hello",
+      "system": "Be helpful",
+      "max_tokens": 2048,
+    },
   }
-  // Without system
-  let body2 = build_chat_request("claude-sonnet", "Hello", "", 1024)
-  let json2 = @json.parse(body2) catch { _ => fail("invalid json") }
-  match json2 {
-    { "messages": Array(msgs), .. } => {
-      assert_eq(msgs.length(), 1)
-      match msgs[0] {
-        { "role": String("user"), .. } => ()
-        _ => fail("expected user message")
+  match tools_call_params_to_chat_request(Some(params_with_system)) {
+    Some(request) => {
+      let json = @json.parse(request.body) catch { _ => fail("invalid json") }
+      match json {
+        {
+          "model": String(_),
+          "messages": Array(msgs),
+          "max_tokens": Number(_),
+          ..
+        } => {
+          assert_true(msgs.length() > 0)
+          match msgs[0] {
+            { "role": String("system"), "content": String(_), .. } => ()
+            _ => fail("expected system message first")
+          }
+        }
+        _ => fail("not valid OpenAI request body")
       }
     }
-    _ => fail("unexpected structure")
+    None => fail("expected request")
+  }
+  let params_without_system : Json = {
+    "name": "claude-sonnet",
+    "arguments": { "prompt": "Hello", "max_tokens": 1024 },
+  }
+  match tools_call_params_to_chat_request(Some(params_without_system)) {
+    Some(request) => {
+      let json = @json.parse(request.body) catch { _ => fail("invalid json") }
+      match json {
+        { "messages": Array(msgs), .. } => {
+          assert_eq(msgs.length(), 1)
+          match msgs[0] {
+            { "role": String("user"), .. } => ()
+            _ => fail("expected user message")
+          }
+        }
+        _ => fail("unexpected structure")
+      }
+    }
+    None => fail("expected request")
   }
 }

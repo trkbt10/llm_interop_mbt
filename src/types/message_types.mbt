@@ -15,6 +15,59 @@ pub(all) enum ResponseAnnotation {
     start_index~ : Int,
     end_index~ : Int
   )
+  /// Interop extension for Anthropic document text citations.
+  DocumentCharCitation(
+    cited_text~ : String,
+    document_index~ : Int,
+    document_title~ : String,
+    file_id~ : String,
+    start_char_index~ : Int,
+    end_char_index~ : Int,
+    start_index~ : Int,
+    end_index~ : Int
+  )
+  /// Interop extension for Anthropic document page citations.
+  DocumentPageCitation(
+    cited_text~ : String,
+    document_index~ : Int,
+    document_title~ : String,
+    file_id~ : String,
+    start_page_number~ : Int,
+    end_page_number~ : Int,
+    start_index~ : Int,
+    end_index~ : Int
+  )
+  /// Interop extension for Anthropic content-block citations.
+  DocumentContentBlockCitation(
+    cited_text~ : String,
+    document_index~ : Int,
+    document_title~ : String,
+    file_id~ : String,
+    start_block_index~ : Int,
+    end_block_index~ : Int,
+    start_index~ : Int,
+    end_index~ : Int
+  )
+  /// Interop extension for Anthropic web search citations.
+  WebSearchResultCitation(
+    cited_text~ : String,
+    encrypted_index~ : String,
+    title~ : String,
+    url~ : String,
+    start_index~ : Int,
+    end_index~ : Int
+  )
+  /// Interop extension for Anthropic search result citations.
+  SearchResultCitation(
+    cited_text~ : String,
+    search_result_index~ : Int,
+    source~ : String,
+    title~ : String,
+    start_block_index~ : Int,
+    end_block_index~ : Int,
+    start_index~ : Int,
+    end_index~ : Int
+  )
 } derive(Show, Eq)
 
 ///|

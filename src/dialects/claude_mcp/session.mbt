@@ -151,3 +151,21 @@ pub fn update_session_tools(
 ) -> ClaudeMcpSession {
   { ..session, tools, }
 }
+
+///|
+/// Canonical gateway-side bridge:
+/// OpenAI Chat request -> `claude mcp serve` tools/call upstream request.
+///
+/// The current bridge uses the Bash tool as the single execution entrypoint,
+/// feeding it the prompt extracted from the OpenAI conversation.
+pub fn prepare_chat_upstream(
+  session : ClaudeMcpSession,
+  openai_body : String,
+  ctx : @types.TransformContext,
+) -> ClaudeMcpUpstreamRequest {
+  let prompt = match extract_prompt_from_chat(openai_body, ctx) {
+    Some(prompt) => prompt
+    None => openai_body
+  }
+  prepare_tools_call(session, "Bash", { "command": prompt })
+}

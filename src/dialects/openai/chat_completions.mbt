@@ -212,6 +212,7 @@ pub fn build_chat_choice(
   index : Int,
   text_content : String,
   tool_calls : Array[Json],
+  annotations? : Array[Json] = [],
 ) -> Json {
   let message : Map[String, Json] = {}
   message["role"] = Json::string("assistant")
@@ -225,6 +226,9 @@ pub fn build_chat_choice(
   } else {
     message["content"] = Json::string(text_content)
   }
+  if annotations.length() > 0 {
+    message["annotations"] = Json::array(annotations)
+  }
   let choice : Map[String, Json] = {}
   choice["index"] = Json::number(index.to_double())
   choice["message"] = Json::object(message)
@@ -236,6 +240,109 @@ pub fn build_chat_choice(
     },
   )
   Json::object(choice)
+}
+
+///|
+pub fn chat_annotations_from_response_annotations(
+  annotations : Array[@types.ResponseAnnotation],
+) -> Array[Json] {
+  let result : Array[Json] = []
+  for annotation in annotations {
+    match response_annotation_to_chat_annotation(annotation) {
+      Some(item) => result.push(item)
+      None => ()
+    }
+  }
+  result
+}
+
+///|
+fn response_annotation_to_chat_annotation(
+  annotation : @types.ResponseAnnotation,
+) -> Json? {
+  match annotation {
+    @types.ResponseAnnotation::UrlCitation(
+      title~,
+      url~,
+      start_index~,
+      end_index~
+    ) =>
+      Some({
+        "type": "url_citation",
+        "url_citation": {
+          "title": match title {
+            Some(value) => value
+            None => ""
+          },
+          "url": url,
+          "start_index": start_index,
+          "end_index": end_index,
+        },
+      })
+    @types.ResponseAnnotation::WebSearchResultCitation(
+      title~,
+      url~,
+      start_index~,
+      end_index~,
+      ..
+    ) =>
+      Some({
+        "type": "url_citation",
+        "url_citation": {
+          "title": title,
+          "url": url,
+          "start_index": start_index,
+          "end_index": end_index,
+        },
+      })
+    _ => None
+  }
+}
+
+///|
+fn parse_chat_annotations(message : Json) -> Array[@types.ResponseAnnotation] {
+  match message {
+    { "annotations": Array(items), .. } => {
+      let result : Array[@types.ResponseAnnotation] = []
+      for item in items {
+        match item {
+          {
+            "type": String("url_citation"),
+            "url_citation": {
+              "url": String(url),
+              "start_index": Number(start_index, ..),
+              "end_index": Number(end_index, ..),
+              ..
+            },
+            ..
+          } => {
+            let title = match item {
+              { "url_citation": { "title": String(value), .. }, .. } if value.length() >
+                0 => Some(value)
+              _ => None
+            }
+            result.push(
+              @types.ResponseAnnotation::url_citation(
+                url~,
+                title~,
+                start_index=start_index.to_int(),
+                end_index=end_index.to_int(),
+              ),
+            )
+          }
+          { "type": String(_), .. } =>
+            abort("Unsupported OpenAI chat annotation: " + item.stringify())
+          _ =>
+            abort(
+              "OpenAI chat annotations must be url_citation objects: " +
+              item.stringify(),
+            )
+        }
+      }
+      result
+    }
+    _ => []
+  }
 }
 
 ///|
@@ -324,6 +431,7 @@ pub fn parse_chat_response(json : Json) -> @types.ModelResponse {
       let choice = choices[0]
       match choice {
         { "message": message, "finish_reason": String(finish_reason), .. } => {
+          let annotations = parse_chat_annotations(message)
           // Check for tool calls
           if finish_reason == "tool_calls" {
             match message {
@@ -334,18 +442,32 @@ pub fn parse_chat_response(json : Json) -> @types.ModelResponse {
                     { "content": String(value), .. } => value
                     _ => ""
                   }
-                  if content.length() > 0 {
+                  if content.length() > 0 || annotations.length() > 0 {
+                    let parts : Array[@types.ResponseContentPart] = []
+                    if content.length() > 0 {
+                      parts.push(
+                        @types.ResponseContentPart::OutputText(content),
+                      )
+                    }
                     return @types.ModelResponse::ToolCallsWithContent(
                       tool_calls=calls,
-                      rich=@types.RichTextResponse::from_parts(content~, content_parts=[
-                        @types.ResponseContentPart::OutputText(content),
-                      ]),
+                      rich=@types.RichTextResponse::from_parts(
+                        content~,
+                        content_parts=parts,
+                        annotations~,
+                      ),
                     )
                   }
                   return @types.ModelResponse::ToolCalls(calls)
                 }
+                return @types.ModelResponse::ModelError(
+                  "OpenAI chat response signaled tool_calls but contained no valid tool calls",
+                )
               }
-              _ => ()
+              _ =>
+                return @types.ModelResponse::ModelError(
+                  "OpenAI chat response signaled tool_calls without a tool_calls payload",
+                )
             }
           }
           // Ref: ChatCompletionMessage.refusal — non-null when model refuses
@@ -398,13 +520,27 @@ pub fn parse_chat_response(json : Json) -> @types.ModelResponse {
           // Extract text response
           match message {
             { "content": String(content), .. } =>
-              @types.ModelResponse::Text(content)
+              if annotations.length() > 0 {
+                @types.ModelResponse::RichText(
+                  @types.RichTextResponse::from_parts(
+                    content~,
+                    content_parts=[
+                      @types.ResponseContentPart::OutputText(content),
+                    ],
+                    annotations~,
+                  ),
+                )
+              } else {
+                @types.ModelResponse::Text(content)
+              }
             { "content": Null, "tool_calls": tool_calls, .. } => {
               let calls = parse_tool_calls(tool_calls)
               if calls.length() > 0 {
                 @types.ModelResponse::ToolCalls(calls)
               } else {
-                @types.ModelResponse::Text("")
+                @types.ModelResponse::ModelError(
+                  "OpenAI chat response contained tool_calls without any valid calls",
+                )
               }
             }
             _ => @types.ModelResponse::ModelError("Invalid message format")
@@ -436,13 +572,36 @@ pub fn parse_tool_calls(tool_calls : Json) -> Array[@types.ToolCallRequest] {
             },
             ..
           } => {
-            let arguments : Json = @json.parse(args_str) catch { _ => {} }
+            let arguments = parse_chat_tool_call_arguments_or_abort(
+              args_str, call,
+            )
             result.push(@types.ToolCallRequest::new(id~, name~, arguments~))
           }
-          _ => ()
+          _ =>
+            abort(
+              "OpenAI chat tool call must contain id, function.name, and function.arguments: " +
+              call.stringify(),
+            )
         }
       }
-    _ => ()
+    _ =>
+      abort(
+        "OpenAI chat tool_calls must be an array: " + tool_calls.stringify(),
+      )
   }
   result
+}
+
+///|
+fn parse_chat_tool_call_arguments_or_abort(
+  args_str : String,
+  call : Json,
+) -> Json {
+  @json.parse(args_str) catch {
+    _ =>
+      abort(
+        "OpenAI chat tool call arguments must be valid JSON: " +
+        call.stringify(),
+      )
+  }
 }

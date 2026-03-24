@@ -44,51 +44,30 @@ fn convert_responses_tools_to_gemini(
 ) -> Array[@types.ToolDefinition] {
   let result : Array[@types.ToolDefinition] = []
   for tool in tools {
-    match tool {
-      { "type": String("function"), "name": String(name), .. } => {
-        let description = match tool {
-          { "description": String(d), .. } => d
-          _ => ""
-        }
-        let parameters = match tool {
-          { "parameters": params, .. } => params
-          _ => Json::object({})
-        }
+    match @utils.parse_responses_function_tool(tool) {
+      Some((name, description, parameters)) =>
         result.push(
           @types.ToolDefinition::new(name~, description~, parameters~),
         )
-      }
-      { "type": String("web_search_preview"), .. }
-      | { "type": String("web_search_preview_2025_03_11"), .. } =>
-        result.push(@types.ToolDefinition::web_search_preview())
-      { "type": String(type_), .. } =>
-        result.push(
-          @types.ToolDefinition::builtin(
-            type_~,
-            config=extract_tool_config(tool),
-          ),
-        )
-      _ => ()
+      None =>
+        match tool {
+          { "type": String("web_search_preview"), .. }
+          | { "type": String("web_search_preview_2025_03_11"), .. } =>
+            result.push(@types.ToolDefinition::web_search_preview())
+          { "type": String(type_), .. } =>
+            result.push(
+              @types.ToolDefinition::builtin(
+                type_~,
+                config=@utils.extract_responses_tool_config(tool),
+              ),
+            )
+          _ =>
+            abort(
+              "Responses tool cannot be translated to Gemini: " +
+              tool.stringify(),
+            )
+        }
     }
   }
   result
-}
-
-///|
-fn extract_tool_config(tool : Json) -> Json {
-  match tool {
-    Object(fields) => {
-      let config : Map[String, Json] = {}
-      for key, value in fields {
-        if key != "type" &&
-          key != "name" &&
-          key != "description" &&
-          key != "parameters" {
-          config[key] = value
-        }
-      }
-      Json::object(config)
-    }
-    _ => Json::object({})
-  }
 }

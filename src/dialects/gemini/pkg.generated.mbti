@@ -67,6 +67,7 @@ pub fn tools_to_json(Array[@types.ToolDefinition]) -> Json
 pub struct GeminiAccumulator {
   text : StringBuilder
   tool_calls : Array[@types.ToolCallAcc]
+  mut annotations : Array[@types.ResponseAnnotation]
   mut finished : Bool
 }
 pub fn GeminiAccumulator::feed(Self, @sse.SseEvent) -> Unit
@@ -96,6 +97,7 @@ pub struct GeminiToResponsesTranslator {
   mut current_message_output_index : Int
   mut current_message_item_id : String
   mut current_message_text : String
+  mut current_message_annotations : Array[@types.ResponseAnnotation]
   tool_calls : Array[GeminiToolCallState]
   completed_output : Array[Json]
 }

@@ -610,13 +610,9 @@ fn decompose_responses_rich_content(
         let (seg_start, seg_end) = text_offsets[text_index]
         let segment_annotations : Array[Json] = []
         for annotation in annotations {
-          match annotation {
-            @types.ResponseAnnotation::UrlCitation(start_index~, end_index~, ..) =>
-              if start_index >= seg_start && end_index <= seg_end {
-                segment_annotations.push(
-                  response_annotation_to_json(annotation),
-                )
-              }
+          if annotation.start_index() >= seg_start &&
+            annotation.end_index() <= seg_end {
+            segment_annotations.push(response_annotation_to_json(annotation))
           }
         }
         message_parts.push({
@@ -722,12 +718,10 @@ fn parse_responses_output(outputs : Array[Json]) -> @types.ModelResponse {
         "arguments": String(args_str),
         ..
       } => {
-        let id = match output {
-          { "call_id": String(cid), .. } => cid
-          { "id": String(fid), .. } => fid
-          _ => ""
-        }
-        let arguments : Json = @json.parse(args_str) catch { _ => {} }
+        let id = extract_responses_tool_item_id(output)
+        let arguments = parse_responses_tool_call_arguments_or_abort(
+          args_str, output,
+        )
         tool_calls.push(@types.ToolCallRequest::new(id~, name~, arguments~))
       }
       { "type": String("web_search_call"), "id": String(id), .. } =>
@@ -743,8 +737,14 @@ fn parse_responses_output(outputs : Array[Json]) -> @types.ModelResponse {
           } else {
             tool_traces.push(parse_builtin_trace(output, type_))
           }
+        } else {
+          abort("Unsupported Responses output item type: " + output.stringify())
         }
-      _ => ()
+      _ =>
+        abort(
+          "Responses output item must be an object with a supported type: " +
+          output.stringify(),
+        )
     }
   }
   let text = concatenate_output_text_parts(content_parts)
@@ -804,7 +804,15 @@ fn append_response_message_contents(
         content_parts.push(@types.ResponseContentPart::Refusal(reason))
         has_non_text = true
       }
-      _ => ()
+      { "type": String(_), .. } =>
+        abort(
+          "Unsupported Responses message content type: " + content.stringify(),
+        )
+      _ =>
+        abort(
+          "Responses message content must be an object with a supported type: " +
+          content.stringify(),
+        )
     }
   }
   (saw_output_text, has_non_text)
@@ -825,7 +833,16 @@ fn append_response_reasoning_item(
             content_parts.push(@types.ResponseContentPart::Thinking(text~))
             found = true
           }
-          _ => ()
+          { "type": String(_), .. } =>
+            abort(
+              "Unsupported Responses reasoning content block: " +
+              block.stringify(),
+            )
+          _ =>
+            abort(
+              "Responses reasoning content block must be an object with a supported type: " +
+              block.stringify(),
+            )
         }
       }
     _ => ()
@@ -847,7 +864,16 @@ fn append_response_reasoning_item(
             content_parts.push(@types.ResponseContentPart::Thinking(text~))
             added_summary = true
           }
-          _ => ()
+          { "type": String(_), .. } =>
+            abort(
+              "Unsupported Responses reasoning summary block: " +
+              block.stringify(),
+            )
+          _ =>
+            abort(
+              "Responses reasoning summary block must be an object with a supported type: " +
+              block.stringify(),
+            )
         }
       }
     _ => ()
@@ -904,29 +930,7 @@ fn parse_response_annotations(
 ) -> Array[@types.ResponseAnnotation] {
   let result : Array[@types.ResponseAnnotation] = []
   for item in items {
-    match item {
-      {
-        "type": String("url_citation"),
-        "url": String(url),
-        "start_index": Number(start, ..),
-        "end_index": Number(end_, ..),
-        ..
-      } => {
-        let title = match item {
-          { "title": String(t), .. } => Some(t)
-          _ => None
-        }
-        result.push(
-          @types.ResponseAnnotation::url_citation(
-            url~,
-            start_index=start.to_int(),
-            end_index=end_.to_int(),
-            title~,
-          ),
-        )
-      }
-      _ => ()
-    }
+    result.push(@types.parse_interop_response_annotation(item))
   }
   result
 }
@@ -995,7 +999,25 @@ fn extract_responses_tool_item_id(item : Json) -> String {
     { "call_id": String(value), .. } => value
     { "approval_request_id": String(value), .. } => value
     { "id": String(value), .. } => value
-    _ => ""
+    _ =>
+      abort(
+        "Responses tool item is missing a required id field: " +
+        item.stringify(),
+      )
+  }
+}
+
+///|
+fn parse_responses_tool_call_arguments_or_abort(
+  args_str : String,
+  item : Json,
+) -> Json {
+  @json.parse(args_str) catch {
+    _ =>
+      abort(
+        "Responses function_call arguments must be valid JSON: " +
+        item.stringify(),
+      )
   }
 }
 
@@ -1027,26 +1049,7 @@ fn push_annotations_unique(
 
 ///|
 fn response_annotation_to_json(annotation : @types.ResponseAnnotation) -> Json {
-  match annotation {
-    @types.ResponseAnnotation::UrlCitation(
-      title~,
-      url~,
-      start_index~,
-      end_index~
-    ) => {
-      let result : Map[String, Json] = {
-        "type": Json::string("url_citation"),
-        "url": Json::string(url),
-        "start_index": Json::number(start_index.to_double()),
-        "end_index": Json::number(end_index.to_double()),
-      }
-      match title {
-        Some(value) => result["title"] = Json::string(value)
-        None => ()
-      }
-      Json::object(result)
-    }
-  }
+  annotation.to_interop_json()
 }
 
 ///|

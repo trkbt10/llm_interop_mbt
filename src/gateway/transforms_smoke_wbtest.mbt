@@ -238,15 +238,102 @@ test "transform_response: Anthropic error to Anthropic stays unchanged" {
 }
 
 ///|
-test "transform_response: incomplete Anthropic error payload falls through as empty chat" {
+test "transform_response: incomplete Anthropic error payload becomes normalized error" {
   let body = "{\"type\":\"error\"}"
   let json : Json = @json.parse(transform_response(body, Anthropic, OpenAI)) catch {
     _ => fail("parse error")
   }
   match json {
-    { "choices": [{ "message": { "content": String(content), .. }, .. }], .. } =>
-      assert_eq(content, "")
-    _ => fail("Expected empty chat completion fallback")
+    { "error": { "message": String(message), "type": String(kind), .. }, .. } => {
+      assert_eq(message, "{}")
+      assert_eq(kind, "api_error")
+    }
+    _ => fail("Expected normalized OpenAI error")
+  }
+}
+
+///|
+test "transform_response: Anthropic to OpenAI chat preserves url_citation subset" {
+  let body =
+    #|{"id":"msg_cited","model":"claude-sonnet-4-20250514","content":[{"type":"text","text":"Weather details","citations":[{"type":"web_search_result_location","cited_text":"Weather details","encrypted_index":"enc_tokyo","title":"Tokyo Weather","url":"https://example.com/tokyo"}]}],"stop_reason":"end_turn"}
+  let result = transform_response(body, Anthropic, OpenAI)
+  let json : Json = @json.parse(result) catch { _ => fail("parse error") }
+  match json {
+    { "choices": [{ "message": message, .. }], .. } =>
+      match message {
+        Object(fields) => {
+          match fields.get("content") {
+            Some(String(content)) => assert_eq(content, "Weather details")
+            _ => fail("Expected transformed chat text content")
+          }
+          match fields.get("annotations") {
+            Some(Array(annotations)) => {
+              assert_eq(annotations.length(), 1)
+              match annotations[0] {
+                {
+                  "type": String("url_citation"),
+                  "url_citation": {
+                    "title": String(title),
+                    "url": String(url),
+                    "start_index": Number(start_index, ..),
+                    "end_index": Number(end_index, ..),
+                    ..
+                  },
+                  ..
+                } => {
+                  assert_eq(title, "Tokyo Weather")
+                  assert_eq(url, "https://example.com/tokyo")
+                  assert_eq(start_index.to_int(), 0)
+                  assert_eq(end_index.to_int(), 15)
+                }
+                _ => fail("Expected url_citation annotation")
+              }
+            }
+            _ => fail("Expected transformed annotations")
+          }
+        }
+        _ => fail("Expected chat message object")
+      }
+    _ => fail("Expected OpenAI chat response")
+  }
+  assert_false(result.contains("\"web_search_result_location\""))
+}
+
+///|
+test "transform_response: Gemini to OpenAI chat preserves url_citation subset" {
+  let body =
+    #|{"candidates":[{"content":{"parts":[{"text":"Weather details"}],"role":"model"},"groundingMetadata":{"groundingChunks":[{"web":{"uri":"https://example.com/weather","title":"Weather Source"}}],"groundingSupports":[{"groundingChunkIndices":[0],"segment":{"text":"Weather","startIndex":0,"endIndex":7}}]},"finishReason":"STOP"}]}
+  let result = transform_response(body, Gemini, OpenAI)
+  let json : Json = @json.parse(result) catch { _ => fail("parse error") }
+  match json {
+    { "choices": [{ "message": message, .. }], .. } =>
+      match message {
+        {
+          "content": String(content),
+          "annotations": [
+            {
+              "type": String("url_citation"),
+              "url_citation": {
+                "title": String(title),
+                "url": String(url),
+                "start_index": Number(start_index, ..),
+                "end_index": Number(end_index, ..),
+                ..
+              },
+              ..
+            },
+          ],
+          ..
+        } => {
+          assert_eq(content, "Weather details")
+          assert_eq(title, "Weather Source")
+          assert_eq(url, "https://example.com/weather")
+          assert_eq(start_index.to_int(), 0)
+          assert_eq(end_index.to_int(), 7)
+        }
+        _ => fail("Expected grounded chat message")
+      }
+    _ => fail("Expected OpenAI chat response")
   }
 }
 

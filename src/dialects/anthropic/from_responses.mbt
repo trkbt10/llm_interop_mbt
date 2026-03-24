@@ -7,10 +7,7 @@
 ///|
 /// Convert Responses API request JSON to Anthropic Messages API request body
 pub fn responses_request_to_anthropic(request : Json) -> Json {
-  let model = match request {
-    { "model": String(m), .. } => m
-    _ => ""
-  }
+  let model = extract_responses_model_or_abort(request)
   let input = match request {
     { "input": Array(items), .. } => items
     _ => []
@@ -69,72 +66,55 @@ pub fn responses_request_to_anthropic(request : Json) -> Json {
 fn convert_responses_tools_to_anthropic(tools : Array[Json]) -> Array[Json] {
   let result : Array[Json] = []
   for tool in tools {
-    match tool {
-      { "type": String("function"), "name": String(name), .. } => {
-        let description = match tool {
-          { "description": String(d), .. } => d
-          _ => ""
-        }
-        let parameters = match tool {
-          { "parameters": params, .. } => params
-          _ => Json::object({})
-        }
+    match @utils.parse_responses_function_tool(tool) {
+      Some((name, description, parameters)) =>
         result.push({
           "name": name,
           "description": description,
           "input_schema": parameters,
         })
-      }
-      { "type": String("web_search_preview"), .. }
-      | { "type": String("web_search_preview_2025_03_11"), .. } =>
-        result.push(
-          tool_to_json(
-            @types.ToolDefinition::builtin(
-              type_="web_search_20260209",
-              name=@types.web_search_tool_name(),
-            ),
-          ),
-        )
-      { "type": String(type_), .. } =>
-        result.push(
-          tool_to_json(
-            @types.ToolDefinition::builtin(
-              type_~,
-              name=extract_tool_name(tool, type_),
-              config=extract_tool_config(tool),
-            ),
-          ),
-        )
-      _ => ()
+      None =>
+        match tool {
+          { "type": String("web_search_preview"), .. }
+          | { "type": String("web_search_preview_2025_03_11"), .. } =>
+            result.push(
+              tool_to_json(
+                @types.ToolDefinition::builtin(
+                  type_="web_search_20260209",
+                  name=@types.web_search_tool_name(),
+                ),
+              ),
+            )
+          { "type": String(type_), .. } =>
+            result.push(
+              tool_to_json(
+                @types.ToolDefinition::builtin(
+                  type_~,
+                  name=@utils.extract_responses_tool_name(tool),
+                  config=@utils.extract_responses_tool_config(tool),
+                ),
+              ),
+            )
+          _ =>
+            abort(
+              "Responses tool cannot be translated to Anthropic: " +
+              tool.stringify(),
+            )
+        }
     }
   }
   result
 }
 
 ///|
-fn extract_tool_name(tool : Json, fallback : String) -> String {
-  match tool {
-    { "name": String(name), .. } => name
-    _ => fallback
-  }
-}
-
-///|
-fn extract_tool_config(tool : Json) -> Json {
-  match tool {
-    Object(fields) => {
-      let config : Map[String, Json] = {}
-      for key, value in fields {
-        if key != "type" &&
-          key != "name" &&
-          key != "description" &&
-          key != "parameters" {
-          config[key] = value
-        }
-      }
-      Json::object(config)
-    }
-    _ => Json::object({})
+fn extract_responses_model_or_abort(request : Json) -> String {
+  match request {
+    { "model": String(model), .. } => model
+    _ =>
+      abort(
+        "Responses request is missing required model for Anthropic translation: " +
+        request.stringify(),
+      )
   }
 }
 

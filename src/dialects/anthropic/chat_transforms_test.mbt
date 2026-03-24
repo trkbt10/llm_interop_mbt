@@ -93,6 +93,52 @@ test "response_to_chat: mixed text and tool_use" {
 }
 
 ///|
+test "response_to_chat: web citations down-convert to OpenAI chat annotations" {
+  let body =
+    #|{"id":"msg_03c","model":"claude-sonnet-4-20250514","content":[{"type":"text","text":"Weather details","citations":[{"type":"web_search_result_location","cited_text":"Weather details","encrypted_index":"enc_tokyo","title":"Tokyo Weather","url":"https://example.com/tokyo"}]}],"stop_reason":"end_turn"}
+  let result = response_to_chat(body)
+  let json : Json = @json.parse(result) catch { _ => fail("parse error") }
+  match json {
+    { "choices": [{ "message": message, .. }], .. } =>
+      match message {
+        Object(fields) => {
+          match fields.get("content") {
+            Some(String(content)) => assert_eq(content, "Weather details")
+            _ => fail("Expected chat text content")
+          }
+          match fields.get("annotations") {
+            Some(Array(annotations)) => {
+              assert_eq(annotations.length(), 1)
+              match annotations[0] {
+                {
+                  "type": String("url_citation"),
+                  "url_citation": {
+                    "title": String(title),
+                    "url": String(url),
+                    "start_index": Number(start_index, ..),
+                    "end_index": Number(end_index, ..),
+                    ..
+                  },
+                  ..
+                } => {
+                  assert_eq(title, "Tokyo Weather")
+                  assert_eq(url, "https://example.com/tokyo")
+                  assert_eq(start_index.to_int(), 0)
+                  assert_eq(end_index.to_int(), 15)
+                }
+                _ => fail("Expected OpenAI chat url_citation annotation")
+              }
+            }
+            _ => fail("Expected chat annotations")
+          }
+        }
+        _ => fail("Expected message object")
+      }
+    _ => fail("unexpected structure: \{result}")
+  }
+}
+
+///|
 test "response_to_chat: multiple tool_use blocks" {
   let body =
     #|{"id":"msg_04","model":"claude-sonnet-4-20250514","content":[{"type":"tool_use","id":"toolu_a","name":"read_file","input":{"path":"/tmp/a"}},{"type":"tool_use","id":"toolu_b","name":"read_file","input":{"path":"/tmp/b"}}],"stop_reason":"tool_use"}

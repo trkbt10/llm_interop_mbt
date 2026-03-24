@@ -119,11 +119,7 @@ pub fn ResponsesApiAccumulator::feed(
           "item": { "type": String("function_call"), "name": String(name), .. } as item,
           ..
         } => {
-          let id = match item {
-            { "call_id": String(cid), .. } => cid
-            { "id": String(fid), .. } => fid
-            _ => ""
-          }
+          let id = extract_stream_tool_item_id_or_abort(item)
           let call_index = self.function_calls.length()
           self.function_calls.push(@types.ToolCallAcc::{
             id,
@@ -137,10 +133,7 @@ pub fn ResponsesApiAccumulator::feed(
           }
         }
         { "item": { "type": String("web_search_call"), .. } as item, .. } => {
-          let id = match item {
-            { "id": String(fid), .. } => fid
-            _ => ""
-          }
+          let id = extract_stream_tool_item_id_or_abort(item)
           let _ = self.ensure_web_search_trace(id)
         }
         _ => ()
@@ -189,11 +182,7 @@ pub fn ResponsesApiAccumulator::feed(
           } as item,
           ..
         } => {
-          let id = match item {
-            { "call_id": String(cid), .. } => cid
-            { "id": String(fid), .. } => fid
-            _ => ""
-          }
+          let id = extract_stream_tool_item_id_or_abort(item)
           match event.data {
             { "output_index": Number(output_index, ..), .. } => {
               let key = output_index.to_int().to_string()
@@ -221,7 +210,17 @@ pub fn ResponsesApiAccumulator::feed(
                 }
               }
             }
-            _ => ()
+            _ => {
+              let acc : @types.ToolCallAcc = {
+                id,
+                name,
+                arguments: StringBuilder::new(),
+              }
+              if arguments.length() > 0 {
+                acc.arguments.write_string(arguments)
+              }
+              self.function_calls.push(acc)
+            }
           }
         }
         {
@@ -415,4 +414,17 @@ fn web_search_trace_to_public(
     statuses=trace.statuses,
     arguments=Json::object(trace.arguments),
   )
+}
+
+///|
+fn extract_stream_tool_item_id_or_abort(item : Json) -> String {
+  match item {
+    { "call_id": String(value), .. } => value
+    { "id": String(value), .. } => value
+    _ =>
+      abort(
+        "Responses stream tool item is missing required id/call_id: " +
+        item.stringify(),
+      )
+  }
 }

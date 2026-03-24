@@ -153,11 +153,11 @@ fn build_events_array_from_fixture() -> String raise {
 // =============================================================================
 
 ///|
-test "events_to_chat: produces valid response from fixture" {
+test "response_to_chat: produces valid response from fixture" {
   let events_json = build_events_array_from_fixture() catch {
     err => fail("Failed to load fixture: " + err.to_string())
   }
-  let result = events_to_chat(events_json)
+  let result = response_to_chat(events_json)
   let json = @json.parse(result) catch { _ => fail("invalid json: " + result) }
   match json {
     {
@@ -205,11 +205,11 @@ test "events_to_chat: produces valid response from fixture" {
 }
 
 ///|
-test "events_to_chat: extracts turn ID from fixture" {
+test "response_to_chat: extracts turn ID from fixture" {
   let events_json = build_events_array_from_fixture() catch {
     err => fail("Failed to load fixture: " + err.to_string())
   }
-  let result = events_to_chat(events_json)
+  let result = response_to_chat(events_json)
   let json = @json.parse(result) catch { _ => fail("invalid json") }
   match json {
     { "id": String(id), .. } =>
@@ -219,11 +219,11 @@ test "events_to_chat: extracts turn ID from fixture" {
 }
 
 ///|
-test "events_to_chat: includes cached and reasoning tokens" {
+test "response_to_chat: includes cached and reasoning tokens" {
   let events_json = build_events_array_from_fixture() catch {
     err => fail("Failed to load fixture: " + err.to_string())
   }
-  let result = events_to_chat(events_json)
+  let result = response_to_chat(events_json)
   let json = @json.parse(result) catch { _ => fail("invalid json") }
   match json {
     {
@@ -246,8 +246,8 @@ test "events_to_chat: includes cached and reasoning tokens" {
 // =============================================================================
 
 ///|
-test "events_to_chat: empty events produce empty content" {
-  let result = events_to_chat("[]")
+test "response_to_chat: empty events produce empty content" {
+  let result = response_to_chat("[]")
   let json = @json.parse(result) catch { _ => fail("invalid json") }
   match json {
     { "choices": Array(choices), .. } =>
@@ -261,10 +261,10 @@ test "events_to_chat: empty events produce empty content" {
 }
 
 ///|
-test "events_to_chat: assembles streaming deltas" {
+test "response_to_chat: assembles streaming deltas" {
   let events =
     #|[{"method":"item/agentMessage/delta","params":{"delta":"He"}},{"method":"item/agentMessage/delta","params":{"delta":"llo"}},{"method":"turn/completed","params":{"turn":{"id":"t1","status":"completed","error":null}}}]
-  let result = events_to_chat(events)
+  let result = response_to_chat(events)
   let json = @json.parse(result) catch { _ => fail("invalid json") }
   match json {
     { "choices": Array(choices), .. } =>
@@ -278,10 +278,10 @@ test "events_to_chat: assembles streaming deltas" {
 }
 
 ///|
-test "events_to_chat: falls back to agent_message when no deltas" {
+test "response_to_chat: falls back to agent_message when no deltas" {
   let events =
     #|[{"method":"codex/event/agent_message","params":{"msg":{"type":"agent_message","message":"World","phase":"final_answer"}}},{"method":"turn/completed","params":{"turn":{"id":"t2","status":"completed","error":null}}}]
-  let result = events_to_chat(events)
+  let result = response_to_chat(events)
   let json = @json.parse(result) catch { _ => fail("invalid json") }
   match json {
     { "choices": Array(choices), .. } =>
@@ -295,10 +295,10 @@ test "events_to_chat: falls back to agent_message when no deltas" {
 }
 
 ///|
-test "events_to_chat: falls back to task_complete last_agent_message" {
+test "response_to_chat: falls back to task_complete last_agent_message" {
   let events =
     #|[{"method":"codex/event/task_complete","params":{"msg":{"type":"task_complete","turn_id":"t3","last_agent_message":"Fallback"}}},{"method":"turn/completed","params":{"turn":{"id":"t3","status":"completed","error":null}}}]
-  let result = events_to_chat(events)
+  let result = response_to_chat(events)
   let json = @json.parse(result) catch { _ => fail("invalid json") }
   match json {
     { "choices": Array(choices), .. } =>
@@ -312,10 +312,10 @@ test "events_to_chat: falls back to task_complete last_agent_message" {
 }
 
 ///|
-test "events_to_chat: handles codex/event/token_count format" {
+test "response_to_chat: handles codex/event/token_count format" {
   let events =
     #|[{"method":"codex/event/token_count","params":{"msg":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100,"output_tokens":50,"total_tokens":150,"cached_input_tokens":20,"reasoning_output_tokens":10}}}}},{"method":"turn/completed","params":{"turn":{"id":"t4","status":"completed","error":null}}}]
-  let result = events_to_chat(events)
+  let result = response_to_chat(events)
   let json = @json.parse(result) catch { _ => fail("invalid json") }
   match json {
     {
@@ -336,10 +336,10 @@ test "events_to_chat: handles codex/event/token_count format" {
 }
 
 ///|
-test "events_to_chat: interrupted turn maps to stop" {
+test "response_to_chat: interrupted turn maps to stop" {
   let events =
     #|[{"method":"turn/completed","params":{"turn":{"id":"t5","status":"interrupted","error":null}}}]
-  let result = events_to_chat(events)
+  let result = response_to_chat(events)
   let json = @json.parse(result) catch { _ => fail("invalid json") }
   match json {
     { "choices": Array(choices), .. } =>
@@ -352,10 +352,10 @@ test "events_to_chat: interrupted turn maps to stop" {
 }
 
 ///|
-test "events_to_chat: handles turn error" {
+test "response_to_chat: handles turn error" {
   let events =
     #|[{"method":"turn/completed","params":{"turn":{"id":"t6","status":"failed","error":"something went wrong"}}}]
-  let result = events_to_chat(events)
+  let result = response_to_chat(events)
   let json = @json.parse(result) catch { _ => fail("invalid json") }
   match json {
     { "error": { "message": String(msg), .. }, .. } =>
@@ -365,16 +365,8 @@ test "events_to_chat: handles turn error" {
 }
 
 ///|
-test "events_to_chat: invalid JSON returns input" {
-  assert_eq(events_to_chat("not json"), "not json")
-}
-
-///|
-test "response_to_chat: is alias for events_to_chat" {
-  let events_json = build_events_array_from_fixture() catch {
-    err => fail("Failed to load fixture: " + err.to_string())
-  }
-  assert_eq(events_to_chat(events_json), response_to_chat(events_json))
+test "response_to_chat: invalid JSON returns input" {
+  assert_eq(response_to_chat("not json"), "not json")
 }
 
 // =============================================================================

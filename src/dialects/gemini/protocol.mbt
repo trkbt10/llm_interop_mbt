@@ -122,18 +122,11 @@ pub fn message_to_content(message : @types.ModelMessage) -> GeminiContent? {
             None
           }
       }
-    @types.ModelMessage::ToolResult(tool_call_id~, content~) => {
-      // Gemini uses function name, not ID - extract name from ID if possible
-      // ID format: "call_xxx" or "toolu_xxx" -> use as-is for tracking
-      // In practice, caller should provide the tool name separately
-      let response : Json = @json.parse(content) catch {
-        _ => Json::string(content)
-      }
-      Some({
-        role: "function",
-        parts: [GeminiPart::FunctionResponse(name=tool_call_id, response~)],
-      })
-    }
+    @types.ModelMessage::ToolResult(tool_call_id~, content=_) =>
+      abort(
+        "Gemini ToolResult conversion requires a preceding assistant tool call to resolve the function name: " +
+        tool_call_id,
+      )
   }
 }
 
@@ -157,7 +150,7 @@ pub fn messages_to_contents(
         let response : Json = @json.parse(content) catch {
           _ => Json::string(content)
         }
-        let name = tool_names.get(tool_call_id).unwrap_or(tool_call_id)
+        let name = resolve_tool_result_name_or_abort(tool_names, tool_call_id)
         result.push({
           role: "user",
           parts: [GeminiPart::FunctionResponse(name~, response~)],
@@ -171,6 +164,21 @@ pub fn messages_to_contents(
     }
   }
   result
+}
+
+///|
+fn resolve_tool_result_name_or_abort(
+  tool_names : Map[String, String],
+  tool_call_id : String,
+) -> String {
+  match tool_names.get(tool_call_id) {
+    Some(name) => name
+    None =>
+      abort(
+        "Gemini tool result does not match any preceding assistant tool call: " +
+        tool_call_id,
+      )
+  }
 }
 
 ///|
@@ -262,17 +270,49 @@ pub fn tool_to_json(tool : @types.ToolDefinition) -> Json {
 fn build_builtin_tool_json(type_ : String, config : Json) -> Json {
   if is_native_gemini_tool_type(type_) {
     let result : Map[String, Json] = {}
-    result[type_] = match config {
-      Object(fields) => Json::object(fields)
-      _ => Json::object({})
-    }
+    result[type_] = native_gemini_tool_config_or_abort(type_, config)
     Json::object(result)
   } else {
+    ensure_bridged_builtin_config_is_empty_or_abort(type_, config)
     {
       "name": tool_name_from_builtin(type_),
       "description": "",
       "parameters": Json::object({}),
     }
+  }
+}
+
+///|
+fn native_gemini_tool_config_or_abort(type_ : String, config : Json) -> Json {
+  match config {
+    Object(fields) => Json::object(fields)
+    Null => Json::object({})
+    _ =>
+      abort(
+        "Gemini native builtin tool config must be an object for \{type_}: " +
+        config.stringify(),
+      )
+  }
+}
+
+///|
+fn ensure_bridged_builtin_config_is_empty_or_abort(
+  type_ : String,
+  config : Json,
+) -> Unit {
+  match config {
+    Object(fields) if fields.is_empty() => ()
+    Null => ()
+    Object(_) =>
+      abort(
+        "Gemini builtin bridge cannot preserve provider-specific config for \{type_}: " +
+        config.stringify(),
+      )
+    _ =>
+      abort(
+        "Gemini builtin bridge requires an object config for \{type_}: " +
+        config.stringify(),
+      )
   }
 }
 
@@ -309,15 +349,29 @@ pub fn tools_to_json(tools : Array[@types.ToolDefinition]) -> Json {
   let native_tools : Map[String, Json] = {}
   for tool in tools {
     match tool.kind {
-      @types.ToolDefinitionKind::Builtin(builtin_type~, config~) =>
+      @types.ToolDefinitionKind::Builtin(builtin_type~, ..) => {
+        let json = tool_to_json(tool)
         if is_native_gemini_tool_type(builtin_type) {
-          native_tools[builtin_type] = match config {
-            Object(fields) => Json::object(fields)
-            _ => Json::object({})
+          match json {
+            Object(fields) =>
+              match fields.get(builtin_type) {
+                Some(value) => native_tools[builtin_type] = value
+                None =>
+                  abort(
+                    "Gemini native builtin tool JSON is missing expected key \{builtin_type}: " +
+                    json.stringify(),
+                  )
+              }
+            _ =>
+              abort(
+                "Gemini native builtin tool JSON must be an object: " +
+                json.stringify(),
+              )
           }
         } else {
-          function_declarations.push(tool_to_json(tool))
+          function_declarations.push(json)
         }
+      }
       _ => function_declarations.push(tool_to_json(tool))
     }
   }
@@ -395,6 +449,9 @@ pub fn parse_response(response_json : Json) -> @types.ModelResponse {
           let tool_calls = parse_function_calls(parts)
           // Extract text and structured content parts
           let text = extract_gemini_text(parts)
+          let annotations = collect_gemini_grounding_annotations(
+            candidate, text,
+          )
           let response_parts = extract_gemini_content_parts(parts)
           if tool_calls.length() > 0 {
             match response_parts {
@@ -404,15 +461,22 @@ pub fn parse_response(response_json : Json) -> @types.ModelResponse {
                   rich=@types.RichTextResponse::from_parts(
                     content=text,
                     content_parts=rparts,
+                    annotations~,
                   ),
                 )
               None =>
-                if text.length() > 0 {
+                if text.length() > 0 || annotations.length() > 0 {
+                  let parts : Array[@types.ResponseContentPart] = []
+                  if text.length() > 0 {
+                    parts.push(@types.ResponseContentPart::OutputText(text))
+                  }
                   @types.ModelResponse::ToolCallsWithContent(
                     tool_calls~,
-                    rich=@types.RichTextResponse::from_parts(content=text, content_parts=[
-                      @types.ResponseContentPart::OutputText(text),
-                    ]),
+                    rich=@types.RichTextResponse::from_parts(
+                      content=text,
+                      content_parts=parts,
+                      annotations~,
+                    ),
                   )
                 } else {
                   @types.ModelResponse::ToolCalls(tool_calls)
@@ -425,9 +489,23 @@ pub fn parse_response(response_json : Json) -> @types.ModelResponse {
                   @types.RichTextResponse::from_parts(
                     content=text,
                     content_parts=rparts,
+                    annotations~,
                   ),
                 )
-              None => @types.ModelResponse::Text(text)
+              None =>
+                if annotations.length() > 0 {
+                  @types.ModelResponse::RichText(
+                    @types.RichTextResponse::from_parts(
+                      content=text,
+                      content_parts=[
+                        @types.ResponseContentPart::OutputText(text),
+                      ],
+                      annotations~,
+                    ),
+                  )
+                } else {
+                  @types.ModelResponse::Text(text)
+                }
             }
           }
         }
@@ -454,9 +532,35 @@ pub fn parse_function_calls(
       { "functionCall": { "name": String(name), "args": args, .. }, .. } => {
         // Gemini doesn't have call IDs - generate one based on index
         let id = @interop_util.generate_gemini_tool_call_id(name, index)
-        result.push(@types.ToolCallRequest::new(id~, name~, arguments=args))
+        if name == @types.web_search_tool_name() {
+          let query = match args {
+            { "query": String(value), .. } => Some(value)
+            _ => None
+          }
+          let queries = match args {
+            { "queries": Array(values), .. } => {
+              let result_queries : Array[String] = []
+              for value in values {
+                match value {
+                  String(text) => result_queries.push(text)
+                  _ => ()
+                }
+              }
+              Some(result_queries)
+            }
+            _ => None
+          }
+          result.push(@types.ToolCallRequest::web_search(id~, query~, queries~))
+        } else {
+          result.push(@types.ToolCallRequest::new(id~, name~, arguments=args))
+        }
         index = index + 1
       }
+      { "functionCall": _, .. } =>
+        abort(
+          "Gemini functionCall part is missing required name/args fields: " +
+          part.stringify(),
+        )
       _ => ()
     }
   }
@@ -558,57 +662,99 @@ pub fn parse_stream_chunk(
   match chunk_json {
     { "candidates": Array(candidates), .. } =>
       if candidates.length() > 0 {
-        match candidates[0] {
-          { "content": { "parts": Array(parts), .. }, .. } => {
-            let text_buf = StringBuilder::new()
-            // Ref: Part.text
-            for part in parts {
-              match part {
-                { "text": String(t), .. } => text_buf.write_string(t)
-                // Inference: docs/upstream/gemini-generate-content.md:52-57,3433-3434
-                // documents code execution support, but not this concrete Part key.
-                // Structure: {"executableCode":{"language":"PYTHON","code":"..."}}
-                {
-                  "executableCode": {
-                    "language": String(lang),
-                    "code": String(code),
-                    ..
-                  },
-                  ..
-                } => {
-                  text_buf.write_string("```")
-                  text_buf.write_string(lang.to_lower())
-                  text_buf.write_char('\n')
-                  text_buf.write_string(code)
-                  text_buf.write_string("\n```\n")
-                }
-                // Inference: docs/upstream/gemini-generate-content.md:52-57,3433-3434
-                // documents code execution support, but not this concrete Part key.
-                // Structure: {"codeExecutionResult":{"outcome":"OUTCOME_OK","output":"..."}}
-                {
-                  "codeExecutionResult": {
-                    "outcome": String(outcome),
-                    "output": String(output),
-                    ..
-                  },
-                  ..
-                } => {
-                  text_buf.write_string("Execution [")
-                  text_buf.write_string(outcome)
-                  text_buf.write_string("]: ")
-                  text_buf.write_string(output)
-                }
-                _ => ()
-              }
-            }
-            let tool_calls = parse_function_calls(parts)
-            Some((text_buf.to_string(), tool_calls))
-          }
-          _ => None
-        }
-      } else {
+        parse_first_gemini_stream_candidate(candidates[0])
+      } else if is_documented_gemini_stream_metadata_only_chunk(chunk_json) {
         None
+      } else {
+        abort(
+          "Gemini stream chunk returned no candidates without documented metadata: " +
+          chunk_json.stringify(),
+        )
       }
-    _ => None
+    _ =>
+      if is_documented_gemini_stream_metadata_only_chunk(chunk_json) {
+        None
+      } else {
+        abort(
+          "Unsupported Gemini stream chunk format: " + chunk_json.stringify(),
+        )
+      }
+  }
+}
+
+///|
+fn parse_first_gemini_stream_candidate(
+  candidate : Json,
+) -> (String, Array[@types.ToolCallRequest])? {
+  match candidate {
+    { "content": { "parts": Array(parts), .. }, .. } => {
+      let text_buf = StringBuilder::new()
+      // Ref: Part.text
+      for part in parts {
+        match part {
+          { "text": String(t), .. } => text_buf.write_string(t)
+          // Inference: docs/upstream/gemini-generate-content.md:52-57,3433-3434
+          // documents code execution support, but not this concrete Part key.
+          // Structure: {"executableCode":{"language":"PYTHON","code":"..."}}
+          {
+            "executableCode": {
+              "language": String(lang),
+              "code": String(code),
+              ..
+            },
+            ..
+          } => {
+            text_buf.write_string("```")
+            text_buf.write_string(lang.to_lower())
+            text_buf.write_char('\n')
+            text_buf.write_string(code)
+            text_buf.write_string("\n```\n")
+          }
+          // Inference: docs/upstream/gemini-generate-content.md:52-57,3433-3434
+          // documents code execution support, but not this concrete Part key.
+          // Structure: {"codeExecutionResult":{"outcome":"OUTCOME_OK","output":"..."}}
+          {
+            "codeExecutionResult": {
+              "outcome": String(outcome),
+              "output": String(output),
+              ..
+            },
+            ..
+          } => {
+            text_buf.write_string("Execution [")
+            text_buf.write_string(outcome)
+            text_buf.write_string("]: ")
+            text_buf.write_string(output)
+          }
+          _ => ()
+        }
+      }
+      let tool_calls = parse_function_calls(parts)
+      Some((text_buf.to_string(), tool_calls))
+    }
+    // Ref: docs/upstream/gemini-generate-content.md:2915-2939
+    // finishReason/finishMessage/safety metadata may appear when the candidate
+    // has stopped or has been blocked, without content parts in that chunk.
+    { "finishReason": String(_), .. } => None
+    _ =>
+      abort(
+        "Gemini stream candidate is missing content.parts and finishReason: " +
+        candidate.stringify(),
+      )
+  }
+}
+
+///|
+fn is_documented_gemini_stream_metadata_only_chunk(chunk_json : Json) -> Bool {
+  // Ref: docs/upstream/gemini-generate-content.md:2780-2790
+  // Metadata-only responses may include promptFeedback/usage/model metadata.
+  match chunk_json {
+    Object(fields) =>
+      fields.contains("promptFeedback") ||
+      fields.contains("usageMetadata") ||
+      fields.contains("modelVersion") ||
+      fields.contains("responseId") ||
+      fields.contains("modelStatus")
+    _ => false
   }
 }

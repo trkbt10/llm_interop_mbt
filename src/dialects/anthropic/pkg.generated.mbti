@@ -94,6 +94,17 @@ pub struct AnthropicMessagesAccumulator {
   text : StringBuilder
   tool_calls : Array[@types.ToolCallAcc]
   mut stop_reason : String
+  current_text : StringBuilder
+  content_parts : Array[@types.ResponseContentPart]
+  annotations : Array[@types.ResponseAnnotation]
+  tool_traces : Array[@types.ToolCallTrace]
+  mut current_block_type : String
+  current_thinking : StringBuilder
+  current_redacted_thinking : StringBuilder
+  mut current_server_tool_id : String
+  mut current_server_tool_name : String
+  current_server_tool_input : StringBuilder
+  mut current_text_citations : Array[Json]
 }
 pub fn AnthropicMessagesAccumulator::feed(Self, @sse.SseEvent) -> Unit
 pub fn AnthropicMessagesAccumulator::finish(Self) -> @types.ModelResponse
@@ -106,8 +117,11 @@ pub struct AnthropicToResponsesTranslator {
   mut current_tool_call_id : String
   mut current_tool_name : String
   mut current_tool_mode : String
+  mut current_block_type : String
   tool_input_buffer : StringBuilder
   text_buffer : StringBuilder
+  current_text_block : StringBuilder
+  mut current_text_citations : Array[Json]
   thinking_buffer : StringBuilder
   redacted_thinking_buffer : StringBuilder
   mut in_thinking_block : Bool

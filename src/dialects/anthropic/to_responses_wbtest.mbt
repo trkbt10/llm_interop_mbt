@@ -2,20 +2,7 @@
 /// Whitebox coverage for Anthropic -> Responses JSON conversion helpers
 
 ///|
-test "response_to_responses covers model fallback and error fallbacks" {
-  match
-    response_to_responses(
-      { "content": Json::array([]) },
-      response_id="resp_unknown",
-    ) {
-    { "id": String(id), "model": String(model), "output": Array(output), .. } => {
-      assert_eq(id, "resp_unknown")
-      assert_eq(model, "unknown")
-      assert_eq(output.length(), 0)
-    }
-    _ => fail("Expected successful fallback response")
-  }
-
+test "response_to_responses covers error fallbacks" {
   match
     response_to_responses(
       { "error": { "message": "upstream failed" } },
@@ -36,6 +23,15 @@ test "response_to_responses covers model fallback and error fallbacks" {
 }
 
 ///|
+test "panic response_to_responses rejects success payloads without model" {
+  response_to_responses(
+    { "content": Json::array([]) },
+    response_id="resp_unknown",
+  )
+  |> ignore
+}
+
+///|
 test "response_to_responses preserves reasoning and code execution text variants" {
   let converted = response_to_responses(
     {
@@ -51,6 +47,7 @@ test "response_to_responses preserves reasoning and code execution text variants
         { "type": "text_editor_code_execution_tool_result", "content": {} },
         { "type": "text", "text": "Done." },
       ]),
+      "stop_reason": "end_turn",
     },
     response_id="resp_reasoning",
   )
@@ -83,17 +80,19 @@ test "response_to_responses preserves reasoning and code execution text variants
           assert_eq(content.length(), 4)
           match content[0] {
             { "type": String("output_text"), "text": String(text), .. } =>
-              assert_eq(text, "Code execution output:\n42")
+              assert_eq(text, "Execution [success]: 42")
             _ => fail("Expected stdout-only code result text")
           }
           match content[1] {
             { "type": String("output_text"), "text": String(text), .. } =>
-              assert_eq(text, "Code execution [stderr]:\nwarn")
+              assert_eq(text, "Execution [failed]: [stderr]\nwarn")
             _ => fail("Expected stderr-only code result text")
           }
           match content[2] {
             { "type": String("output_text"), "text": String(text), .. } =>
-              assert_eq(text, "Code execution completed (no output)")
+              assert_eq(
+                text, "Execution [success]: Code execution completed (no output)",
+              )
             _ => fail("Expected empty code result fallback text")
           }
           match content[3] {
@@ -130,6 +129,7 @@ test "response_to_responses covers remaining code execution branches and ignores
         },
         { "type": "unsupported_block", "payload": true },
       ]),
+      "stop_reason": "end_turn",
     },
     response_id="resp_code_paths",
   )
@@ -142,22 +142,24 @@ test "response_to_responses covers remaining code execution branches and ignores
           assert_eq(content.length(), 4)
           match content[0] {
             { "text": String(text), .. } =>
-              assert_eq(text, "Code execution output:\n42\n[stderr]\nwarn")
+              assert_eq(text, "Execution [failed]: 42\n[stderr]\nwarn")
             _ => fail("Expected combined stdout/stderr text")
           }
           match content[1] {
             { "text": String(text), .. } =>
-              assert_eq(text, "Code execution [stderr]:\nonly stderr")
+              assert_eq(text, "Execution [failed]: [stderr]\nonly stderr")
             _ => fail("Expected stderr-only text")
           }
           match content[2] {
             { "text": String(text), .. } =>
-              assert_eq(text, "Code execution completed (no output)")
+              assert_eq(
+                text, "Execution [success]: Code execution completed (no output)",
+              )
             _ => fail("Expected empty-output fallback")
           }
           match content[3] {
             { "text": String(text), .. } =>
-              assert_eq(text, "Code execution output:\nprint(1)")
+              assert_eq(text, "Execution [success]: print(1)")
             _ => fail("Expected stdout-only alternate tool text")
           }
         }
@@ -179,6 +181,7 @@ test "response_to_responses covers combined output for alternate code execution 
           "content": { "stdout": "a", "stderr": "b" },
         },
       ]),
+      "stop_reason": "end_turn",
     },
     response_id="resp_alt_code",
   )
@@ -188,7 +191,7 @@ test "response_to_responses covers combined output for alternate code execution 
         { "type": String("message"), "content": Array(content), .. } =>
           match content[0] {
             { "text": String(text), .. } =>
-              assert_eq(text, "Code execution output:\na\n[stderr]\nb")
+              assert_eq(text, "Execution [failed]: a\n[stderr]\nb")
             _ => fail("Expected combined alternate code execution text")
           }
         _ => fail("Expected message output item")
@@ -228,43 +231,136 @@ test "response_to_responses converts tool_use and server web search blocks" {
           "input": { "code": "print(1)" },
         },
       ]),
+      "stop_reason": "tool_use",
     },
     response_id="resp_tools",
   )
 
   match converted {
     { "output": Array(output), .. } => {
-      assert_eq(output.length(), 3)
-      match output[0] {
-        {
-          "type": String("function_call"),
-          "name": String(name),
-          "arguments": String(arguments),
-          ..
-        } => {
-          assert_eq(name, "lookup")
-          assert_true(arguments.contains("\"moonbit\""))
+      assert_eq(output.length(), 4)
+      let mut saw_function_call = false
+      let mut web_search_calls = 0
+      let mut saw_code_execution_input = false
+      for item in output {
+        match item {
+          {
+            "type": String("function_call"),
+            "name": String(name),
+            "arguments": String(arguments),
+            ..
+          } => {
+            assert_eq(name, "lookup")
+            assert_true(arguments.contains("\"moonbit\""))
+            saw_function_call = true
+          }
+          {
+            "type": String("web_search_call"),
+            "action": { "type": String("search"), .. },
+            ..
+          } => web_search_calls = web_search_calls + 1
+          { "type": String("message"), "content": Array(content), .. } =>
+            match content[0] {
+              { "text": String(text), .. } => {
+                assert_eq(text, "```python\nprint(1)\n```")
+                saw_code_execution_input = true
+              }
+              _ => fail("Expected code execution prompt text")
+            }
+          _ => fail("Unexpected output item in mixed tool conversion")
         }
-        _ => fail("Expected function_call item")
       }
-      match output[1] {
-        {
-          "type": String("web_search_call"),
-          "action": { "type": String("search"), .. },
-          ..
-        } => ()
-        _ => fail("Expected tool_use web_search_call")
-      }
-      match output[2] {
-        {
-          "type": String("web_search_call"),
-          "action": { "type": String("search"), .. },
-          ..
-        } => ()
-        _ => fail("Expected server_tool_use web_search_call")
-      }
+      assert_true(saw_function_call)
+      assert_eq(web_search_calls, 2)
+      assert_true(saw_code_execution_input)
     }
     _ => fail("Expected converted tool outputs")
+  }
+}
+
+///|
+test "response_to_responses preserves Anthropic text citations via canonical path" {
+  let converted = response_to_responses(
+    {
+      "model": "claude-sonnet-4-20250514",
+      "content": Json::array([
+        {
+          "type": "text",
+          "text": "Weather details",
+          "citations": Json::array([
+            {
+              "type": "web_search_result_location",
+              "cited_text": "Weather details",
+              "encrypted_index": "enc_tokyo",
+              "title": "Tokyo Weather",
+              "url": "https://example.com/tokyo",
+            },
+          ]),
+        },
+      ]),
+      "stop_reason": "end_turn",
+    },
+    response_id="resp_citation",
+  )
+
+  match converted {
+    {
+      "id": String(id),
+      "output": [
+        {
+          "type": String("message"),
+          "content": [
+            {
+              "type": String("output_text"),
+              "text": String(text),
+              "annotations": Array(annotations),
+              ..
+            },
+          ],
+          ..
+        },
+      ],
+      ..
+    } => {
+      assert_eq(id, "resp_citation")
+      assert_eq(text, "Weather details")
+      assert_eq(annotations.length(), 1)
+      match annotations[0] {
+        {
+          "type": String("web_search_result_location"),
+          "title": String(title),
+          "start_index": Number(start_index, ..),
+          "end_index": Number(end_index, ..),
+          ..
+        } => {
+          assert_eq(title, "Tokyo Weather")
+          assert_eq(start_index.to_int(), 0)
+          assert_eq(end_index.to_int(), 15)
+        }
+        _ => fail("Expected preserved citation annotation")
+      }
+    }
+    _ => fail("Expected Responses output with preserved annotations")
+  }
+
+  match @openai.parse_responses_api_response(converted) {
+    @types.ModelResponse::RichText(rich) => {
+      assert_eq(rich.annotations.length(), 1)
+      match rich.annotations[0] {
+        @types.ResponseAnnotation::WebSearchResultCitation(
+          title~,
+          start_index~,
+          end_index~,
+          ..
+        ) => {
+          assert_eq(title, "Tokyo Weather")
+          assert_eq(start_index, 0)
+          assert_eq(end_index, 15)
+        }
+        _ => fail("Expected typed web search citation")
+      }
+    }
+    _ => fail("Expected RichText round-trip")
   }
 }
 

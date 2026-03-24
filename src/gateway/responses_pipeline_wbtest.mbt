@@ -394,6 +394,71 @@ test "parse_responses_api_result handles native responses and translated chat co
 }
 
 ///|
+test "parse_responses_api_result preserves Anthropic citations through Responses pipeline" {
+  let anthropic_body =
+    #|{"id":"msg_cited","model":"claude-sonnet-4-20250514","content":[{"type":"text","text":"Weather details","citations":[{"type":"web_search_result_location","cited_text":"Weather details","encrypted_index":"enc_tokyo","title":"Tokyo Weather","url":"https://example.com/tokyo"}]}],"stop_reason":"end_turn"}
+  match
+    parse_responses_api_result(
+      AnthropicMessages,
+      anthropic_body,
+      model="claude-sonnet-4-20250514",
+    ) {
+    @types.ModelResponse::RichText(rich) => {
+      assert_eq(rich.content, "Weather details")
+      assert_eq(rich.annotations.length(), 1)
+      match rich.annotations[0] {
+        @types.ResponseAnnotation::WebSearchResultCitation(
+          title~,
+          url~,
+          start_index~,
+          end_index~,
+          ..
+        ) => {
+          assert_eq(title, "Tokyo Weather")
+          assert_eq(url, "https://example.com/tokyo")
+          assert_eq(start_index, 0)
+          assert_eq(end_index, 15)
+        }
+        _ => fail("Expected citation to survive gateway pipeline")
+      }
+    }
+    _ => fail("Expected RichText response with annotations")
+  }
+}
+
+///|
+test "parse_responses_api_result preserves Gemini grounding through Responses pipeline" {
+  let gemini_body =
+    #|{"candidates":[{"content":{"parts":[{"text":"Weather details"}],"role":"model"},"groundingMetadata":{"groundingChunks":[{"web":{"uri":"https://example.com/weather","title":"Weather Source"}}],"groundingSupports":[{"groundingChunkIndices":[0],"segment":{"text":"Weather","startIndex":0,"endIndex":7}}]},"finishReason":"STOP"}]}
+  match
+    parse_responses_api_result(
+      GoogleGenerativeAI,
+      gemini_body,
+      model="gemini-2.0-flash",
+    ) {
+    @types.ModelResponse::RichText(rich) => {
+      assert_eq(rich.content, "Weather details")
+      assert_eq(rich.annotations.length(), 1)
+      match rich.annotations[0] {
+        @types.ResponseAnnotation::UrlCitation(
+          title~,
+          url~,
+          start_index~,
+          end_index~
+        ) => {
+          assert_eq(title, Some("Weather Source"))
+          assert_eq(url, "https://example.com/weather")
+          assert_eq(start_index, 0)
+          assert_eq(end_index, 7)
+        }
+        _ => fail("Expected grounding citation to survive gateway pipeline")
+      }
+    }
+    _ => fail("Expected RichText response with Gemini annotations")
+  }
+}
+
+///|
 test "parse_responses_api_result reports native JSON parse errors" {
   match
     parse_responses_api_result(OpenAIResponses, "not json", model="gpt-4.1") {

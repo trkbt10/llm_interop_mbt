@@ -50,3 +50,51 @@ test "inject_json_field preserves existing and non-object bodies" {
   let invalid = "nope"
   assert_eq(inject_json_field(invalid, "id", "resp_1"), invalid)
 }
+
+///|
+test "responses tool helpers normalize shared tool metadata" {
+  match
+    parse_responses_function_tool({
+      "type": "function",
+      "name": "lookup",
+      "description": "Search docs",
+      "parameters": { "type": "object" },
+    }) {
+    Some((name, description, parameters)) => {
+      assert_eq(name, "lookup")
+      assert_eq(description, "Search docs")
+      assert_eq(parameters, { "type": "object" })
+    }
+    None => fail("Expected parsed function tool")
+  }
+
+  match
+    parse_responses_function_tool({ "type": "function", "name": "lookup" }) {
+    Some((name, description, parameters)) => {
+      assert_eq(name, "lookup")
+      assert_eq(description, "")
+      assert_eq(parameters, Json::object({}))
+    }
+    None => fail("Expected normalized function tool")
+  }
+  assert_eq(parse_responses_function_tool({ "type": "builtin" }), None)
+
+  assert_eq(
+    extract_responses_tool_name({ "name": "computer_call" }),
+    "computer_call",
+  )
+  assert_eq(extract_responses_tool_name(Json::null()), "")
+
+  match
+    extract_responses_tool_config({
+      "type": "builtin_beta",
+      "name": "beta",
+      "description": "ignore",
+      "parameters": { "type": "object" },
+      "extra": 1,
+    }) {
+    { "extra": Number(extra, ..), .. } => assert_eq(extra.to_int(), 1)
+    _ => fail("Expected filtered config object")
+  }
+  assert_eq(extract_responses_tool_config(Json::null()), Json::object({}))
+}

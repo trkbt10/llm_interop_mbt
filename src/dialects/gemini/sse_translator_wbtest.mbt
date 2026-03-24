@@ -286,3 +286,80 @@ test "translator canonicalizes final Gemini structured output text" {
     _ => fail("Expected normalized output_item.done")
   }
 }
+
+///|
+test "translator preserves Gemini grounding annotations on completed message" {
+  let translator = GeminiToResponsesTranslator::new(
+    response_id="resp_grounded",
+    model="gemini-2.0-flash",
+  )
+  let events = translator.translate({
+    event: "data",
+    data: {
+      "candidates": [
+        {
+          "content": {
+            "parts": [{ "text": "Weather details" }],
+            "role": "model",
+          },
+          "groundingMetadata": {
+            "groundingChunks": [
+              {
+                "web": {
+                  "uri": "https://example.com/weather",
+                  "title": "Weather Source",
+                },
+              },
+            ],
+            "groundingSupports": [
+              {
+                "groundingChunkIndices": [0],
+                "segment": { "text": "Weather", "startIndex": 0, "endIndex": 7 },
+              },
+            ],
+          },
+          "finishReason": "STOP",
+        },
+      ],
+    },
+  })
+  let annotation_events : Array[(String, Json)] = []
+  for event in events {
+    match event {
+      ("response.output_text.annotation.added", _) =>
+        annotation_events.push(event)
+      _ => ()
+    }
+  }
+  assert_eq(annotation_events.length(), 1)
+  match annotation_events[0].1 {
+    {
+      "annotation": { "type": String("url_citation"), "url": String(url), .. },
+      ..
+    } => assert_eq(url, "https://example.com/weather")
+    _ => fail("Expected annotation event")
+  }
+  match events[7].1 {
+    {
+      "item": {
+        "content": [
+          {
+            "type": String("output_text"),
+            "annotations": Array(annotations),
+            ..
+          },
+        ],
+        ..
+      },
+      ..
+    } => {
+      assert_eq(annotations.length(), 1)
+      match annotations[0] {
+        { "type": String("url_citation"), "title": String(title), .. } =>
+          assert_eq(title, "Weather Source")
+        _ => fail("Expected grounded output_text annotation")
+      }
+    }
+    _ => fail("Expected grounded output_item.done")
+  }
+}

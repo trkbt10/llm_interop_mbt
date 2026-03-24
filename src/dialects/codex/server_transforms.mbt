@@ -62,69 +62,16 @@ pub fn chat_response_to_events(
   }
   // Build event sequence
   let events : Array[String] = []
-  // 1. turn/started
-  let turn_started : Json = {
-    "method": "turn/started",
-    "params": {
-      "turn": {
-        "id": turn_id,
-        "status": "inProgress",
-        "items": Json::array([]),
-      },
-    },
+  for event in build_turn_stream_start_events(turn_id, item_id) {
+    events.push(event)
   }
-  events.push(turn_started.stringify())
-  // 2. item/started
-  let item_started : Json = {
-    "method": "item/started",
-    "params": { "item": { "type": "agentMessage", "id": item_id, "text": "" } },
+  events.push(build_turn_stream_delta_event(item_id, content))
+  for
+    event in build_turn_stream_success_events(
+      turn_id, item_id, content, input_tokens, output_tokens, total_tokens,
+    ) {
+    events.push(event)
   }
-  events.push(item_started.stringify())
-  // 3. item/agentMessage/delta
-  let delta : Json = {
-    "method": "item/agentMessage/delta",
-    "params": { "itemId": item_id, "delta": content },
-  }
-  events.push(delta.stringify())
-  // 4. item/completed
-  let item_completed : Json = {
-    "method": "item/completed",
-    "params": {
-      "item": { "type": "agentMessage", "id": item_id, "text": content },
-    },
-  }
-  events.push(item_completed.stringify())
-  // 5. thread/tokenUsage/updated
-  let token_usage : Json = {
-    "method": "thread/tokenUsage/updated",
-    "params": {
-      "tokenUsage": {
-        "total": {
-          "inputTokens": input_tokens,
-          "outputTokens": output_tokens,
-          "totalTokens": total_tokens,
-        },
-      },
-    },
-  }
-  events.push(token_usage.stringify())
-  // 6. turn/completed
-  let completed_item : Json = {
-    "type": "agentMessage",
-    "id": item_id,
-    "text": content,
-  }
-  let turn_completed : Json = {
-    "method": "turn/completed",
-    "params": {
-      "turn": {
-        "id": turn_id,
-        "status": "completed",
-        "items": Json::array([completed_item]),
-      },
-    },
-  }
-  events.push(turn_completed.stringify())
   events
 }
 
@@ -170,8 +117,66 @@ pub fn sse_chunk_extract_usage(sse_data : Json) -> (Int, Int, Int)? {
 }
 
 ///|
+/// Canonical app-server entrypoint:
+/// emit the initial Codex turn/item start events before streaming deltas.
+pub fn build_turn_stream_start_events(
+  turn_id : String,
+  item_id : String,
+) -> Array[String] {
+  [make_turn_started_event(turn_id), make_item_started_event(item_id)]
+}
+
+///|
+/// Canonical app-server entrypoint:
+/// wrap a streamed text delta as a Codex event.
+pub fn build_turn_stream_delta_event(
+  item_id : String,
+  delta : String,
+) -> String {
+  make_agent_message_delta_event(item_id, delta)
+}
+
+///|
+/// Canonical app-server entrypoint:
+/// emit the final success tail for a streamed turn.
+pub fn build_turn_stream_success_events(
+  turn_id : String,
+  item_id : String,
+  content : String,
+  input_tokens : Int,
+  output_tokens : Int,
+  total_tokens : Int,
+) -> Array[String] {
+  [
+    make_item_completed_event(item_id, content),
+    make_token_usage_event(input_tokens, output_tokens, total_tokens),
+    make_turn_completed_event(turn_id, item_id, content),
+  ]
+}
+
+///|
+/// Canonical app-server entrypoint:
+/// emit a start+failed sequence when the turn cannot begin at all.
+pub fn build_turn_start_failure_events(
+  turn_id : String,
+  error_msg : String,
+) -> Array[String] {
+  [make_turn_started_event(turn_id), make_turn_failed_event(turn_id, error_msg)]
+}
+
+///|
+/// Canonical app-server entrypoint:
+/// emit a failed turn event after streaming already started.
+pub fn build_turn_stream_failure_event(
+  turn_id : String,
+  error_msg : String,
+) -> String {
+  make_turn_failed_event(turn_id, error_msg)
+}
+
+///|
 /// Build turn/started event
-pub fn make_turn_started_event(turn_id : String) -> String {
+fn make_turn_started_event(turn_id : String) -> String {
   let event : Json = {
     "method": "turn/started",
     "params": {
@@ -187,7 +192,7 @@ pub fn make_turn_started_event(turn_id : String) -> String {
 
 ///|
 /// Build item/started event for agentMessage
-pub fn make_item_started_event(item_id : String) -> String {
+fn make_item_started_event(item_id : String) -> String {
   let event : Json = {
     "method": "item/started",
     "params": { "item": { "type": "agentMessage", "id": item_id, "text": "" } },
@@ -197,10 +202,7 @@ pub fn make_item_started_event(item_id : String) -> String {
 
 ///|
 /// Build item/agentMessage/delta event
-pub fn make_agent_message_delta_event(
-  item_id : String,
-  delta : String,
-) -> String {
+fn make_agent_message_delta_event(item_id : String, delta : String) -> String {
   let event : Json = {
     "method": "item/agentMessage/delta",
     "params": { "itemId": item_id, "delta": delta },
@@ -210,7 +212,7 @@ pub fn make_agent_message_delta_event(
 
 ///|
 /// Build item/completed event for agentMessage
-pub fn make_item_completed_event(item_id : String, content : String) -> String {
+fn make_item_completed_event(item_id : String, content : String) -> String {
   let event : Json = {
     "method": "item/completed",
     "params": {
@@ -222,7 +224,7 @@ pub fn make_item_completed_event(item_id : String, content : String) -> String {
 
 ///|
 /// Build thread/tokenUsage/updated event
-pub fn make_token_usage_event(
+fn make_token_usage_event(
   input_tokens : Int,
   output_tokens : Int,
   total_tokens : Int,
@@ -244,7 +246,7 @@ pub fn make_token_usage_event(
 
 ///|
 /// Build turn/completed event (success)
-pub fn make_turn_completed_event(
+fn make_turn_completed_event(
   turn_id : String,
   item_id : String,
   content : String,
@@ -269,7 +271,7 @@ pub fn make_turn_completed_event(
 
 ///|
 /// Build turn/completed event (failed)
-pub fn make_turn_failed_event(turn_id : String, error_msg : String) -> String {
+fn make_turn_failed_event(turn_id : String, error_msg : String) -> String {
   let event : Json = {
     "method": "turn/completed",
     "params": {
@@ -290,25 +292,5 @@ fn make_error_events(
   turn_id : String,
   error_message : String,
 ) -> Array[String] {
-  let turn_started : Json = {
-    "method": "turn/started",
-    "params": {
-      "turn": {
-        "id": turn_id,
-        "status": "inProgress",
-        "items": Json::array([]),
-      },
-    },
-  }
-  let turn_completed : Json = {
-    "method": "turn/completed",
-    "params": {
-      "turn": {
-        "id": turn_id,
-        "status": "failed",
-        "error": { "message": error_message },
-      },
-    },
-  }
-  [turn_started.stringify(), turn_completed.stringify()]
+  build_turn_start_failure_events(turn_id, error_message)
 }

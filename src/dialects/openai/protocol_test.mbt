@@ -170,6 +170,20 @@ test "responses_api_resolve extracts model from request body" {
 }
 
 ///|
+test "route resolvers reject requests without model" {
+  assert_eq(
+    chat_completions_resolve(
+      "POST", "/v1/chat/completions", "{\"messages\":[]}",
+    ),
+    None,
+  )
+  assert_eq(
+    responses_api_resolve("POST", "/v1/responses", "{\"input\":\"hi\"}"),
+    None,
+  )
+}
+
+///|
 test "messages_to_responses_input preserves builtin assistant tool items" {
   let messages = [
     @types.ModelMessage::Assistant(
@@ -599,9 +613,62 @@ test "parse_responses_api_response preserves annotations and web search traces" 
       match rich.annotations[0] {
         @types.ResponseAnnotation::UrlCitation(url~, ..) =>
           assert_eq(url, "https://example.com/weather")
+        _ => fail("Expected URL citation")
       }
       assert_eq(rich.tool_traces[0].id, "ws_001")
       assert_eq(rich.tool_traces[0].kind, @types.ToolCallKind::WebSearch)
+    }
+    _ => fail("Expected RichText response")
+  }
+}
+
+///|
+test "parse_responses_api_response preserves interop citation extensions" {
+  let json : Json = {
+    "output": Json::array([
+      {
+        "type": "message",
+        "content": Json::array([
+          {
+            "type": "output_text",
+            "text": "Berkshire Hathaway",
+            "annotations": Json::array([
+              {
+                "type": "web_search_result_location",
+                "cited_text": "Berkshire Hathaway",
+                "encrypted_index": "enc_berkshire",
+                "title": "Berkshire Hathaway",
+                "url": "https://example.com/berkshire",
+                "start_index": 0,
+                "end_index": 18,
+              },
+            ]),
+          },
+        ]),
+      },
+    ]),
+  }
+  let response = parse_responses_api_response(json)
+  match response {
+    @types.ModelResponse::RichText(rich) => {
+      assert_eq(rich.annotations.length(), 1)
+      match rich.annotations[0] {
+        @types.ResponseAnnotation::WebSearchResultCitation(
+          encrypted_index~,
+          title~,
+          url~,
+          start_index~,
+          end_index~,
+          ..
+        ) => {
+          assert_eq(encrypted_index, "enc_berkshire")
+          assert_eq(title, "Berkshire Hathaway")
+          assert_eq(url, "https://example.com/berkshire")
+          assert_eq(start_index, 0)
+          assert_eq(end_index, 18)
+        }
+        _ => fail("Expected web search result citation")
+      }
     }
     _ => fail("Expected RichText response")
   }

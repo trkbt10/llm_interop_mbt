@@ -1,5 +1,5 @@
 ///|
-/// Whitebox coverage for Responses API accumulator fallback branches
+/// Whitebox coverage for Responses API accumulator validation branches
 
 ///|
 test "feed handles no-op events and unknown output items" {
@@ -26,7 +26,7 @@ test "feed handles no-op events and unknown output items" {
 }
 
 ///|
-test "feed handles id-only function call snapshots and output-index fallbacks" {
+test "panic feed rejects function_call added snapshots without ids" {
   let anonymous_added = ResponsesApiAccumulator::new()
   anonymous_added.feed({
     event: "response.output_item.added",
@@ -35,14 +35,10 @@ test "feed handles id-only function call snapshots and output-index fallbacks" {
       "output_index": 9,
     },
   })
-  match anonymous_added.finish() {
-    @types.ModelResponse::ToolCalls(calls) => {
-      assert_eq(calls.length(), 1)
-      assert_eq(calls[0].id, "")
-    }
-    _ => fail("Expected anonymous added ToolCalls response")
-  }
+}
 
+///|
+test "feed handles function call snapshots and output-index reconciliation" {
   let existing = ResponsesApiAccumulator::new()
   existing.feed({
     event: "response.output_item.added",
@@ -74,27 +70,6 @@ test "feed handles id-only function call snapshots and output-index fallbacks" {
       assert_eq(calls[0].name, "lookup")
     }
     _ => fail("Expected ToolCalls from existing call")
-  }
-
-  let anonymous_done = ResponsesApiAccumulator::new()
-  anonymous_done.feed({
-    event: "response.output_item.done",
-    data: {
-      "item": {
-        "type": "function_call",
-        "name": "lookup",
-        "arguments": "{\"q\":\"moonbit\"}",
-      },
-      "output_index": 2,
-    },
-  })
-  match anonymous_done.finish() {
-    @types.ModelResponse::ToolCalls(calls) => {
-      assert_eq(calls.length(), 1)
-      assert_eq(calls[0].id, "")
-      assert_eq(calls[0].name, "lookup")
-    }
-    _ => fail("Expected anonymous done ToolCalls response")
   }
 
   let late = ResponsesApiAccumulator::new()
@@ -132,9 +107,29 @@ test "feed handles id-only function call snapshots and output-index fallbacks" {
     },
   })
   match no_index.finish() {
-    @types.ModelResponse::Text(text) => assert_eq(text, "")
-    _ => fail("Expected no-op without output_index")
+    @types.ModelResponse::ToolCalls(calls) => {
+      assert_eq(calls.length(), 1)
+      assert_eq(calls[0].id, "call_no_index")
+      assert_eq(calls[0].name, "search")
+    }
+    _ => fail("Expected tool call from self-contained done event")
   }
+}
+
+///|
+test "panic feed rejects function_call done snapshots without ids" {
+  let anonymous_done = ResponsesApiAccumulator::new()
+  anonymous_done.feed({
+    event: "response.output_item.done",
+    data: {
+      "item": {
+        "type": "function_call",
+        "name": "lookup",
+        "arguments": "{\"q\":\"moonbit\"}",
+      },
+      "output_index": 2,
+    },
+  })
 }
 
 ///|
@@ -178,20 +173,16 @@ test "finish returns ToolCallsWithContent when tool calls and rich content coexi
 }
 
 ///|
-test "feed handles web search fallback ids and synthesized completed status" {
+test "panic feed rejects web search snapshots without ids" {
   let missing_id = ResponsesApiAccumulator::new()
   missing_id.feed({
     event: "response.output_item.added",
     data: { "item": { "type": "web_search_call" } },
   })
-  match missing_id.finish() {
-    @types.ModelResponse::RichText(rich) => {
-      assert_eq(rich.tool_traces.length(), 1)
-      assert_eq(rich.tool_traces[0].id, "")
-    }
-    _ => fail("Expected empty-id web search trace")
-  }
+}
 
+///|
+test "feed handles web search completed status" {
   let completed = ResponsesApiAccumulator::new()
   completed.feed({
     event: "response.output_item.done",

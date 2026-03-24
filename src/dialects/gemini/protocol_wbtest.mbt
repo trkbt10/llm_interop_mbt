@@ -1,5 +1,5 @@
 ///|
-/// Whitebox coverage for Gemini protocol helpers and fallback branches
+/// Whitebox coverage for Gemini protocol helpers and validation paths
 
 ///|
 test "message and content helpers cover system, multimodal inputs, empty assistant, and tool results" {
@@ -89,22 +89,6 @@ test "message and content helpers cover system, multimodal inputs, empty assista
     Some(_) => fail("Expected empty assistant to be skipped")
   }
 
-  match
-    message_to_content(
-      @types.ModelMessage::ToolResult(tool_call_id="call_1", content="not-json"),
-    ) {
-    Some(
-      {
-        role: "function",
-        parts: [GeminiPart::FunctionResponse(name~, response~)],
-      }
-    ) => {
-      assert_eq(name, "call_1")
-      assert_eq(response, Json::string("not-json"))
-    }
-    _ => fail("Expected function response fallback")
-  }
-
   let contents = messages_to_contents([
     @types.ModelMessage::Assistant(content="", tool_calls=None),
     @types.ModelMessage::User(content="Hi", name=None, content_parts=None),
@@ -123,22 +107,14 @@ test "message and content helpers cover system, multimodal inputs, empty assista
       tool_call_id="call_lookup",
       content="{\"ok\":true}",
     ),
-    @types.ModelMessage::ToolResult(tool_call_id="missing", content="fallback"),
   ])
-  assert_eq(resolved_contents.length(), 3)
+  assert_eq(resolved_contents.length(), 2)
   match resolved_contents[1] {
     { role: "user", parts: [GeminiPart::FunctionResponse(name~, response~)] } => {
       assert_eq(name, "lookup")
       assert_eq(response, { "ok": true })
     }
     _ => fail("Expected resolved tool result content")
-  }
-  match resolved_contents[2] {
-    { role: "user", parts: [GeminiPart::FunctionResponse(name~, response~)] } => {
-      assert_eq(name, "missing")
-      assert_eq(response, Json::string("fallback"))
-    }
-    _ => fail("Expected fallback tool result content")
   }
 
   match
@@ -172,11 +148,27 @@ test "message and content helpers cover system, multimodal inputs, empty assista
 }
 
 ///|
-test "tool and request helpers cover native builtins, fallback builtins, and generation config" {
-  assert_eq(build_builtin_tool_json("googleSearch", Json::string("ignored")), {
+test "panic message_to_content rejects tool results without name context" {
+  message_to_content(
+    @types.ModelMessage::ToolResult(tool_call_id="call_1", content="not-json"),
+  )
+  |> ignore
+}
+
+///|
+test "panic messages_to_contents rejects unresolved tool result ids" {
+  messages_to_contents([
+    @types.ModelMessage::ToolResult(tool_call_id="missing", content="fallback"),
+  ])
+  |> ignore
+}
+
+///|
+test "tool and request helpers cover native builtins, normalized bridged builtins, and generation config" {
+  assert_eq(build_builtin_tool_json("googleSearch", Json::null()), {
     "googleSearch": {},
   })
-  assert_eq(build_builtin_tool_json("custom_builtin", { "flag": true }), {
+  assert_eq(build_builtin_tool_json("custom_builtin", {}), {
     "name": "custom_builtin",
     "description": "",
     "parameters": {},
@@ -196,10 +188,7 @@ test "tool and request helpers cover native builtins, fallback builtins, and gen
   )
 
   let tools_json = tools_to_json([
-    @types.ToolDefinition::builtin(
-      type_="googleSearch",
-      config=Json::string("x"),
-    ),
+    @types.ToolDefinition::builtin(type_="googleSearch", config={}),
     @types.ToolDefinition::builtin(type_="custom_builtin", config={}),
     @types.ToolDefinition::new(name="lookup", description="Search", parameters={
       "type": "object",
@@ -210,8 +199,13 @@ test "tool and request helpers cover native builtins, fallback builtins, and gen
       assert_eq(obj.length(), 0)
       assert_eq(decls.length(), 2)
       match decls[0] {
-        { "name": "custom_builtin", .. } => ()
-        _ => fail("Expected fallback builtin declaration")
+        {
+          "name": "custom_builtin",
+          "description": "",
+          "parameters": Object(parameters),
+          ..
+        } => assert_eq(parameters.length(), 0)
+        _ => fail("Expected normalized builtin declaration")
       }
     }
     _ => fail("Expected Gemini tools object")
@@ -365,14 +359,47 @@ test "response and stream parsers cover no candidates, invalid candidates, and e
       "candidates": Json::array([{ "finishReason": "STOP" }]),
     }) {
     None => ()
-    Some(_) => fail("Expected invalid candidate chunk to be ignored")
+    Some(_) => fail("Expected finishReason-only chunk to be a no-op")
   }
-  match parse_stream_chunk({ "candidates": Json::array([]) }) {
+  match parse_stream_chunk({ "promptFeedback": { "blockReason": "SAFETY" } }) {
     None => ()
-    Some(_) => fail("Expected empty candidates chunk to be ignored")
+    Some(_) => fail("Expected promptFeedback-only chunk to be ignored")
   }
-  match parse_stream_chunk({ "other": true }) {
+  match parse_stream_chunk({ "usageMetadata": { "totalTokenCount": 3 } }) {
     None => ()
-    Some(_) => fail("Expected non-candidate chunk to be ignored")
+    Some(_) => fail("Expected usage metadata chunk to be ignored")
   }
+}
+
+///|
+test "panic tool helpers reject lossy builtin configs" {
+  build_builtin_tool_json("googleSearch", Json::string("ignored")) |> ignore
+}
+
+///|
+test "panic tool helpers reject bridged builtin config loss" {
+  build_builtin_tool_json("custom_builtin", { "flag": true }) |> ignore
+}
+
+///|
+test "panic parse_function_calls rejects malformed functionCall parts" {
+  parse_function_calls([{ "functionCall": { "name": "lookup" } }]) |> ignore
+}
+
+///|
+test "panic parse_stream_chunk rejects malformed stream chunks" {
+  parse_stream_chunk({ "other": true }) |> ignore
+}
+
+///|
+test "panic parse_stream_chunk rejects empty candidates without metadata" {
+  parse_stream_chunk({ "candidates": Json::array([]) }) |> ignore
+}
+
+///|
+test "panic parse_stream_chunk rejects candidates without content or finishReason" {
+  parse_stream_chunk({
+    "candidates": Json::array([{ "safetyRatings": Json::array([]) }]),
+  })
+  |> ignore
 }

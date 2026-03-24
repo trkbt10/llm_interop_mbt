@@ -34,7 +34,7 @@ pub fn non_streaming_to_synthetic_events(json : Json) -> Array[@sse.SseEvent] {
         })
         // Ref: docs/upstream/anthropic-messages-api.md:3958-3981 — response content block types
         match block {
-          { "type": String("text"), "text": String(text), .. } =>
+          { "type": String("text"), "text": String(text), .. } => {
             events.push({
               event: "content_block_delta",
               data: {
@@ -43,6 +43,24 @@ pub fn non_streaming_to_synthetic_events(json : Json) -> Array[@sse.SseEvent] {
                 "delta": { "type": "text_delta", "text": text },
               },
             })
+            match block {
+              { "citations": Array(citations), .. } =>
+                for citation in citations {
+                  events.push({
+                    event: "content_block_delta",
+                    data: {
+                      "type": "content_block_delta",
+                      "index": i,
+                      "delta": {
+                        "type": "citations_delta",
+                        "citation": citation,
+                      },
+                    },
+                  })
+                }
+              _ => ()
+            }
+          }
           { "type": String("tool_use"), "input": input, .. } =>
             events.push({
               event: "content_block_delta",

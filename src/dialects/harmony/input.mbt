@@ -57,12 +57,8 @@ pub fn responses_input_to_messages(
         "arguments": String(args_str),
         ..
       } => {
-        let id = match item {
-          { "call_id": String(cid), .. } => cid
-          { "id": String(fid), .. } => fid
-          _ => ""
-        }
-        let arguments : Json = @json.parse(args_str) catch { _ => {} }
+        let id = extract_responses_tool_item_id(item)
+        let arguments = parse_responses_tool_arguments(args_str, item)
         pending_tool_calls.push(
           @types.ToolCallRequest::new(id~, name~, arguments~),
         )
@@ -140,8 +136,10 @@ pub fn responses_input_to_messages(
           pending_tool_calls.push(
             @types.ToolCallRequest::builtin(id~, type_~, payload=item, name~),
           )
+        } else {
+          abort("Unsupported Responses input item type: \{type_}")
         }
-      _ => () // Unknown item type, skip
+      _ => abort("Unsupported Responses input item shape: " + item.stringify())
     }
   }
   // Flush any remaining pending tool calls
@@ -165,12 +163,24 @@ fn stringify_tool_output(output : Json) -> String {
 }
 
 ///|
+fn parse_responses_tool_arguments(args_str : String, item : Json) -> Json {
+  @json.parse(args_str) catch {
+    _ =>
+      abort("Responses tool arguments must be valid JSON: " + item.stringify())
+  }
+}
+
+///|
 fn extract_responses_tool_item_id(item : Json) -> String {
   match item {
     { "call_id": String(value), .. } => value
     { "approval_request_id": String(value), .. } => value
     { "id": String(value), .. } => value
-    _ => ""
+    _ =>
+      abort(
+        "Responses tool item is missing a required id field: " +
+        item.stringify(),
+      )
   }
 }
 
@@ -213,7 +223,8 @@ fn extract_text_content(content : Json) -> String {
       }
       buf.to_string()
     }
-    _ => ""
+    _ =>
+      abort("Unsupported Responses text content shape: " + content.stringify())
   }
 }
 

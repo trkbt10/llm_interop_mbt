@@ -28,9 +28,13 @@ pub fn convert_claude_image_to_responses(image : Json) -> Json {
         // URL image reference
         { "type": String("url"), "url": String(url), .. } =>
           { "type": "input_image", "image_url": url, "detail": "auto" }
-        _ => { "type": "input_image", "image_url": "", "detail": "auto" }
+        _ =>
+          abort(
+            "Claude image block must contain a supported source: " +
+            image.stringify(),
+          )
       }
-    _ => { "type": "input_image", "image_url": "", "detail": "auto" }
+    _ => abort("Expected Claude image block: " + image.stringify())
   }
 }
 
@@ -70,7 +74,7 @@ pub fn convert_claude_tool_result_to_responses(block : Json) -> Json {
         "output": output,
       }
     }
-    _ => { "type": "function_call_output", "call_id": "", "output": "" }
+    _ => abort("Expected Claude tool_result block: " + block.stringify())
   }
 }
 
@@ -108,7 +112,7 @@ pub fn convert_claude_tool_use_to_responses(block : Json) -> Json {
         "status": "completed",
       }
     }
-    _ => { "type": "function_call", "name": "", "arguments": "{}" }
+    _ => abort("Expected Claude tool_use block: " + block.stringify())
   }
 }
 
@@ -131,7 +135,7 @@ pub fn convert_claude_text_to_responses(block : Json) -> Json {
   match block {
     { "type": String("text"), "text": String(text), .. } =>
       { "type": "output_text", "text": text }
-    _ => { "type": "output_text", "text": "" }
+    _ => abort("Expected Claude text block: " + block.stringify())
   }
 }
 
@@ -158,21 +162,18 @@ pub fn convert_responses_function_call_to_claude(block : Json) -> Json {
       "arguments": String(args),
       ..
     } => {
-      // Get call_id and convert to Claude format
-      let id = match block {
-        { "call_id": String(cid), .. } =>
-          @interop_util.openai_responses_to_anthropic_tool_use_id(cid)
-        { "id": String(fid), .. } =>
-          @interop_util.openai_responses_to_anthropic_tool_use_id(fid)
-        _ => @interop_util.generate_anthropic_tool_use_id()
-      }
-      let input : Json = @json.parse(args) catch { _ => {} }
+      let id = convert_responses_function_call_id_to_claude(block)
+      let input = parse_responses_tool_arguments_or_abort(args, block)
       { "type": "tool_use", "id": id, "name": name, "input": input }
     }
     { "type": String("web_search_call"), "id": String(id), .. } => {
       let input = match block {
         { "action": { "query": String(query), .. }, .. } => { "query": query }
-        _ => {}
+        _ =>
+          abort(
+            "Responses web_search_call is missing required action.query: " +
+            block.stringify(),
+          )
       }
       {
         "type": "tool_use",
@@ -181,7 +182,11 @@ pub fn convert_responses_function_call_to_claude(block : Json) -> Json {
         "input": input,
       }
     }
-    _ => { "type": "tool_use", "id": "", "name": "", "input": {} }
+    _ =>
+      abort(
+        "Expected Responses function_call/web_search_call block: " +
+        block.stringify(),
+      )
   }
 }
 
@@ -200,7 +205,10 @@ pub fn convert_responses_function_call_output_to_claude(block : Json) -> Json {
       )
       { "type": "tool_result", "tool_use_id": tool_use_id, "content": output }
     }
-    _ => { "type": "tool_result", "tool_use_id": "", "content": "" }
+    _ =>
+      abort(
+        "Expected Responses function_call_output block: " + block.stringify(),
+      )
   }
 }
 
@@ -232,7 +240,33 @@ pub fn convert_responses_image_to_claude(block : Json) -> Json {
       } else {
         { "type": "image", "source": { "type": "url", "url": url } }
       }
-    _ => { "type": "image", "source": { "type": "url", "url": "" } }
+    _ => abort("Expected Responses input_image block: " + block.stringify())
+  }
+}
+
+///|
+fn convert_responses_function_call_id_to_claude(block : Json) -> String {
+  match block {
+    { "call_id": String(cid), .. } =>
+      @interop_util.openai_responses_to_anthropic_tool_use_id(cid)
+    { "id": String(fid), .. } =>
+      @interop_util.openai_responses_to_anthropic_tool_use_id(fid)
+    _ =>
+      abort(
+        "Responses function_call is missing required id/call_id: " +
+        block.stringify(),
+      )
+  }
+}
+
+///|
+fn parse_responses_tool_arguments_or_abort(args : String, block : Json) -> Json {
+  @json.parse(args) catch {
+    _ =>
+      abort(
+        "Responses function_call arguments must be valid JSON: " +
+        block.stringify(),
+      )
   }
 }
 

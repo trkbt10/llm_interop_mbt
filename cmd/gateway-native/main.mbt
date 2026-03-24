@@ -312,7 +312,7 @@ async fn proxy_responses_api(
     return @gw.HandleResult::Response({ status, headers, body: response_text })
   }
   let response_json = @json.parse(response_text) catch { _ => Json::object({}) }
-  let model_response = @openai.parse_openai_chat_response(response_json)
+  let model_response = @openai.parse_chat_response(response_json)
   let response_id = @gw.extract_response_id(response_text, model)
   let result = @harmony.model_response_to_responses_json(
     model_response,
@@ -844,7 +844,7 @@ async fn codex_stdio_execute(
     channel.send(msg) catch {
       e =>
         return (
-          @codex.codex_ipc_error_event("Codex send failed: " + e.to_string()),
+          @codex.ipc_error_event("Codex send failed: " + e.to_string()),
           current_session,
         )
     }
@@ -857,7 +857,7 @@ async fn codex_stdio_execute(
         let line = channel.recv() catch {
           e =>
             return (
-              @codex.codex_ipc_error_event(
+              @codex.ipc_error_event(
                 "Codex recv failed: " + e.to_string(),
               ),
               current_session,
@@ -875,7 +875,7 @@ async fn codex_stdio_execute(
           }
           None =>
             return (
-              @codex.codex_ipc_error_event("Codex EOF during setup"),
+              @codex.ipc_error_event("Codex EOF during setup"),
               current_session,
             )
         }
@@ -885,7 +885,7 @@ async fn codex_stdio_execute(
         let first_line = channel.recv() catch {
           e =>
             return (
-              @codex.codex_ipc_error_event(
+              @codex.ipc_error_event(
                 "Codex recv failed: " + e.to_string(),
               ),
               current_session,
@@ -902,7 +902,7 @@ async fn codex_stdio_execute(
           }
           None =>
             return (
-              @codex.codex_ipc_error_event("Codex EOF on turn/start"),
+              @codex.ipc_error_event("Codex EOF on turn/start"),
               current_session,
             )
         }
@@ -1040,21 +1040,10 @@ async fn proxy_to_claude_mcp_backend(
       body
     }
     let ctx = @types.TransformContext::default()
-    let intermediate = @claude_mcp.chat_request_to_prompt(openai_body, ctx)
-    // Extract prompt from intermediate format
-    let prompt_json = @json.parse(intermediate) catch { _ => Json::null() }
-    let prompt = match prompt_json {
-      { "prompt": String(p), .. } => p
-      _ => intermediate
-    }
-    // Use Bash tool as default — send the prompt as a command
-    let tool_name = "Bash"
-    let arguments : Json = { "command": prompt }
-    // Prepare tools/call steps (includes MCP init if needed)
-    let req = @claude_mcp.prepare_tools_call(
+    let req = @claude_mcp.prepare_chat_upstream(
       state.session,
-      tool_name,
-      arguments,
+      openai_body,
+      ctx,
     )
     let (response_text, new_session) = claude_mcp_stdio_execute(
       channel,

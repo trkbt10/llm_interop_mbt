@@ -132,7 +132,7 @@ fn EventAccumulator::new() -> EventAccumulator {
 /// Transform Codex aggregated events (JSON array string) into an OpenAI
 /// Chat Completion response. The host transport collects JSONL events
 /// into a JSON array before calling this function.
-pub fn events_to_chat(events_json : String) -> String {
+fn events_to_chat(events_json : String) -> String {
   let events = @json.parse(events_json) catch { _ => return events_json }
   let items = match events {
     Array(arr) => arr
@@ -146,7 +146,7 @@ pub fn events_to_chat(events_json : String) -> String {
 }
 
 ///|
-/// Alias for transform_response dispatch.
+/// Canonical response-side entrypoint for Codex event streams.
 pub fn response_to_chat(events_json : String) -> String {
   events_to_chat(events_json)
 }

@@ -39,6 +39,31 @@ test "message_to_json converts Assistant with tool_use" {
   }
 }
 
+///|
+test "message_to_json preserves assistant text before tool_use" {
+  let calls = [
+    @types.ToolCallRequest::new(id="toolu_123", name="search", arguments={
+      "query": "MoonBit",
+    }),
+  ]
+  let msg = @types.ModelMessage::Assistant(
+    content="Let me check",
+    tool_calls=Some(calls),
+  )
+  let json = message_to_json(msg)
+  match json {
+    { "role": "assistant", "content": Array(content), .. } => {
+      assert_eq(content.length(), 2)
+      assert_eq(content[0], { "type": "text", "text": "Let me check" })
+      match content[1] {
+        { "type": "tool_use", "id": "toolu_123", "name": "search", .. } => ()
+        _ => fail("Unexpected tool_use format")
+      }
+    }
+    _ => fail("Unexpected JSON format")
+  }
+}
+
 // =============================================================================
 // Tool Conversion Tests (Anthropic Format)
 // =============================================================================
@@ -140,6 +165,57 @@ test "parse_response parses text response" {
     @types.ModelResponse::Text(content) =>
       inspect(content, content="Hello from Claude!")
     _ => fail("Expected Text response")
+  }
+}
+
+///|
+test "parse_response preserves Anthropic text citations" {
+  let json : Json = {
+    "content": Json::array([
+      {
+        "type": "text",
+        "text": "Berkshire Hathaway",
+        "citations": Json::array([
+          {
+            "type": "page_location",
+            "cited_text": "Berkshire Hathaway",
+            "document_index": 0,
+            "document_title": "Annual Report",
+            "file_id": "file_annual",
+            "start_page_number": 12,
+            "end_page_number": 12,
+          },
+        ]),
+      },
+    ]),
+    "stop_reason": "end_turn",
+  }
+  let response = parse_response(json)
+  match response {
+    @types.ModelResponse::RichText(rich) => {
+      assert_eq(rich.content, "Berkshire Hathaway")
+      assert_eq(rich.annotations.length(), 1)
+      match rich.annotations[0] {
+        @types.ResponseAnnotation::DocumentPageCitation(
+          document_title~,
+          file_id~,
+          start_page_number~,
+          end_page_number~,
+          start_index~,
+          end_index~,
+          ..
+        ) => {
+          assert_eq(document_title, "Annual Report")
+          assert_eq(file_id, "file_annual")
+          assert_eq(start_page_number, 12)
+          assert_eq(end_page_number, 12)
+          assert_eq(start_index, 0)
+          assert_eq(end_index, "Berkshire Hathaway".length())
+        }
+        _ => fail("Expected page citation annotation")
+      }
+    }
+    _ => fail("Expected RichText response")
   }
 }
 
@@ -318,6 +394,33 @@ test "parse_response captures server web search traces" {
       }
     }
     _ => fail("Expected RichText response")
+  }
+}
+
+///|
+test "parse_response maps tool_use web_search to web-search tool calls" {
+  let response : Json = {
+    "content": Json::array([
+      {
+        "type": "tool_use",
+        "id": "toolu_01SEARCH",
+        "name": "web_search",
+        "input": { "query": "MoonBit 2026" },
+      },
+    ]),
+    "stop_reason": "tool_use",
+  }
+  let result = parse_response(response)
+  match result {
+    @types.ModelResponse::ToolCalls(tool_calls) => {
+      assert_eq(tool_calls.length(), 1)
+      assert_eq(tool_calls[0].kind, @types.ToolCallKind::WebSearch)
+      match tool_calls[0].arguments {
+        { "query": "MoonBit 2026", .. } => ()
+        _ => fail("Expected web search query arguments")
+      }
+    }
+    _ => fail("Expected ToolCalls response")
   }
 }
 

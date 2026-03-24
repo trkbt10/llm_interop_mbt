@@ -6,12 +6,18 @@
 pub struct GeminiAccumulator {
   text : StringBuilder
   tool_calls : Array[@types.ToolCallAcc]
+  mut annotations : Array[@types.ResponseAnnotation]
   mut finished : Bool
 }
 
 ///|
 pub fn GeminiAccumulator::new() -> GeminiAccumulator {
-  { text: StringBuilder::new(), tool_calls: [], finished: false }
+  {
+    text: StringBuilder::new(),
+    tool_calls: [],
+    annotations: [],
+    finished: false,
+  }
 }
 
 ///|
@@ -37,6 +43,7 @@ pub fn GeminiAccumulator::feed(
     }
     None => ()
   }
+  self.refresh_annotations(event.data)
 }
 
 ///|
@@ -49,23 +56,62 @@ pub fn GeminiAccumulator::finish(
   if self.tool_calls.length() > 0 {
     let calls : Array[@types.ToolCallRequest] = []
     for tc in self.tool_calls {
-      let arguments = @json.parse(tc.arguments.to_string()) catch { _ => {} }
+      let arguments = @json.parse(tc.arguments.to_string()) catch {
+        _ =>
+          abort(
+            "Gemini tool call arguments must be valid JSON: " +
+            tc.arguments.to_string(),
+          )
+      }
       calls.push(
         @types.ToolCallRequest::new(id=tc.id, name=tc.name, arguments~),
       )
     }
-    if content.length() > 0 {
+    if content.length() > 0 || self.annotations.length() > 0 {
       @types.ModelResponse::ToolCallsWithContent(
         tool_calls=calls,
-        rich=@types.RichTextResponse::from_parts(content~, content_parts=[
-          @types.ResponseContentPart::OutputText(content),
-        ]),
+        rich=@types.RichTextResponse::from_parts(
+          content~,
+          content_parts=[@types.ResponseContentPart::OutputText(content)],
+          annotations=self.annotations,
+        ),
       )
     } else {
       @types.ModelResponse::ToolCalls(calls)
     }
+  } else if self.annotations.length() > 0 {
+    @types.ModelResponse::RichText(
+      @types.RichTextResponse::from_parts(
+        content~,
+        content_parts=[@types.ResponseContentPart::OutputText(content)],
+        annotations=self.annotations,
+      ),
+    )
   } else {
     @types.ModelResponse::Text(content)
+  }
+}
+
+///|
+fn GeminiAccumulator::refresh_annotations(
+  self : GeminiAccumulator,
+  chunk_json : Json,
+) -> Unit {
+  let rendered_text = self.text.to_string()
+  if rendered_text.length() == 0 {
+    return
+  }
+  match chunk_json {
+    { "candidates": Array(candidates), .. } if candidates.length() > 0 => {
+      let annotations = collect_gemini_grounding_annotations(
+        candidates[0],
+        rendered_text,
+      )
+      if annotations.length() > 0 {
+        self.annotations = annotations
+      }
+    }
+    _ => ()
   }
 }
 

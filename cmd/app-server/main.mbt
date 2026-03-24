@@ -86,17 +86,17 @@ fn AppServerState::next_item_id(self : AppServerState) -> String {
 
 ///|
 fn send_response(id : Int?, result : Json) -> String {
-  @codex.codex_rpc_response(id, result)
+  @codex.rpc_response(id, result)
 }
 
 ///|
 fn send_error(id : Int?, code : Int, message : String) -> String {
-  @codex.codex_rpc_error(id, code, message)
+  @codex.rpc_error(id, code, message)
 }
 
 ///|
 fn send_notification(rpc_method : String, params : Json) -> String {
-  @codex.codex_rpc_notification(rpc_method, params)
+  @codex.rpc_notification(rpc_method, params)
 }
 
 // =============================================================================
@@ -568,7 +568,6 @@ async fn fetch_provider_models(provider : @gw.ProviderConfig) -> Array[Json] {
 ///|
 /// Per-provider Codex state: session + live subprocess channel
 struct CodexBackendState {
-  mut session : @codex.CodexSession
   mut channel : @ipc.IpcChannel?
 }
 
@@ -614,10 +613,7 @@ async fn get_codex_channel(
   let channel = @ipc.IpcChannel::from_child(child)
   match codex_backends.get(backend_id) {
     Some(state) => state.channel = Some(channel)
-    None => {
-      let session = @codex.CodexSession::new(cwd)
-      codex_backends[backend_id] = { session, channel: Some(channel) }
-    }
+    None => codex_backends[backend_id] = { channel: Some(channel) }
   }
   channel
 }
@@ -864,9 +860,9 @@ async fn handle_turn_start_streaming(
   let provider = match state.gateway.select_backend(model) {
     Some(p) => p
     None => {
-      emit(@codex.make_turn_started_event(turn_id))
-      emit(
-        @codex.make_turn_failed_event(
+      emit_all(
+        emit,
+        @codex.build_turn_start_failure_events(
           turn_id,
           "No backend available for model: " + model,
         ),
@@ -887,28 +883,31 @@ async fn handle_turn_start_streaming(
     api_key,
   )
   // Emit turn/started and item/started before streaming begins
-  emit(@codex.make_turn_started_event(turn_id))
-  emit(@codex.make_item_started_event(item_id))
+  emit_all(emit, @codex.build_turn_stream_start_events(turn_id, item_id))
   // Stream response
   let (content, input_tokens, output_tokens, total_tokens) = try {
     http_post_streaming(upstream, async fn(delta_text) {
-      emit(@codex.make_agent_message_delta_event(item_id, delta_text))
+      emit(@codex.build_turn_stream_delta_event(item_id, delta_text))
     })
   } catch {
     e => {
-      emit(
-        @codex.make_turn_failed_event(turn_id, e.to_string()),
-      )
+      emit(@codex.build_turn_stream_failure_event(turn_id, e.to_string()))
       thread.active_turn_id = None
       return
     }
   }
   // Emit completion events
-  emit(@codex.make_item_completed_event(item_id, content))
-  emit(
-    @codex.make_token_usage_event(input_tokens, output_tokens, total_tokens),
+  emit_all(
+    emit,
+    @codex.build_turn_stream_success_events(
+      turn_id,
+      item_id,
+      content,
+      input_tokens,
+      output_tokens,
+      total_tokens,
+    ),
   )
-  emit(@codex.make_turn_completed_event(turn_id, item_id, content))
   // Add assistant message to history
   if content != "" {
     let assistant_msg : Json = {

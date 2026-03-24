@@ -79,7 +79,21 @@ pub fn tool_calls_to_requests(
   let calls : Array[ToolCallRequest] = []
   for tc in tool_calls {
     let args_str = tc.arguments.to_string()
-    let arguments : Json = @json.parse(args_str) catch { _ => {} }
+    guard tc.id.length() > 0 else {
+      abort("Accumulated tool call is missing id")
+    }
+    guard tc.name.length() > 0 else {
+      abort("Accumulated tool call is missing name for id " + tc.id)
+    }
+    let arguments : Json = @json.parse(args_str) catch {
+      _ =>
+        abort(
+          "Accumulated tool call arguments must be valid JSON for id " +
+          tc.id +
+          ": " +
+          args_str,
+        )
+    }
     calls.push(ToolCallRequest::new(id=tc.id, name=tc.name, arguments~))
   }
   calls

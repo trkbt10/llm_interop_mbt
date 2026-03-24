@@ -59,12 +59,18 @@ pub fn resolve_completion(
   }
   if path.has_suffix(":generateContent") {
     let model = extract_model_from_path(path)
-    return Some(("gemini", model, body))
+    if model.length() > 0 {
+      return Some(("gemini", model, body))
+    }
+    return None
   }
   // Streaming endpoint: :streamGenerateContent?alt=sse
   if path.contains(":streamGenerateContent") {
     let model = extract_model_from_stream_path(path)
-    return Some(("gemini", model, body))
+    if model.length() > 0 {
+      return Some(("gemini", model, body))
+    }
+    return None
   }
   None
 }

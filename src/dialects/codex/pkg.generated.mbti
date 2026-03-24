@@ -20,7 +20,17 @@ pub fn build_model_list_request(Int, Int, Bool) -> @jsonrpc.RpcRequest
 
 pub fn build_thread_start_request(Int, String, String, String, Array[CodexDynamicTool]) -> @jsonrpc.RpcRequest
 
+pub fn build_turn_start_failure_events(String, String) -> Array[String]
+
 pub fn build_turn_start_request(Int, String, String, String, String?, String, String) -> @jsonrpc.RpcRequest
+
+pub fn build_turn_stream_delta_event(String, String) -> String
+
+pub fn build_turn_stream_failure_event(String, String) -> String
+
+pub fn build_turn_stream_start_events(String, String) -> Array[String]
+
+pub fn build_turn_stream_success_events(String, String, String, Int, Int, Int) -> Array[String]
 
 pub fn chat_request_to_protocol(String, @types.TransformContext) -> String
 
@@ -28,23 +38,7 @@ pub fn chat_response_to_events(String, String, String, String) -> Array[String]
 
 pub fn default_base_url() -> String
 
-pub fn events_to_chat(String) -> String
-
 pub fn ipc_error_event(String) -> String
-
-pub fn make_agent_message_delta_event(String, String) -> String
-
-pub fn make_item_completed_event(String, String) -> String
-
-pub fn make_item_started_event(String) -> String
-
-pub fn make_token_usage_event(Int, Int, Int) -> String
-
-pub fn make_turn_completed_event(String, String, String) -> String
-
-pub fn make_turn_failed_event(String, String) -> String
-
-pub fn make_turn_started_event(String) -> String
 
 pub fn mark_session_turn_complete(CodexSession) -> CodexSession
 

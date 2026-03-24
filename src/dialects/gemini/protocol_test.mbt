@@ -326,6 +326,59 @@ test "parse_response parses text response" {
 }
 
 ///|
+test "parse_response preserves Gemini grounding annotations" {
+  let json : Json = {
+    "candidates": Json::array([
+      {
+        "content": {
+          "role": "model",
+          "parts": Json::array([{ "text": "Weather details" }]),
+        },
+        "groundingMetadata": {
+          "groundingChunks": Json::array([
+            {
+              "web": {
+                "uri": "https://example.com/weather",
+                "title": "Weather Source",
+              },
+            },
+          ]),
+          "groundingSupports": Json::array([
+            {
+              "groundingChunkIndices": Json::array([0]),
+              "segment": { "text": "Weather", "startIndex": 0, "endIndex": 7 },
+            },
+          ]),
+        },
+        "finishReason": "STOP",
+      },
+    ]),
+  }
+  let response = parse_response(json)
+  match response {
+    @types.ModelResponse::RichText(rich) => {
+      assert_eq(rich.content, "Weather details")
+      assert_eq(rich.annotations.length(), 1)
+      match rich.annotations[0] {
+        @types.ResponseAnnotation::UrlCitation(
+          title~,
+          url~,
+          start_index~,
+          end_index~
+        ) => {
+          assert_eq(title, Some("Weather Source"))
+          assert_eq(url, "https://example.com/weather")
+          assert_eq(start_index, 0)
+          assert_eq(end_index, 7)
+        }
+        _ => fail("Expected Gemini grounding annotation")
+      }
+    }
+    _ => fail("Expected RichText response")
+  }
+}
+
+///|
 test "parse_response separates Gemini thought summaries from answer text" {
   let json : Json = {
     "candidates": Json::array([
@@ -512,6 +565,82 @@ test "parse_response handles code execution output" {
       }
     }
     _ => fail("Expected RichText response")
+  }
+}
+
+///|
+test "response_to_responses preserves Gemini grounding via canonical path" {
+  let converted = response_to_responses(
+    {
+      "candidates": Json::array([
+        {
+          "content": {
+            "role": "model",
+            "parts": Json::array([{ "text": "Weather details" }]),
+          },
+          "groundingMetadata": {
+            "groundingChunks": Json::array([
+              {
+                "web": {
+                  "uri": "https://example.com/weather",
+                  "title": "Weather Source",
+                },
+              },
+            ]),
+            "groundingSupports": Json::array([
+              {
+                "groundingChunkIndices": Json::array([0]),
+                "segment": { "text": "Weather", "startIndex": 0, "endIndex": 7 },
+              },
+            ]),
+          },
+          "finishReason": "STOP",
+        },
+      ]),
+    },
+    response_id="resp_grounded",
+    model="gemini-2.0-flash",
+  )
+  match converted {
+    {
+      "id": String(id),
+      "output": [
+        {
+          "type": String("message"),
+          "content": [
+            {
+              "type": String("output_text"),
+              "text": String(text),
+              "annotations": Array(annotations),
+              ..
+            },
+          ],
+          ..
+        },
+      ],
+      ..
+    } => {
+      assert_eq(id, "resp_grounded")
+      assert_eq(text, "Weather details")
+      assert_eq(annotations.length(), 1)
+      match annotations[0] {
+        {
+          "type": String("url_citation"),
+          "url": String(url),
+          "title": String(title),
+          "start_index": Number(start_index, ..),
+          "end_index": Number(end_index, ..),
+          ..
+        } => {
+          assert_eq(url, "https://example.com/weather")
+          assert_eq(title, "Weather Source")
+          assert_eq(start_index.to_int(), 0)
+          assert_eq(end_index.to_int(), 7)
+        }
+        _ => fail("Expected preserved grounding annotation")
+      }
+    }
+    _ => fail("Expected Responses output with grounding")
   }
 }
 

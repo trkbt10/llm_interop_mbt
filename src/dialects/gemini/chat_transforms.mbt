@@ -98,7 +98,9 @@ pub fn chat_request_to_gemini(
                   },
                   ..
                 } => {
-                  let args : Json = @json.parse(args_str) catch { _ => {} }
+                  let args = parse_tool_arguments_or_abort(
+                    args_str, "Gemini request transform",
+                  )
                   let fc : Map[String, Json] = {}
                   fc["name"] = Json::string(name)
                   fc["args"] = args
@@ -122,8 +124,6 @@ pub fn chat_request_to_gemini(
             ..
           } => {
             // Need to find the function name; Gemini requires it in functionResponse.
-            // We extract it from the tool_call_id by looking at the previous assistant message.
-            // Fallback: use a generic name since Gemini needs name field.
             let name = find_tool_name_for_id(msgs, msg)
             let response : Map[String, Json] = {}
             response["content"] = Json::string(content)
@@ -203,7 +203,10 @@ pub fn chat_request_to_gemini(
 fn find_tool_name_for_id(msgs : Array[Json], tool_msg : Json) -> String {
   let tc_id = match tool_msg {
     { "tool_call_id": String(id), .. } => id
-    _ => return "unknown"
+    _ =>
+      abort(
+        "Gemini tool result is missing tool_call_id: " + tool_msg.stringify(),
+      )
   }
   // Search backwards through messages for an assistant with matching tool_call
   for msg in msgs {
@@ -221,7 +224,16 @@ fn find_tool_name_for_id(msgs : Array[Json], tool_msg : Json) -> String {
       _ => ()
     }
   }
-  "unknown"
+  abort(
+    "Gemini tool result does not match a preceding assistant tool call: \{tc_id}",
+  )
+}
+
+///|
+fn parse_tool_arguments_or_abort(args_str : String, context : String) -> Json {
+  @json.parse(args_str) catch {
+    _ => abort(context + " requires valid JSON tool arguments: " + args_str)
+  }
 }
 
 ///|
@@ -305,7 +317,12 @@ pub fn response_to_chat(body : String) -> String {
           _ => ()
         }
         let content = normalize_structured_output_fragments(texts, "\n\n")
-        choices.push(@openai.build_chat_choice(idx, content, tool_calls))
+        let annotations = @openai.chat_annotations_from_response_annotations(
+          collect_gemini_grounding_annotations(candidate, content),
+        )
+        choices.push(
+          @openai.build_chat_choice(idx, content, tool_calls, annotations~),
+        )
         idx = idx + 1
       }
     _ => ()
@@ -320,18 +337,26 @@ pub fn response_to_chat(body : String) -> String {
 pub fn chat_response_to_gemini(body : String) -> String {
   let json = @json.parse(body) catch { _ => return body }
   let parts : Array[Json] = []
+  let mut saw_choice = false
+  let mut saw_message = false
+  let mut saw_explicit_content = false
   match json {
     { "choices": Array(choices), .. } =>
       match choices.get(0) {
         Some(choice) => {
+          saw_choice = true
           // Text content
           match choice {
-            { "message": { "content": String(c), .. }, .. } =>
+            { "message": { "content": String(c), .. }, .. } => {
+              saw_message = true
+              saw_explicit_content = true
               if not(c.is_empty()) {
                 let p : Map[String, Json] = {}
                 p["text"] = Json::string(c)
                 parts.push(Json::object(p))
               }
+            }
+            { "message": _, .. } => saw_message = true
             _ => ()
           }
           // Tool calls → functionCall parts
@@ -347,7 +372,9 @@ pub fn chat_response_to_gemini(body : String) -> String {
                     },
                     ..
                   } => {
-                    let args : Json = @json.parse(args_str) catch { _ => {} }
+                    let args = parse_tool_arguments_or_abort(
+                      args_str, "Gemini response transform",
+                    )
                     let fc : Map[String, Json] = {}
                     fc["name"] = Json::string(name)
                     fc["args"] = args
@@ -366,9 +393,16 @@ pub fn chat_response_to_gemini(body : String) -> String {
     _ => ()
   }
   if parts.is_empty() {
-    let p : Map[String, Json] = {}
-    p["text"] = Json::string("")
-    parts.push(Json::object(p))
+    if saw_choice && saw_message && saw_explicit_content {
+      let p : Map[String, Json] = {}
+      p["text"] = Json::string("")
+      parts.push(Json::object(p))
+    } else {
+      abort(
+        "Gemini response transform requires a choice with content or tool_calls: " +
+        json.stringify(),
+      )
+    }
   }
   let content : Map[String, Json] = {}
   content["parts"] = Json::array(parts)
@@ -388,13 +422,19 @@ pub fn chat_response_to_gemini(body : String) -> String {
 }
 
 ///|
+fn normalized_openai_error_message(json : Json) -> String {
+  match json {
+    { "error": { "message": String(msg), .. }, .. } => msg
+    { "error": error_obj, .. } => error_obj.stringify()
+    _ => json.stringify()
+  }
+}
+
+///|
 /// Transform OpenAI error to Gemini error format
 pub fn openai_error_to_gemini(body : String) -> String {
   let json = @json.parse(body) catch { _ => return body }
-  let message = match json {
-    { "error": { "message": String(msg), .. }, .. } => msg
-    _ => "Unknown error"
-  }
+  let message = normalized_openai_error_message(json)
   let result : Map[String, Json] = {}
   let error : Map[String, Json] = {}
   error["code"] = Json::number(400.0)
