@@ -22,27 +22,46 @@
 ///   4. Parse response: native Responses API direct, others via translator pipeline
 
 ///|
-/// Inject optional max_tokens and temperature into a Responses API body.
+/// Inject optional generation parameters into a Responses API body.
+/// Responses API 仕様準拠:
+///   https://platform.openai.com/docs/api-reference/responses/create
+///
+/// 対応パラメータ:
+///   max_output_tokens — 最大出力トークン数
+///   temperature — サンプリング温度 (0.0-2.0)
+///   top_p — nucleus sampling (0.0-1.0)
+///   reasoning.effort — reasoning モデル用 ("low" | "medium" | "high")
+///
+/// すべて None の場合は注入しない（モデルのデフォルトに従う）
 fn inject_optional_params(
   body : Json,
   max_tokens : Int?,
   temperature : Double?,
+  top_p : Double?,
+  reasoning_effort : String?,
 ) -> Unit {
-  match max_tokens {
-    Some(n) =>
-      match body {
-        Object(obj) => obj["max_output_tokens"] = Json::number(n.to_double())
-        _ => ()
+  match body {
+    Object(obj) => {
+      match max_tokens {
+        Some(n) => obj["max_output_tokens"] = Json::number(n.to_double())
+        None => ()
       }
-    None => ()
-  }
-  match temperature {
-    Some(t) =>
-      match body {
-        Object(obj) => obj["temperature"] = Json::number(t)
-        _ => ()
+      match temperature {
+        Some(t) => obj["temperature"] = Json::number(t)
+        None => ()
       }
-    None => ()
+      match top_p {
+        Some(p) => obj["top_p"] = Json::number(p)
+        None => ()
+      }
+      match reasoning_effort {
+        Some(r) => obj["reasoning"] = Json::object(
+          { "effort": Json::string(r) },
+        )
+        None => ()
+      }
+    }
+    _ => ()
   }
 }
 
@@ -89,11 +108,15 @@ fn build_responses_transport_request(
   model : String,
   max_tokens : Int?,
   temperature : Double?,
+  top_p : Double?,
+  reasoning_effort : String?,
   response_format : @types.ResponseFormat?,
   stream : Bool,
 ) -> TransportRequest {
   let responses_body = @openai.build_responses_api_body(model, messages, tools)
-  inject_optional_params(responses_body, max_tokens, temperature)
+  inject_optional_params(
+    responses_body, max_tokens, temperature, top_p, reasoning_effort,
+  )
   let base_url = if provider.base_url.is_empty() {
     provider.api.default_base_url()
   } else {
@@ -173,10 +196,13 @@ pub async fn chat_gateway_responses(
   model : String,
   max_tokens? : Int? = None,
   temperature? : Double? = None,
+  top_p? : Double? = None,
+  reasoning_effort? : String? = None,
   response_format? : @types.ResponseFormat? = None,
 ) -> @types.ModelResponse raise ClientError {
   let req = build_responses_transport_request(
-    provider, messages, tools, model, max_tokens, temperature, response_format, false,
+    provider, messages, tools, model, max_tokens, temperature,
+    top_p, reasoning_effort, response_format, false,
   )
   let resp = transport.request(req) catch {
     TransportError::NetworkError(msg) =>
@@ -211,10 +237,13 @@ pub async fn chat_gateway_responses_stream(
   on_event~ : ((String, Json)) -> Unit,
   max_tokens? : Int? = None,
   temperature? : Double? = None,
+  top_p? : Double? = None,
+  reasoning_effort? : String? = None,
   response_format? : @types.ResponseFormat? = None,
 ) -> @types.ModelResponse raise ClientError {
   let req = build_responses_transport_request(
-    provider, messages, tools, model, max_tokens, temperature, response_format, true,
+    provider, messages, tools, model, max_tokens, temperature,
+    top_p, reasoning_effort, response_format, true,
   )
   let streaming_resp = transport.request_stream(req) catch {
     TransportError::NetworkError(msg) =>

@@ -23,7 +23,7 @@ impl StreamingHttpTransport for StreamingTimeoutTransport with request_stream(
 ///|
 test "inject_optional_params mutates object bodies and ignores scalars" {
   let object_body : Json = Json::object({})
-  inject_optional_params(object_body, Some(64), Some(0.25))
+  inject_optional_params(object_body, Some(64), Some(0.25), None, None)
   match object_body {
     {
       "max_output_tokens": Number(max_output_tokens, ..),
@@ -37,14 +37,14 @@ test "inject_optional_params mutates object bodies and ignores scalars" {
   }
 
   let untouched_object : Json = Json::object({})
-  inject_optional_params(untouched_object, None, None)
+  inject_optional_params(untouched_object, None, None, None, None)
   match untouched_object {
     Object(obj) => assert_eq(obj.length(), 0)
     _ => fail("Expected empty object")
   }
 
   let scalar_body : Json = Json::string("plain")
-  inject_optional_params(scalar_body, Some(1), Some(0.1))
+  inject_optional_params(scalar_body, Some(1), Some(0.1), None, None)
   match scalar_body {
     String(text) => assert_eq(text, "plain")
     _ => fail("Expected scalar JSON to stay unchanged")
@@ -159,6 +159,8 @@ test "responses helpers build requests, parse sync responses, and process stream
     "gpt-4.1",
     Some(64),
     Some(0.1),
+    None, // top_p
+    None, // reasoning_effort
     Some(
       @types.ResponseFormat::JsonSchema(
         name=Some("answer"),
@@ -241,10 +243,12 @@ test "responses helpers honor default base_url and preserve partial SSE chunks" 
     [@types.ModelMessage::User(content="Hi", name=None, content_parts=None)],
     [],
     "gpt-4.1",
-    None,
-    None,
-    None,
-    false,
+    None, // max_tokens
+    None, // temperature
+    None, // top_p
+    None, // reasoning_effort
+    None, // response_format
+    false, // stream
   )
   assert_true(req.url.contains("https://api.openai.com"))
   assert_true(req.body.unwrap_or("").contains("\"model\":\"gpt-4.1\""))
