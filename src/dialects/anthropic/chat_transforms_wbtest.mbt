@@ -82,18 +82,12 @@ test "panic Anthropic chat transform helpers reject invalid json" {
 }
 
 ///|
-test "response_to_chat keeps valid text and ignores unknown non-tool blocks" {
-  let response = response_to_chat(
-    "{\"id\":\"msg_x\",\"model\":\"claude\",\"content\":[{\"type\":\"text\",\"text\":\"hi\"},{\"type\":\"unknown\"}]}",
+test "panic response_to_chat rejects unknown non-tool blocks" {
+  ignore(
+    response_to_chat(
+      "{\"id\":\"msg_x\",\"model\":\"claude\",\"content\":[{\"type\":\"text\",\"text\":\"hi\"},{\"type\":\"unknown\"}]}",
+    ),
   )
-  let response_json : Json = @json.parse(response) catch {
-    _ => fail("parse error")
-  }
-  match response_json {
-    { "choices": [{ "message": { "content": String(content), .. }, .. }], .. } =>
-      assert_eq(content, "hi")
-    _ => fail("Expected OpenAI response")
-  }
 }
 
 ///|

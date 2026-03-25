@@ -325,7 +325,11 @@ pub fn response_to_chat(body : String) -> String {
                   )
                   tool_call_counter = tool_call_counter + 1
                 }
-                _ => ()
+                _ =>
+                  abort(
+                    "Gemini response transform cannot represent response part without loss; use Responses pipeline instead: " +
+                    part.stringify(),
+                  )
               }
             }
           _ => ()
@@ -344,7 +348,11 @@ pub fn response_to_chat(body : String) -> String {
         )
         idx = idx + 1
       }
-    _ => ()
+    _ =>
+      abort(
+        "Gemini response transform requires a candidates array: " +
+        json.stringify(),
+      )
   }
   let id = "gemini-" + idx.to_string()
   @openai_chat_contract.build_chat_response(id, "gemini", choices)

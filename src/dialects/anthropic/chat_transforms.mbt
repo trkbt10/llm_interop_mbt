@@ -351,10 +351,18 @@ pub fn response_to_chat(body : String) -> String {
               "Anthropic response transform requires complete tool_use blocks: " +
               block.stringify(),
             )
-          _ => ()
+          _ =>
+            abort(
+              "Anthropic response transform cannot represent content block without loss; use Responses pipeline instead: " +
+              block.stringify(),
+            )
         }
       }
-    _ => ()
+    _ =>
+      abort(
+        "Anthropic response transform requires a content array: " +
+        json.stringify(),
+      )
   }
   let content = texts
     .iter()

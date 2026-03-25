@@ -391,12 +391,14 @@ fn codex_compatible_chat_response(
     None => ()
   }
   match response {
-    @types.ModelResponse::Text(_) =>
+    @types.ModelResponse::Text(_) => {
+      @openai_chat_contract.assert_model_response_is_chat_compatible(response)
       @openai_chat_contract.model_response_to_chat_response(
         response,
         id=response_id,
         model~,
       )
+    }
     @types.ModelResponse::RichText(rich) => {
       if rich.annotations.length() > 0 || rich.tool_traces.length() > 0 {
         abort(
@@ -416,6 +418,7 @@ fn codex_compatible_chat_response(
           }
         None => ()
       }
+      @openai_chat_contract.assert_model_response_is_chat_compatible(response)
       @openai_chat_contract.model_response_to_chat_response(
         response,
         id=response_id,

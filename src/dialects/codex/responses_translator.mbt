@@ -73,11 +73,28 @@ pub fn CodexToResponsesTranslator::translate(
           ),
         )
       }
+    // Rationale: Codex may emit only the finalized assistant message and omit
+    // incremental deltas. emit_fallback_text(...) is guarded so this path is
+    // used only when no prior streamed text was observed. We need this because
+    // the translator contract is "produce the best Responses reconstruction of
+    // the turn", not "prefer deltas even when the backend never sent them".
+    // Reference:
+    // - captured fixtures under testdata/codex/app_server/*.jsonl
+    // - round-trip coverage in src/dialects/codex/server_transforms_test.mbt
+    // - accepted Codex event names in src/dialects/codex/protocol.mbt
     {
       "method": String("codex/event/agent_message"),
       "params": { "msg": { "message": String(message), .. }, .. },
       ..
     } => self.emit_fallback_text(events, message)
+    // Rationale: some terminal Codex events carry the only authoritative final
+    // assistant text in `last_agent_message`. This remains fallback-only and
+    // never overwrites already streamed content. Without this branch, a valid
+    // completed Codex turn could degrade into an empty Responses message.
+    // Reference:
+    // - captured fixtures under testdata/codex/app_server/*.jsonl
+    // - round-trip coverage in src/dialects/codex/server_transforms_test.mbt
+    // - accepted Codex event names in src/dialects/codex/protocol.mbt
     {
       "method": String("codex/event/task_complete"),
       "params": { "msg": { "last_agent_message": String(message), .. }, .. },
@@ -229,6 +246,14 @@ fn CodexToResponsesTranslator::emit_fallback_text(
   events : Array[(String, Json)],
   text : String,
 ) -> Unit {
+  // Rationale: this helper is intentionally one-shot. If we have already seen
+  // streamed text, later fallback carriers must not duplicate or replace it,
+  // because that would double-emit content and break the Responses accumulator's
+  // append-only reconstruction model.
+  // Reference:
+  // - the delta-first translation contract in this file
+  // - src/dialects/codex/chat_transforms.mbt
+  // - round-trip coverage in src/dialects/codex/server_transforms_test.mbt
   if text.length() == 0 || self.current_message_text.length() > 0 {
     return
   }

@@ -78,8 +78,14 @@ pub fn response_to_chat(
   id? : String = "claude-mcp-response",
   model? : String = "claude-code-tools",
 ) -> String {
+  let response = model_response_from_tools_result(body)
+  match response.as_failure() {
+    Some(_) => ()
+    None =>
+      @openai_chat_contract.assert_model_response_is_chat_compatible(response)
+  }
   let chat = @openai_chat_contract.model_response_to_chat_response(
-    model_response_from_tools_result(body),
+    response,
     id~,
     model~,
   )

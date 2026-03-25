@@ -156,6 +156,45 @@ test "panic OpenAI chat annotation builder rejects lossy provider-specific annot
 }
 
 ///|
+test "panic OpenAI chat response bridge rejects tool traces without carrier" {
+  ignore(
+    model_response_to_chat_response(
+      @types.ModelResponse::RichText(
+        @types.RichTextResponse::from_parts(
+          content="Searching...",
+          content_parts=[@types.ResponseContentPart::OutputText("Searching...")],
+          tool_traces=[
+            @types.ToolCallTrace::new(
+              id="ws_1",
+              name=@types.web_search_tool_name(),
+              kind=@types.ToolCallKind::WebSearch,
+              statuses=[@types.ToolCallStatus::Completed],
+              arguments={ "query": "moonbit" },
+            ),
+          ],
+        ),
+      ),
+      id="chatcmpl_1",
+      model="gpt-4.1",
+    ),
+  )
+}
+
+///|
+test "panic OpenAI chat contract request bridge rejects lossy assistant content and tool_choice" {
+  ignore(
+    chat_request_to_responses_request(
+      "{\"model\":\"gpt-4.1\",\"messages\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"image_url\",\"image_url\":{\"url\":\"https://example.com/cat.png\"}}]}]}",
+    ),
+  )
+  ignore(
+    chat_request_to_responses_request(
+      "{\"model\":\"gpt-4.1\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"tool_choice\":{\"type\":\"custom\",\"name\":\"lookup\"}}",
+    ),
+  )
+}
+
+///|
 test "OpenAI chat contract request bridge preserves instructions, tools, tool_choice, and response_format" {
   let request = chat_request_to_responses_request(
     "{\"model\":\"gpt-4.1\",\"messages\":[{\"role\":\"system\",\"content\":\"Return JSON only.\"},{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"Look up the URL\"},{\"type\":\"image_url\",\"image_url\":{\"url\":\"https://example.com/cat.png\",\"detail\":\"high\"}}]}],\"tools\":[{\"type\":\"function\",\"function\":{\"name\":\"lookup\",\"description\":\"Lookup URL\",\"parameters\":{\"type\":\"object\",\"properties\":{\"label\":{\"type\":\"string\"}},\"required\":[\"label\"]}}}],\"tool_choice\":{\"type\":\"function\",\"function\":{\"name\":\"lookup\"}},\"reasoning_effort\":\"medium\",\"response_format\":{\"type\":\"json_schema\",\"json_schema\":{\"name\":\"resp\",\"schema\":{\"type\":\"object\",\"properties\":{\"url\":{\"type\":\"string\"}},\"required\":[\"url\"]},\"strict\":true}}}",

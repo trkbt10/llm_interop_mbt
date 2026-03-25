@@ -225,6 +225,17 @@ fn process_event(acc : EventAccumulator, event : Json) -> Unit {
     // to avoid double-counting
     "codex/event/agent_message_content_delta" => ()
     // --- Final agent message (fallback if no deltas) ---
+    // Rationale: some captured Codex app-server streams publish the fully
+    // assembled answer only in `codex/event/agent_message`, while
+    // `item/agentMessage/delta` may be absent. We use this only when no delta
+    // text has been accumulated, so it is a carrier fallback rather than a
+    // lossy overwrite. We must do this because `response_to_chat(...)` promises
+    // to reconstruct the assistant text from whichever Codex carrier actually
+    // delivered it, and some real event streams omit the delta carrier entirely.
+    // Reference:
+    // - captured fixtures under testdata/codex/app_server/*.jsonl
+    // - response_to_chat tests in src/dialects/codex/chat_transforms_test.mbt
+    // - accepted event names in src/dialects/codex/protocol.mbt
     "codex/event/agent_message" =>
       if acc.content == "" {
         match event {
@@ -234,6 +245,15 @@ fn process_event(acc : EventAccumulator, event : Json) -> Unit {
         }
       }
     // --- Task complete with last_agent_message (final fallback) ---
+    // Rationale: some Codex runs expose the last assistant text only on the
+    // terminal task-complete event. Again we use it strictly when no streamed
+    // or final agent message text has been seen yet. We must not ignore this
+    // carrier, because otherwise a completed turn could round-trip to an empty
+    // OpenAI chat message even though Codex did produce a final answer.
+    // Reference:
+    // - captured fixtures under testdata/codex/app_server/*.jsonl
+    // - response_to_chat tests in src/dialects/codex/chat_transforms_test.mbt
+    // - accepted event names in src/dialects/codex/protocol.mbt
     "codex/event/task_complete" =>
       if acc.content == "" {
         match event {

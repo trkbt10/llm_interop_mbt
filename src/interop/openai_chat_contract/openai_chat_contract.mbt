@@ -171,6 +171,7 @@ pub fn model_response_to_chat_response(
   match response.as_failure() {
     Some(failure) => failure.to_openai_error_json().stringify()
     None => {
+      assert_model_response_is_chat_compatible(response)
       let choice = model_response_to_chat_choice(response)
       build_chat_response(id, model, [choice])
     }
@@ -324,8 +325,8 @@ fn chat_message_to_model_message(message : Json) -> @types.ModelMessage {
     }
     { "role": String("assistant"), "tool_calls": Array(tool_calls), .. } => {
       let content = match message {
-        { "content": String(value), .. } => value
-        { "content": Null, .. } => ""
+        { "content": value, .. } =>
+          assistant_chat_content_to_text_or_abort(value)
         _ => ""
       }
       @types.ModelMessage::Assistant(
@@ -333,8 +334,11 @@ fn chat_message_to_model_message(message : Json) -> @types.ModelMessage {
         tool_calls=Some(tool_calls.map(chat_tool_call_to_request)),
       )
     }
-    { "role": String("assistant"), "content": String(content), .. } =>
-      @types.ModelMessage::Assistant(content~, tool_calls=None)
+    { "role": String("assistant"), "content": content, .. } =>
+      @types.ModelMessage::Assistant(
+        content=assistant_chat_content_to_text_or_abort(content),
+        tool_calls=None,
+      )
     {
       "role": String("tool"),
       "tool_call_id": String(tool_call_id),
@@ -345,6 +349,34 @@ fn chat_message_to_model_message(message : Json) -> @types.ModelMessage {
       abort(
         "OpenAI Chat contract bridge cannot parse message shape: " +
         message.stringify(),
+      )
+  }
+}
+
+///|
+fn assistant_chat_content_to_text_or_abort(content : Json) -> String {
+  match content {
+    String(text) => text
+    Null => ""
+    Array(parts) => {
+      let buf = StringBuilder::new()
+      for part in parts {
+        match part {
+          { "type": String("text"), "text": String(text), .. } =>
+            buf.write_string(text)
+          _ =>
+            abort(
+              "OpenAI Chat contract bridge cannot represent assistant content part without loss: " +
+              part.stringify(),
+            )
+        }
+      }
+      buf.to_string()
+    }
+    _ =>
+      abort(
+        "OpenAI Chat contract bridge requires assistant content to be text, null, or text-part arrays: " +
+        content.stringify(),
       )
   }
 }
@@ -558,7 +590,79 @@ fn openai_chat_tool_choice_to_responses(tool_choice : Json) -> Json? {
     String("auto") | String("none") | String("required") => Some(tool_choice)
     { "type": String("function"), "function": { "name": String(name), .. }, .. } =>
       Some({ "type": "function", "name": name })
-    _ => None
+    _ =>
+      abort(
+        "OpenAI Chat contract bridge cannot translate tool_choice without loss: " +
+        tool_choice.stringify(),
+      )
+  }
+}
+
+///|
+pub fn assert_model_response_is_chat_compatible(
+  response : @types.ModelResponse,
+) -> Unit {
+  match response {
+    @types.ModelResponse::Failure(_) | @types.ModelResponse::Text(_) => ()
+    @types.ModelResponse::RichText(rich) =>
+      assert_rich_text_is_chat_compatible(rich)
+    @types.ModelResponse::ToolCalls(tool_calls) =>
+      assert_tool_calls_are_chat_compatible(tool_calls)
+    @types.ModelResponse::ToolCallsWithContent(tool_calls~, rich~) => {
+      assert_tool_calls_are_chat_compatible(tool_calls)
+      assert_rich_text_is_chat_compatible(rich)
+    }
+    _ =>
+      abort(
+        "OpenAI Chat contract cannot represent this response variant without loss; use Responses pipeline instead",
+      )
+  }
+}
+
+///|
+fn assert_tool_calls_are_chat_compatible(
+  tool_calls : Array[@types.ToolCallRequest],
+) -> Unit {
+  for call in tool_calls {
+    assert_tool_call_is_chat_compatible(call)
+  }
+}
+
+///|
+fn assert_tool_call_is_chat_compatible(call : @types.ToolCallRequest) -> Unit {
+  match call.kind {
+    @types.ToolCallKind::Function => ()
+    _ =>
+      abort(
+        "OpenAI Chat contract cannot represent non-function tool calls; use Responses pipeline instead: " +
+        call.id,
+      )
+  }
+}
+
+///|
+fn assert_rich_text_is_chat_compatible(rich : @types.RichTextResponse) -> Unit {
+  if rich.tool_traces.length() > 0 {
+    let trace = rich.tool_traces[0]
+    abort(
+      "OpenAI Chat contract cannot represent tool traces without loss; use Responses pipeline instead: " +
+      trace.id,
+    )
+  }
+  ignore(chat_annotations_from_response_annotations(rich.annotations))
+  match rich.content_parts {
+    Some(parts) =>
+      for part in parts {
+        match part {
+          @types.ResponseContentPart::OutputText(_) => ()
+          _ =>
+            abort(
+              "OpenAI Chat contract cannot represent non-text response content without loss; use Responses pipeline instead: " +
+              part.to_string(),
+            )
+        }
+      }
+    None => ()
   }
 }
 
@@ -591,22 +695,15 @@ fn model_response_to_chat_choice(response : @types.ModelResponse) -> Json {
 
 ///|
 fn tool_call_to_chat_tool_call(call : @types.ToolCallRequest) -> Json {
-  match call.kind {
-    @types.ToolCallKind::Function =>
-      build_tool_call_json(
-        @interop_util.convert_tool_call_id_to(
-          call.id,
-          @interop_util.ToolCallIdProvider::OpenAIChatCompletions,
-        ),
-        call.name,
-        call.arguments,
-      )
-    _ =>
-      abort(
-        "OpenAI Chat contract cannot represent non-function tool calls; use Responses pipeline instead: " +
-        call.id,
-      )
-  }
+  assert_tool_call_is_chat_compatible(call)
+  build_tool_call_json(
+    @interop_util.convert_tool_call_id_to(
+      call.id,
+      @interop_util.ToolCallIdProvider::OpenAIChatCompletions,
+    ),
+    call.name,
+    call.arguments,
+  )
 }
 
 ///|

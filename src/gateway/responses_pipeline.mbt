@@ -110,7 +110,18 @@ pub fn extract_response_id(response_body : String, model : String) -> String {
 
 ///|
 /// Generate a fallback response ID when the backend doesn't provide one.
-/// Delegates to @interop_util.generate_response_id_for_model (SoT).
+/// Rationale: non-Responses backends frequently omit a stable response id on
+/// non-streaming success payloads, but our translated Responses/OpenAI flows
+/// still need one so `response.created`, `response.in_progress`, and the final
+/// `response.completed` envelope all point at the same logical response. Without
+/// a generated id, downstream accumulators cannot correlate lifecycle events
+/// with the terminal payload in a backend-agnostic way.
+/// Reference:
+/// - docs/upstream/openai-responses-create.md documents the Responses envelope
+///   shape with `response.id`.
+/// - The id-generation policy itself stays centralized in
+///   @interop_util.generate_response_id_for_model(...), which is the SoT for
+///   synthetic/gateway-generated response ids.
 pub fn fallback_response_id(model : String) -> String {
   @interop_util.generate_response_id_for_model(
     @interop_util.ResponseIdProvider::OpenAIResponsesApi,
@@ -124,9 +135,10 @@ pub fn fallback_response_id(model : String) -> String {
 
 ///|
 /// Parse a non-streaming backend response into a ModelResponse.
-/// Uses the translator pipeline: backend response → synthetic SSE events
-/// → Responses API translator → ResponsesApiAccumulator → ModelResponse.
-/// Responses API is the intermediate format at every step.
+/// Prefers native/direct backend parsers when available. Falls back to the
+/// translator pipeline only for dialects that only expose chat/event shapes:
+/// backend response → synthetic SSE events → Responses API translator
+/// → ResponsesApiAccumulator → ModelResponse.
 pub fn parse_responses_api_result(
   api : ModelApi,
   response_body : String,
@@ -246,26 +258,77 @@ pub fn transform_response_to_responses_json(
   response_body : String,
   model~ : String,
 ) -> Json {
-  if api == OpenAIResponses {
-    return @json.parse(response_body) catch {
-      _ =>
-        @openai_responses_contract.model_response_to_responses_json(
-          @types.ModelResponse::Failure(
-            failure=@types.ModelFailure::parse_error(
-              message="JSON parse error",
-              body=Some(response_body),
-            ),
-          ),
-          response_id=fallback_response_id(model),
-          model~,
-        )
-    }
+  match direct_responses_json_from_backend(api, response_body, model) {
+    Some(response_json) => return response_json
+    None => ()
   }
   let response_id = extract_response_id(response_body, model)
   let parsed = parse_responses_api_result(api, response_body, model~)
   @openai_responses_contract.model_response_to_responses_json(
     parsed,
     response_id~,
+    model~,
+  )
+}
+
+///|
+fn direct_responses_json_from_backend(
+  api : ModelApi,
+  response_body : String,
+  model : String,
+) -> Json? {
+  match api {
+    OpenAIResponses =>
+      Some(
+        @json.parse(response_body) catch {
+          _ => responses_parse_error_json(response_body, model)
+        },
+      )
+    AnthropicMessages => {
+      let json = @json.parse(response_body) catch {
+        _ => return Some(responses_parse_error_json(response_body, model))
+      }
+      Some(
+        @anthropic.response_to_responses(
+          json,
+          response_id=extract_response_id(response_body, model),
+        ),
+      )
+    }
+    GoogleGenerativeAI => {
+      let json = @json.parse(response_body) catch {
+        _ => return Some(responses_parse_error_json(response_body, model))
+      }
+      Some(
+        @gemini.response_to_responses(
+          json,
+          response_id=extract_response_id(response_body, model),
+          model~,
+        ),
+      )
+    }
+    ClaudeMcpServe =>
+      Some(
+        @claude_mcp.response_to_responses(
+          response_body,
+          response_id=extract_response_id(response_body, model),
+          model~,
+        ),
+      )
+    _ => None
+  }
+}
+
+///|
+fn responses_parse_error_json(response_body : String, model : String) -> Json {
+  @openai_responses_contract.model_response_to_responses_json(
+    @types.ModelResponse::Failure(
+      failure=@types.ModelFailure::parse_error(
+        message="JSON parse error",
+        body=Some(response_body),
+      ),
+    ),
+    response_id=fallback_response_id(model),
     model~,
   )
 }
@@ -340,6 +403,20 @@ pub fn to_synthetic_sse_events(
   api : ModelApi,
   response_body : String,
 ) -> Array[@sse.SseEvent] {
+  // Rationale: this helper is best-effort and is only used by legacy synthetic
+  // event paths and test helpers. The main sync response path parses the body
+  // first via direct_model_response_from_backend(...) or
+  // direct_responses_json_from_backend(...), so returning [] here does not
+  // silently turn malformed upstream JSON into a successful response. We keep
+  // the helper non-throwing because its job is "convert an already trusted body
+  // into synthetic events", not "decide whether the upstream call succeeded".
+  // Reference:
+  // - parse_responses_api_result(...) above is the authoritative sync parser.
+  // - transform_response_to_responses_json(...) above is the authoritative
+  //   preserve-first response serializer.
+  // - responses_pipeline_wbtest.mbt covers this helper separately as a
+  //   synthetic-event utility rather than the source of truth for error
+  //   handling.
   let json = @json.parse(response_body) catch { _ => return [] }
   match api {
     OpenAIResponses => responses_json_to_synthetic_events(json)
@@ -365,6 +442,14 @@ fn responses_json_to_synthetic_events(
     None => {
       let response_id = match response_json {
         { "id": String(id), .. } => id
+        // Rationale: synthetic Responses events still need a stable id even when
+        // the source fixture/body omitted one, because every synthetic lifecycle
+        // event emitted below must refer to the same response id. This is not a
+        // semantic fallback for model content; it is envelope completion for a
+        // partial source payload.
+        // Reference:
+        // - docs/upstream/openai-responses-create.md response envelope.
+        // - The centralized SoT in fallback_response_id(...).
         _ => fallback_response_id("")
       }
       let model = match response_json {

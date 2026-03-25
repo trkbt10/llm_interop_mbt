@@ -624,6 +624,85 @@ test "parse_responses_api_result reports native JSON parse errors" {
 }
 
 ///|
+test "transform_response_to_responses_json uses native Responses converters when available" {
+  let anthropic_json = transform_response_to_responses_json(
+    AnthropicMessages,
+    "{\"id\":\"msg_tool\",\"model\":\"claude-sonnet-4-20250514\",\"content\":[{\"type\":\"tool_use\",\"id\":\"toolu_xyz789\",\"name\":\"lookup\",\"input\":{\"q\":\"moonbit\"}}],\"stop_reason\":\"tool_use\"}",
+    model="claude-sonnet-4-20250514",
+  )
+  match anthropic_json {
+    {
+      "output": [
+        {
+          "type": "function_call",
+          "id": String(id),
+          "call_id": String(call_id),
+          "name": "lookup",
+          ..
+        },
+      ],
+      ..
+    } => {
+      assert_eq(id, "fc_xyz789")
+      assert_eq(call_id, "fc_xyz789")
+    }
+    _ =>
+      fail(
+        "Expected Anthropic tool_use to normalize into Responses function_call",
+      )
+  }
+
+  let gemini_json = transform_response_to_responses_json(
+    GoogleGenerativeAI,
+    "{\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"functionCall\":{\"name\":\"get_weather\",\"args\":{\"city\":\"Tokyo\"}}}]},\"finishReason\":\"STOP\"}]}",
+    model="gemini-2.0-flash",
+  )
+  match gemini_json {
+    {
+      "output": [
+        {
+          "type": "function_call",
+          "id": String(id),
+          "call_id": String(call_id),
+          "name": "get_weather",
+          ..
+        },
+      ],
+      ..
+    } => {
+      assert_eq(id, "fc_get_weather_0")
+      assert_eq(call_id, "fc_get_weather_0")
+    }
+    _ =>
+      fail(
+        "Expected Gemini functionCall to normalize into Responses function_call",
+      )
+  }
+
+  let claude_json = transform_response_to_responses_json(
+    ClaudeMcpServe,
+    "{\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"file contents here\"}]}}",
+    model="claude-code-tools",
+  )
+  match claude_json {
+    {
+      "output": [
+        {
+          "type": "message",
+          "content": [{ "type": "output_text", "text": String(text), .. }],
+          ..
+        },
+      ],
+      ..
+    } => assert_eq(text, "file contents here")
+    _ =>
+      fail(
+        "Expected Claude MCP tools result to convert directly to Responses JSON",
+      )
+  }
+}
+
+///|
 test "transform_response_to_responses_json preserves native and translated responses" {
   let native = transform_response_to_responses_json(
     OpenAIResponses,

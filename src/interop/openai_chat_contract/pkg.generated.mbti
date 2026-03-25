@@ -6,6 +6,8 @@ import {
 }
 
 // Values
+pub fn assert_model_response_is_chat_compatible(@types.ModelResponse) -> Unit
+
 pub fn build_chat_choice(Int, String, Array[Json], annotations? : Array[Json]) -> Json
 
 pub fn build_chat_response(String, String, Array[Json]) -> String

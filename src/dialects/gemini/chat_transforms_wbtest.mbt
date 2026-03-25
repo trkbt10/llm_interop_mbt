@@ -214,6 +214,15 @@ test "response helpers cover empty candidates and valid args" {
 }
 
 ///|
+test "panic response_to_chat rejects unsupported Gemini response parts" {
+  ignore(
+    response_to_chat(
+      "{\"candidates\":[{\"content\":{\"parts\":[{\"executableCode\":{\"language\":\"python\",\"code\":\"print(1)\"}}],\"role\":\"model\"}}]}",
+    ),
+  )
+}
+
+///|
 test "panic chat request helpers reject unresolved tool results" {
   let body =
     #|{"messages":[{"role":"tool","content":"mystery","tool_call_id":"missing"}]}
