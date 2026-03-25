@@ -4,7 +4,7 @@
 ///|
 /// Harmony Chat Completions SSE chunk to Responses API event format translator
 /// Accumulative: holds state while generating translation events
-pub struct HarmonyToResponsesTranslator {
+struct HarmonyToResponsesTranslator {
   response_id : String
   model : String
   mut next_output_index : Int
@@ -21,7 +21,7 @@ pub struct HarmonyToResponsesTranslator {
 }
 
 ///|
-struct HarmonyToolCallState {
+priv struct HarmonyToolCallState {
   key : String
   output_index : Int
   mut call_id : String

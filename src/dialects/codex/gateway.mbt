@@ -118,10 +118,15 @@ pub fn prepare_codex_upstream(
   body : String,
   session : CodexSession,
 ) -> CodexUpstreamRequest {
-  let json = @json.parse(body) catch { _ => Json::null() }
+  let json = @json.parse(body) catch {
+    _ =>
+      abort(
+        "Codex upstream requires protocol JSON with a prompt field: " + body,
+      )
+  }
   let prompt = match json {
     { "prompt": String(p), .. } => p
-    _ => body
+    _ => abort("Codex upstream requires a string prompt field: " + body)
   }
   let model = match json {
     { "model": String(m), .. } => m

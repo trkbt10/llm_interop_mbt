@@ -3,21 +3,15 @@
 /// Feeds Gemini SSE events and produces a ModelResponse.
 
 ///|
-pub struct GeminiAccumulator {
+struct GeminiAccumulator {
   text : StringBuilder
   tool_calls : Array[@types.ToolCallAcc]
   mut annotations : Array[@types.ResponseAnnotation]
-  mut finished : Bool
 }
 
 ///|
 pub fn GeminiAccumulator::new() -> GeminiAccumulator {
-  {
-    text: StringBuilder::new(),
-    tool_calls: [],
-    annotations: [],
-    finished: false,
-  }
+  { text: StringBuilder::new(), tool_calls: [], annotations: [] }
 }
 
 ///|
@@ -51,7 +45,6 @@ pub fn GeminiAccumulator::feed(
 pub fn GeminiAccumulator::finish(
   self : GeminiAccumulator,
 ) -> @types.ModelResponse {
-  self.finished = true
   let content = normalize_structured_output_text(self.text.to_string())
   if self.tool_calls.length() > 0 {
     let calls : Array[@types.ToolCallRequest] = []

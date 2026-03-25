@@ -184,6 +184,51 @@ test "anthropic_to_responses: converts text response" {
 }
 
 ///|
+test "anthropic_to_responses: preserved citations round-trip through canonical responses parser" {
+  let result = @anthropic.response_to_responses(
+    {
+      "model": "claude-sonnet-4-20250514",
+      "content": Json::array([
+        {
+          "type": "text",
+          "text": "Weather details",
+          "citations": Json::array([
+            {
+              "type": "web_search_result_location",
+              "cited_text": "Weather details",
+              "encrypted_index": "enc_tokyo",
+              "title": "Tokyo Weather",
+              "url": "https://example.com/tokyo",
+            },
+          ]),
+        },
+      ]),
+      "stop_reason": "end_turn",
+    },
+    response_id="resp_citation",
+  )
+  match @openai.parse_responses_api_response(result) {
+    @types.ModelResponse::RichText(rich) => {
+      assert_eq(rich.annotations.length(), 1)
+      match rich.annotations[0] {
+        @types.ResponseAnnotation::WebSearchResultCitation(
+          title~,
+          start_index~,
+          end_index~,
+          ..
+        ) => {
+          assert_eq(title, "Tokyo Weather")
+          assert_eq(start_index, 0)
+          assert_eq(end_index, 15)
+        }
+        _ => fail("Expected typed web search citation")
+      }
+    }
+    _ => fail("Expected RichText round-trip")
+  }
+}
+
+///|
 test "anthropic_to_responses: converts tool_use to function_call" {
   let response : Json = {
     "id": "msg_456",

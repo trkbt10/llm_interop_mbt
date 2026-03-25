@@ -264,10 +264,9 @@ test "translator: multiple content deltas accumulate" {
 }
 
 ///|
-test "translator: text stream round-trip via accumulator" {
+test "translator: text stream emits final text completion events" {
   let translator = HarmonyToResponsesTranslator::new(response_id="resp_rt")
   let all_events : Array[@sse.SseEvent] = []
-  // Simulate: init → content "Four" → stop
   let chunks : Array[@sse.SseEvent] = [
     {
       event: "",
@@ -297,20 +296,22 @@ test "translator: text stream round-trip via accumulator" {
       all_events.push({ event: translated.0, data: translated.1 })
     }
   }
-  // Accumulate back to ModelResponse
-  let acc = @openai.ResponsesApiAccumulator::new()
-  for event in all_events {
-    acc.feed(event)
+  let text_done = all_events
+    .iter()
+    .find_first(fn(event) { event.event == "response.output_text.done" })
+  match text_done {
+    Some({ data: { "text": String(text), .. }, .. }) => assert_eq(text, "Four")
+    None => fail("Expected output_text.done")
+    _ => fail("Expected completed text event")
   }
-  let result = acc.finish()
-  match result {
-    @types.ModelResponse::Text(text) => assert_eq(text, "Four")
-    _ => fail("Expected Text response")
-  }
+  let completed = all_events
+    .iter()
+    .find_first(fn(event) { event.event == "response.completed" })
+  assert_true(not(completed is None))
 }
 
 ///|
-test "translator: tool call stream round-trip via accumulator" {
+test "translator: tool call stream emits completed function call item" {
   let translator = HarmonyToResponsesTranslator::new(response_id="resp_tc")
   let all_events : Array[@sse.SseEvent] = []
   let chunks : Array[@sse.SseEvent] = [
@@ -378,21 +379,48 @@ test "translator: tool call stream round-trip via accumulator" {
       all_events.push({ event: translated.0, data: translated.1 })
     }
   }
-  let acc = @openai.ResponsesApiAccumulator::new()
-  for event in all_events {
-    acc.feed(event)
-  }
-  let result = acc.finish()
-  match result {
-    @types.ModelResponse::ToolCalls(calls) => {
-      assert_eq(calls.length(), 1)
-      assert_eq(calls[0].name, "get_weather")
-      assert_eq(calls[0].id, "call_test")
-      match calls[0].arguments {
-        { "city": String(c), .. } => assert_eq(c, "Tokyo")
-        _ => fail("Expected city argument")
+  let done = all_events
+    .iter()
+    .find_first(fn(event) {
+      match event {
+        {
+          event: "response.output_item.done",
+          data: {
+            "item": {
+              "type": String("function_call"),
+              "name": String("get_weather"),
+              ..
+            },
+            ..
+          },
+        } => true
+        _ => false
       }
+    })
+  match done {
+    Some(
+      {
+        data: {
+          "item": {
+            "id": String(id),
+            "call_id": String(call_id),
+            "name": String(name),
+            "arguments": String(arguments),
+            "status": String(status),
+            ..
+          },
+          ..
+        },
+        ..,
+      }
+    ) => {
+      assert_eq(id, "call_test")
+      assert_eq(call_id, "call_test")
+      assert_eq(name, "get_weather")
+      assert_eq(arguments, "{\"city\":\"Tokyo\"}")
+      assert_eq(status, "completed")
     }
-    _ => fail("Expected ToolCalls response")
+    None => fail("Expected completed function_call item")
+    _ => fail("Expected completed function_call payload")
   }
 }

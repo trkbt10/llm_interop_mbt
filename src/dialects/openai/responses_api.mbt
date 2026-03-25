@@ -2,150 +2,12 @@
 /// OpenAI Responses API protocol
 
 // =============================================================================
-// Message Conversion
-// =============================================================================
-
-///|
-/// Convert message array to Responses API input items format JSON array
-pub fn messages_to_responses_input(
-  messages : Array[@types.ModelMessage],
-) -> Array[Json] {
-  let input_items : Array[Json] = []
-  for msg in messages {
-    match msg {
-      @types.ModelMessage::System(content) =>
-        input_items.push({ "role": "system", "content": content })
-      @types.ModelMessage::User(content~, content_parts~, ..) =>
-        match content_parts {
-          Some(parts) => {
-            let content_blocks : Array[Json] = []
-            for part in parts {
-              // Ref: https://platform.openai.com/docs/api-reference/responses/create — input content types
-              match part {
-                // Ref: InputText — {"type":"input_text","text":"..."}
-                @types.ContentPart::Text(text) =>
-                  content_blocks.push({ "type": "input_text", "text": text })
-                // Ref: InputImage — {"type":"input_image","image_url":"...","detail":"..."}
-                @types.ContentPart::ImageUrl(url~, detail~) => {
-                  let img : Map[String, Json] = {
-                    "type": Json::string("input_image"),
-                    "image_url": Json::string(url),
-                  }
-                  match detail {
-                    Some(d) => img["detail"] = Json::string(d)
-                    None => ()
-                  }
-                  content_blocks.push(Json::object(img))
-                }
-                // Ref: InputImage with data URL
-                @types.ContentPart::ImageBase64(data~, media_type~) =>
-                  content_blocks.push({
-                    "type": "input_image",
-                    "image_url": "data:\{media_type};base64,\{data}",
-                  })
-                // Ref: InputAudio — {"type":"input_audio","data":"...","format":"..."}
-                @types.ContentPart::Audio(data~, format~) =>
-                  content_blocks.push({
-                    "type": "input_audio",
-                    "data": data,
-                    "format": format,
-                  })
-                // Ref: InputFile — {"type":"input_file","file_data":"data:...;base64,...","filename":"..."}
-                @types.ContentPart::Document(data~, media_type~, title~) => {
-                  let doc : Map[String, Json] = {
-                    "type": Json::string("input_file"),
-                    "file_data": Json::string(
-                      "data:\{media_type};base64,\{data}",
-                    ),
-                  }
-                  match title {
-                    Some(t) => doc["filename"] = Json::string(t)
-                    None => ()
-                  }
-                  content_blocks.push(Json::object(doc))
-                }
-                // Ref: InputFile — {"type":"input_file","file_id":"..."}
-                @types.ContentPart::FileRef(file_id~, ..) =>
-                  content_blocks.push({
-                    "type": "input_file",
-                    "file_id": file_id,
-                  })
-                // Ref: docs/upstream/openai-file-inputs.md —
-                // Responses API also accepts remote file URLs.
-                @types.ContentPart::FileUrl(url~) =>
-                  content_blocks.push({ "type": "input_file", "file_url": url })
-                // Ref: docs/upstream/openai-responses-create.md:165-177
-                // Map video bytes through the generic input_file.file_data shape.
-                @types.ContentPart::Video(data~, media_type~) =>
-                  content_blocks.push({
-                    "type": "input_file",
-                    "file_data": "data:\{media_type};base64,\{data}",
-                  })
-              }
-            }
-            input_items.push({
-              "role": "user",
-              "content": Json::array(content_blocks),
-            })
-          }
-          None => input_items.push({ "role": "user", "content": content })
-        }
-      @types.ModelMessage::Assistant(content~, tool_calls~) =>
-        match tool_calls {
-          Some(calls) if calls.length() > 0 => {
-            if content.length() > 0 {
-              input_items.push({ "role": "assistant", "content": content })
-            }
-            for call in calls {
-              match call.kind {
-                @types.ToolCallKind::Function =>
-                  input_items.push({
-                    "type": "function_call",
-                    "call_id": call.id,
-                    "name": call.name,
-                    "arguments": call.arguments.stringify(),
-                    "status": "completed",
-                  })
-                @types.ToolCallKind::WebSearch =>
-                  input_items.push(
-                    build_responses_web_search_call(call.id, call.arguments),
-                  )
-                @types.ToolCallKind::Builtin(builtin_type~) =>
-                  input_items.push(
-                    build_responses_builtin_tool_item(
-                      builtin_type,
-                      call.id,
-                      call.name,
-                      call.arguments,
-                    ),
-                  )
-              }
-            }
-          }
-          _ => input_items.push({ "role": "assistant", "content": content })
-        }
-      @types.ModelMessage::ToolResult(tool_call_id~, content~) =>
-        match parse_embedded_responses_tool_result_item(tool_call_id, content) {
-          Some(item) => input_items.push(item)
-          None =>
-            input_items.push({
-              "type": "function_call_output",
-              "call_id": tool_call_id,
-              "output": content,
-            })
-        }
-    }
-  }
-  input_items
-}
-
-// =============================================================================
 // Tool Conversion
 // =============================================================================
 
 ///|
 /// Convert ToolDefinition to JSON (Responses API format)
-pub fn tool_to_responses_api_json(tool : @types.ToolDefinition) -> Json {
+fn tool_to_responses_api_json(tool : @types.ToolDefinition) -> Json {
   match tool.kind {
     @types.ToolDefinitionKind::Function =>
       {
@@ -187,61 +49,6 @@ fn build_builtin_tool_json(type_ : String, config : Json) -> Json {
 }
 
 ///|
-fn parse_embedded_responses_tool_result_item(
-  tool_call_id : String,
-  content : String,
-) -> Json? {
-  let parsed : Json = @json.parse(content) catch { _ => return None }
-  match parsed {
-    { "type": String(type_), .. } =>
-      if is_raw_responses_tool_result_item_type(type_) {
-        Some(ensure_tool_result_item_id(parsed, type_, tool_call_id))
-      } else {
-        None
-      }
-    _ => None
-  }
-}
-
-///|
-fn is_raw_responses_tool_result_item_type(type_ : String) -> Bool {
-  [
-    "function_call_output", "custom_tool_call_output", "computer_call_output", "local_shell_call_output",
-    "shell_call_output", "apply_patch_call_output", "mcp_approval_response",
-  ].contains(type_)
-}
-
-///|
-fn ensure_tool_result_item_id(
-  item : Json,
-  type_ : String,
-  tool_call_id : String,
-) -> Json {
-  match item {
-    Object(fields) => {
-      let result : Map[String, Json] = fields
-      match type_ {
-        "mcp_approval_response" =>
-          if !result.contains("approval_request_id") &&
-            tool_call_id.length() > 0 {
-            result["approval_request_id"] = Json::string(tool_call_id)
-          }
-        "computer_call_output" | "local_shell_call_output" =>
-          if !result.contains("id") && tool_call_id.length() > 0 {
-            result["id"] = Json::string(tool_call_id)
-          }
-        _ =>
-          if !result.contains("call_id") && tool_call_id.length() > 0 {
-            result["call_id"] = Json::string(tool_call_id)
-          }
-      }
-      Json::object(result)
-    }
-    _ => item
-  }
-}
-
-///|
 fn build_web_search_tool_json(
   tool_type : String,
   search_context_size : String?,
@@ -262,7 +69,7 @@ fn build_web_search_tool_json(
 
 ///|
 /// Convert tool definition array to Responses API format JSON array
-pub fn tools_to_responses_api_json(
+fn tools_to_responses_api_json(
   tools : Array[@types.ToolDefinition],
 ) -> Array[Json] {
   let result : Array[Json] = []
@@ -270,212 +77,6 @@ pub fn tools_to_responses_api_json(
     result.push(tool_to_responses_api_json(tool))
   }
   result
-}
-
-// =============================================================================
-// Responses API Output Builders (used by cross-dialect to_responses transforms)
-// =============================================================================
-
-///|
-/// Build a Responses API function_call output item.
-pub fn build_responses_function_call(
-  call_id : String,
-  name : String,
-  arguments : Json,
-) -> Json {
-  {
-    "type": "function_call",
-    "id": call_id,
-    "call_id": call_id,
-    "name": name,
-    "arguments": arguments.stringify(),
-    "status": "completed",
-  }
-}
-
-///|
-/// Build a Responses API web_search_call output item.
-pub fn build_responses_web_search_call(call_id : String, input : Json) -> Json {
-  {
-    "type": "web_search_call",
-    "id": call_id,
-    "status": "completed",
-    "action": @types.build_web_search_action(input),
-  }
-}
-
-///|
-fn build_responses_builtin_tool_item(
-  type_ : String,
-  id : String,
-  name : String,
-  payload : Json,
-  statuses? : Array[@types.ToolCallStatus] = [],
-) -> Json {
-  let result : Map[String, Json] = { "type": Json::string(type_) }
-  match payload {
-    Object(fields) =>
-      for key, value in fields {
-        if key != "type" {
-          result[key] = value
-        }
-      }
-    _ => ()
-  }
-  if !result.contains("id") &&
-    !result.contains("call_id") &&
-    !result.contains("approval_request_id") &&
-    id.length() > 0 {
-    result["id"] = Json::string(id)
-  }
-  if !result.contains("name") && name.length() > 0 {
-    result["name"] = Json::string(name)
-  }
-  if !result.contains("status") && statuses.length() > 0 {
-    result["status"] = tool_trace_status_to_json(statuses)
-  }
-  Json::object(result)
-}
-
-///|
-/// Build a Responses API message output wrapping content parts.
-pub fn build_responses_message_output(content_parts : Array[Json]) -> Json {
-  {
-    "type": "message",
-    "role": "assistant",
-    "content": Json::array(content_parts),
-  }
-}
-
-///|
-/// Build a Responses API reasoning output item.
-/// Ref: ResponseReasoningItem — {"type":"reasoning","summary":[{"type":"summary_text","text":"..."}]}
-pub fn build_responses_reasoning_item(
-  text : String,
-  encrypted_content? : String? = None,
-) -> Json {
-  let item : Map[String, Json] = { "type": Json::string("reasoning") }
-  if text.length() > 0 {
-    item["summary"] = Json::array([{ "type": "summary_text", "text": text }])
-  } else {
-    item["summary"] = Json::array([])
-  }
-  match encrypted_content {
-    Some(value) => item["encrypted_content"] = Json::string(value)
-    None => ()
-  }
-  Json::object(item)
-}
-
-///|
-/// Assemble Responses API output array.
-///
-/// The Responses API schema says the `output` array order is model-dependent.
-/// Ref: docs/upstream/openai-responses-create.md:8583-8590
-///
-/// This helper uses the project's canonical serialization order:
-///   1. reasoning items
-///   2. tool call items (function_call, web_search_call)
-///   3. message item (ResponseOutputMessage with content: [output_text, refusal, output_image])
-///
-/// Parameters:
-///   - text_parts: message content blocks (output_text, refusal, output_image JSON)
-///   - tool_outputs: function_call and web_search_call items
-///   - reasoning_outputs: reasoning items (optional, default [])
-pub fn assemble_responses_output(
-  text_parts : Array[Json],
-  tool_outputs : Array[Json],
-  reasoning_outputs? : Array[Json] = [],
-) -> Array[Json] {
-  let result : Array[Json] = []
-  // 1. Reasoning items first
-  for r in reasoning_outputs {
-    result.push(r)
-  }
-  // 2. Tool calls
-  for o in tool_outputs {
-    result.push(o)
-  }
-  // 3. Message item (text, refusal, images)
-  if text_parts.length() > 0 {
-    result.push(build_responses_message_output(text_parts))
-  }
-  result
-}
-
-///|
-/// Convert ModelResponse to Responses API output array.
-pub fn model_response_to_responses_output(
-  response : @types.ModelResponse,
-) -> Array[Json] {
-  match response {
-    @types.ModelResponse::Text(content) =>
-      build_responses_output_from_rich_content(
-        [@types.ResponseContentPart::OutputText(content)],
-        [],
-        [],
-      )
-    @types.ModelResponse::RichText(rich) =>
-      match rich.content_parts {
-        Some(parts) =>
-          build_responses_output_from_rich_content(
-            parts,
-            rich.annotations,
-            rich.tool_traces,
-          )
-        None =>
-          build_responses_output_from_rich_content(
-            [@types.ResponseContentPart::OutputText(rich.content)],
-            rich.annotations,
-            rich.tool_traces,
-          )
-      }
-    @types.ModelResponse::ToolCalls(calls) =>
-      build_responses_output_from_tool_calls(calls)
-    @types.ModelResponse::ToolCallsWithContent(tool_calls~, rich~) =>
-      build_responses_output_from_mixed_tool_calls(tool_calls, rich)
-    @types.ModelResponse::ModelError(_) => []
-    @types.ModelResponse::RateLimited(_) => []
-  }
-}
-
-///|
-/// Convert ModelResponse to full Responses API response JSON.
-pub fn model_response_to_responses_json(
-  response : @types.ModelResponse,
-  response_id~ : String,
-  model~ : String,
-) -> Json {
-  match response {
-    @types.ModelResponse::ModelError(msg) =>
-      { "error": { "type": "error", "message": msg } }
-    @types.ModelResponse::RateLimited(retry_after~) =>
-      {
-        "error": {
-          "type": "rate_limit_error",
-          "message": "Rate limited",
-          "retry_after": retry_after,
-        },
-      }
-    _ =>
-      {
-        "id": response_id,
-        "object": "response",
-        "status": "completed",
-        "output": Json::array(model_response_to_responses_output(response)),
-        "model": model,
-      }
-  }
-}
-
-///|
-pub fn is_builtin_responses_tool_item_type(type_ : String) -> Bool {
-  [
-    "file_search_call", "computer_call", "computer_call_output", "tool_search_output",
-    "image_generation_call", "code_interpreter_call", "local_shell_call", "local_shell_call_output",
-    "shell_call", "shell_call_output", "apply_patch_call", "apply_patch_call_output",
-    "mcp_list_tools", "mcp_approval_request", "mcp_approval_response", "mcp_call",
-  ].contains(type_)
 }
 
 ///|
@@ -487,168 +88,6 @@ fn is_actionable_builtin_responses_tool_item_type(type_ : String) -> Bool {
 }
 
 ///|
-fn build_responses_output_from_tool_calls(
-  calls : Array[@types.ToolCallRequest],
-) -> Array[Json] {
-  let output : Array[Json] = []
-  for call in calls {
-    match call.kind {
-      @types.ToolCallKind::Function =>
-        output.push(
-          build_responses_function_call(call.id, call.name, call.arguments),
-        )
-      @types.ToolCallKind::WebSearch =>
-        output.push(build_responses_web_search_call(call.id, call.arguments))
-      @types.ToolCallKind::Builtin(builtin_type~) =>
-        if builtin_type == @types.web_search_tool_name() {
-          output.push(build_responses_web_search_call(call.id, call.arguments))
-        } else {
-          output.push(
-            build_responses_builtin_tool_item(
-              builtin_type,
-              call.id,
-              call.name,
-              call.arguments,
-            ),
-          )
-        }
-    }
-  }
-  output
-}
-
-///|
-fn rich_parts_for_responses_output(
-  rich : @types.RichTextResponse,
-) -> Array[@types.ResponseContentPart] {
-  match rich.content_parts {
-    Some(parts) => parts
-    None =>
-      if rich.content.length() > 0 {
-        [@types.ResponseContentPart::OutputText(rich.content)]
-      } else {
-        []
-      }
-  }
-}
-
-///|
-fn build_responses_output_from_mixed_tool_calls(
-  tool_calls : Array[@types.ToolCallRequest],
-  rich : @types.RichTextResponse,
-) -> Array[Json] {
-  let (message_parts, trace_tool_outputs, reasoning_outputs) = decompose_responses_rich_content(
-    rich_parts_for_responses_output(rich),
-    rich.annotations,
-    rich.tool_traces,
-  )
-  let tool_outputs = trace_tool_outputs
-  for output in build_responses_output_from_tool_calls(tool_calls) {
-    tool_outputs.push(output)
-  }
-  assemble_responses_output(message_parts, tool_outputs, reasoning_outputs~)
-}
-
-///|
-fn build_responses_output_from_rich_content(
-  parts : Array[@types.ResponseContentPart],
-  annotations : Array[@types.ResponseAnnotation],
-  tool_traces : Array[@types.ToolCallTrace],
-) -> Array[Json] {
-  let (message_parts, tool_outputs, reasoning_outputs) = decompose_responses_rich_content(
-    parts, annotations, tool_traces,
-  )
-  assemble_responses_output(message_parts, tool_outputs, reasoning_outputs~)
-}
-
-///|
-fn decompose_responses_rich_content(
-  parts : Array[@types.ResponseContentPart],
-  annotations : Array[@types.ResponseAnnotation],
-  tool_traces : Array[@types.ToolCallTrace],
-) -> (Array[Json], Array[Json], Array[Json]) {
-  let message_parts : Array[Json] = []
-  let reasoning_outputs : Array[Json] = []
-  let tool_outputs : Array[Json] = []
-  for trace in tool_traces {
-    match trace.kind {
-      @types.ToolCallKind::WebSearch =>
-        tool_outputs.push({
-          "type": "web_search_call",
-          "id": trace.id,
-          "status": tool_trace_status_to_json(trace.statuses),
-          "action": @types.build_web_search_action(trace.arguments),
-        })
-      @types.ToolCallKind::Builtin(builtin_type~) =>
-        tool_outputs.push(
-          build_responses_builtin_tool_item(
-            builtin_type,
-            trace.id,
-            trace.name,
-            trace.arguments,
-            statuses=trace.statuses,
-          ),
-        )
-      _ => ()
-    }
-  }
-  let text_offsets : Array[(Int, Int)] = []
-  let mut offset = 0
-  for part in parts {
-    match part {
-      @types.ResponseContentPart::OutputText(text) => {
-        text_offsets.push((offset, offset + text.length()))
-        offset = offset + text.length()
-      }
-      _ => ()
-    }
-  }
-  let mut text_index = 0
-  for part in parts {
-    match part {
-      @types.ResponseContentPart::OutputText(text) => {
-        let (seg_start, seg_end) = text_offsets[text_index]
-        let segment_annotations : Array[Json] = []
-        for annotation in annotations {
-          if annotation.start_index() >= seg_start &&
-            annotation.end_index() <= seg_end {
-            segment_annotations.push(response_annotation_to_json(annotation))
-          }
-        }
-        message_parts.push({
-          "type": "output_text",
-          "text": text,
-          "annotations": Json::array(segment_annotations),
-        })
-        text_index = text_index + 1
-      }
-      @types.ResponseContentPart::OutputImage(url~) =>
-        message_parts.push({ "type": "output_image", "image_url": url })
-      @types.ResponseContentPart::Refusal(reason) =>
-        message_parts.push({ "type": "refusal", "refusal": reason })
-      @types.ResponseContentPart::Thinking(text~) =>
-        reasoning_outputs.push(build_responses_reasoning_item(text))
-      @types.ResponseContentPart::RedactedThinking(data~) =>
-        reasoning_outputs.push(
-          build_responses_reasoning_item("", encrypted_content=Some(data)),
-        )
-      @types.ResponseContentPart::CodeExecution(language~, code~) =>
-        message_parts.push({
-          "type": "output_text",
-          "text": "```\{language}\n\{code}\n```",
-        })
-      @types.ResponseContentPart::CodeResult(outcome~, output~) =>
-        message_parts.push({
-          "type": "output_text",
-          "text": "Execution [\{outcome}]: \{output}",
-        })
-      @types.ResponseContentPart::AudioOutput(transcript~, ..) =>
-        message_parts.push({ "type": "output_text", "text": transcript })
-    }
-  }
-  (message_parts, tool_outputs, reasoning_outputs)
-}
-
 // =============================================================================
 // Request Builder
 // =============================================================================
@@ -661,7 +100,7 @@ pub fn build_responses_api_body(
   tools : Array[@types.ToolDefinition],
   response_format? : @types.ResponseFormat? = None,
 ) -> Json {
-  let input = messages_to_responses_input(messages)
+  let input = @openai_responses_contract.messages_to_responses_input(messages)
   let body : Map[String, Json] = {
     "model": Json::string(model),
     "input": Json::array(input),
@@ -689,9 +128,52 @@ pub fn parse_responses_api_response(
 ) -> @types.ModelResponse {
   match response_json {
     { "output": Array(outputs), .. } => parse_responses_output(outputs)
-    { "error": { "message": String(msg), .. }, .. } =>
-      @types.ModelResponse::ModelError(msg)
-    _ => @types.ModelResponse::ModelError("Unknown response format")
+    { "error": error_obj, .. } => parse_responses_api_error(error_obj)
+    _ =>
+      @types.ModelResponse::Failure(
+        failure=@types.ModelFailure::parse_error(
+          message="Unknown response format",
+          payload=Some(response_json),
+        ),
+      )
+  }
+}
+
+///|
+fn parse_responses_api_error(error_obj : Json) -> @types.ModelResponse {
+  match error_obj {
+    { "message": String(message), .. } => {
+      let failure_type = match error_obj {
+        { "type": String(type_), .. } => type_
+        _ => "error"
+      }
+      let failure_code = match error_obj {
+        { "code": Number(code, ..), .. } => Some(code.to_int())
+        _ => None
+      }
+      let retry_after = match error_obj {
+        { "retry_after": Number(retry_after, ..), .. } =>
+          Some(retry_after.to_int())
+        _ => None
+      }
+      @types.ModelResponse::Failure(
+        failure=@types.ModelFailure::new(
+          type_=failure_type,
+          message~,
+          code=failure_code,
+          retry_after~,
+          payload=Some(error_obj),
+        ),
+      )
+    }
+    _ =>
+      @types.ModelResponse::Failure(
+        failure=@types.ModelFailure::new(
+          type_="error",
+          message=error_obj.stringify(),
+          payload=Some(error_obj),
+        ),
+      )
   }
 }
 
@@ -731,7 +213,7 @@ fn parse_responses_output(outputs : Array[Json]) -> @types.ModelResponse {
           has_non_text = true
         }
       { "type": String(type_), .. } =>
-        if is_builtin_responses_tool_item_type(type_) {
+        if @openai_responses_contract.is_builtin_responses_tool_item_type(type_) {
           if is_actionable_builtin_responses_tool_item_type(type_) {
             tool_calls.push(parse_builtin_tool_call(output, type_))
           } else {
@@ -1044,22 +526,5 @@ fn push_annotations_unique(
     if not(target.contains(annotation)) {
       target.push(annotation)
     }
-  }
-}
-
-///|
-fn response_annotation_to_json(annotation : @types.ResponseAnnotation) -> Json {
-  annotation.to_interop_json()
-}
-
-///|
-fn tool_trace_status_to_json(statuses : Array[@types.ToolCallStatus]) -> Json {
-  if statuses.length() == 0 {
-    return Json::string("completed")
-  }
-  match statuses[statuses.length() - 1] {
-    @types.ToolCallStatus::InProgress => Json::string("in_progress")
-    @types.ToolCallStatus::Searching => Json::string("searching")
-    @types.ToolCallStatus::Completed => Json::string("completed")
   }
 }

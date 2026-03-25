@@ -4,6 +4,7 @@ package "trkbt10/llm_interop/dialects/codex"
 import {
   "moonbitlang/core/json",
   "trkbt10/llm_interop/jsonrpc",
+  "trkbt10/llm_interop/sse",
   "trkbt10/llm_interop/types",
 }
 
@@ -42,6 +43,8 @@ pub fn ipc_error_event(String) -> String
 
 pub fn mark_session_turn_complete(CodexSession) -> CodexSession
 
+pub fn non_streaming_to_synthetic_events(Json) -> Array[@sse.SseEvent]
+
 pub fn parse_codex_model_list_result(Json, String) -> Array[Json]
 
 pub fn parse_model_list_response(Json) -> Array[CodexModelInfo]
@@ -51,6 +54,8 @@ pub fn patch_turn_start_thread_id(String, String) -> String
 pub fn prepare_codex_model_list(CodexSession) -> CodexUpstreamRequest
 
 pub fn prepare_codex_upstream(String, CodexSession) -> CodexUpstreamRequest
+
+pub fn protocol_request_to_chat(String) -> String
 
 pub fn response_to_chat(String) -> String
 
@@ -315,6 +320,10 @@ pub(all) struct CodexThreadStartResponse {
 pub fn CodexThreadStartResponse::from_json(Json) -> Self?
 pub impl Eq for CodexThreadStartResponse
 pub impl Show for CodexThreadStartResponse
+
+type CodexToResponsesTranslator
+pub fn CodexToResponsesTranslator::new(response_id~ : String, model? : String) -> Self
+pub fn CodexToResponsesTranslator::translate(Self, @sse.SseEvent) -> Array[(String, Json)]
 
 pub(all) struct CodexTokenUsage {
   input_tokens : Int

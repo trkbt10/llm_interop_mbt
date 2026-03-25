@@ -145,6 +145,58 @@ test "message and content helpers cover system, multimodal inputs, empty assista
     ),
     { "fileData": { "fileUri": "files/abc" } },
   )
+
+  match
+    message_to_content(
+      @types.ModelMessage::User(
+        content="Transcribe this audio",
+        name=None,
+        content_parts=Some([
+          @types.ContentPart::Text("Transcribe this audio"),
+          @types.ContentPart::Audio(data="base64audio", format="wav"),
+        ]),
+      ),
+    ) {
+    Some(content) => {
+      assert_eq(content.parts.length(), 2)
+      match content.parts[1] {
+        GeminiPart::InlineData(mime_type~, data~) => {
+          assert_eq(mime_type, "audio/wav")
+          assert_eq(data, "base64audio")
+        }
+        _ => fail("Expected inline audio data")
+      }
+    }
+    None => fail("Expected audio content")
+  }
+
+  match
+    message_to_content(
+      @types.ModelMessage::User(
+        content="Summarize this PDF",
+        name=None,
+        content_parts=Some([
+          @types.ContentPart::Text("Summarize this PDF"),
+          @types.ContentPart::Document(
+            data="base64pdf",
+            media_type="application/pdf",
+            title=Some("report.pdf"),
+          ),
+        ]),
+      ),
+    ) {
+    Some(content) => {
+      assert_eq(content.parts.length(), 2)
+      match content.parts[1] {
+        GeminiPart::InlineData(mime_type~, data~) => {
+          assert_eq(mime_type, "application/pdf")
+          assert_eq(data, "base64pdf")
+        }
+        _ => fail("Expected inline document data")
+      }
+    }
+    None => fail("Expected document content")
+  }
 }
 
 ///|
@@ -160,6 +212,37 @@ test "panic messages_to_contents rejects unresolved tool result ids" {
   messages_to_contents([
     @types.ModelMessage::ToolResult(tool_call_id="missing", content="fallback"),
   ])
+  |> ignore
+}
+
+///|
+test "panic message_to_content rejects unsupported remote URL parts" {
+  message_to_content(
+    @types.ModelMessage::User(
+      content="See this image",
+      name=None,
+      content_parts=Some([
+        @types.ContentPart::ImageUrl(
+          url="https://example.com/image.png",
+          detail=None,
+        ),
+      ]),
+    ),
+  )
+  |> ignore
+}
+
+///|
+test "panic message_to_content rejects unsupported remote file URLs" {
+  message_to_content(
+    @types.ModelMessage::User(
+      content="Read this file",
+      name=None,
+      content_parts=Some([
+        @types.ContentPart::FileUrl(url="https://example.com/report.pdf"),
+      ]),
+    ),
+  )
   |> ignore
 }
 
@@ -298,8 +381,10 @@ test "tool and request helpers cover native builtins, normalized bridged builtin
 ///|
 test "response and stream parsers cover no candidates, invalid candidates, and empty fallbacks" {
   match parse_response({ "candidates": Json::array([]) }) {
-    @types.ModelResponse::ModelError(message) =>
-      assert_eq(message, "No candidates in response")
+    @types.ModelResponse::Failure(failure~) => {
+      assert_eq(failure.type_, "parse_error")
+      assert_eq(failure.message, "No candidates in response")
+    }
     _ => fail("Expected no-candidates error")
   }
 
@@ -328,13 +413,18 @@ test "response and stream parsers cover no candidates, invalid candidates, and e
 
   match
     parse_response({ "candidates": Json::array([{ "finishReason": "STOP" }]) }) {
-    @types.ModelResponse::ModelError(message) =>
-      assert_eq(message, "Invalid candidate format")
+    @types.ModelResponse::Failure(failure~) => {
+      assert_eq(failure.type_, "parse_error")
+      assert_eq(failure.message, "Invalid candidate format")
+    }
     _ => fail("Expected invalid candidate error")
   }
 
   match parse_response({ "error": { "message": "boom" } }) {
-    @types.ModelResponse::ModelError(message) => assert_eq(message, "boom")
+    @types.ModelResponse::Failure(failure~) => {
+      assert_eq(failure.type_, "api_error")
+      assert_eq(failure.message, "boom")
+    }
     _ => fail("Expected provider error")
   }
 
@@ -368,6 +458,38 @@ test "response and stream parsers cover no candidates, invalid candidates, and e
   match parse_stream_chunk({ "usageMetadata": { "totalTokenCount": 3 } }) {
     None => ()
     Some(_) => fail("Expected usage metadata chunk to be ignored")
+  }
+
+  match
+    parse_stream_chunk({
+      "candidates": Json::array([
+        {
+          "content": {
+            "parts": Json::array([
+              { "text": "Let me calculate." },
+              {
+                "executableCode": { "language": "PYTHON", "code": "print(2+2)" },
+              },
+              {
+                "codeExecutionResult": {
+                  "outcome": "OUTCOME_OK",
+                  "output": "4\n",
+                },
+              },
+            ]),
+          },
+        },
+      ]),
+    }) {
+    Some((text, tool_calls)) => {
+      assert_true(text.contains("Let me calculate"))
+      assert_true(text.contains("```python"))
+      assert_true(text.contains("print(2+2)"))
+      assert_true(text.contains("OUTCOME_OK"))
+      assert_true(text.contains("4"))
+      assert_eq(tool_calls.length(), 0)
+    }
+    None => fail("Expected parsed executable-code chunk")
   }
 }
 

@@ -16,7 +16,7 @@ test "normalize: adds all properties to required array" {
       "active": { "type": "boolean" },
     },
   }
-  let result = normalize_json_schema_for_openai(schema)
+  let result = @types.normalize_json_schema_for_openai(schema)
   match result {
     { "required": Array(required), .. } => {
       assert_eq(required.length(), 3)
@@ -54,7 +54,7 @@ test "normalize: handles nested object properties" {
       },
     },
   }
-  let result = normalize_json_schema_for_openai(schema)
+  let result = @types.normalize_json_schema_for_openai(schema)
   match result {
     {
       "properties": {
@@ -93,7 +93,7 @@ test "normalize: handles array items with object schemas" {
       },
     },
   }
-  let result = normalize_json_schema_for_openai(schema)
+  let result = @types.normalize_json_schema_for_openai(schema)
   match result {
     {
       "properties": {
@@ -116,7 +116,7 @@ test "normalize: handles array items with object schemas" {
 ///|
 test "normalize: handles empty properties" {
   let schema : Json = { "type": "object", "properties": {} }
-  let result = normalize_json_schema_for_openai(schema)
+  let result = @types.normalize_json_schema_for_openai(schema)
   match result {
     { "additionalProperties": False, .. } => ()
     _ => fail("Expected additionalProperties: false")
@@ -136,7 +136,7 @@ test "normalize: removes uri format" {
       "email": { "type": "string", "format": "email" },
     },
   }
-  let result = normalize_json_schema_for_openai(schema)
+  let result = @types.normalize_json_schema_for_openai(schema)
   match result {
     {
       "properties": { "website": website_schema, "email": email_schema, .. },
@@ -171,7 +171,7 @@ test "normalize: removes uri format from nested schemas" {
       },
     },
   }
-  let result = normalize_json_schema_for_openai(schema)
+  let result = @types.normalize_json_schema_for_openai(schema)
   match result {
     {
       "properties": {
@@ -201,7 +201,7 @@ test "normalize: sets additionalProperties to false" {
     "type": "object",
     "properties": { "name": { "type": "string" } },
   }
-  let result = normalize_json_schema_for_openai(schema)
+  let result = @types.normalize_json_schema_for_openai(schema)
   match result {
     { "additionalProperties": False, .. } => ()
     _ => fail("Expected additionalProperties: false")
@@ -215,7 +215,7 @@ test "normalize: overrides existing additionalProperties true" {
     "properties": { "name": { "type": "string" } },
     "additionalProperties": true,
   }
-  let result = normalize_json_schema_for_openai(schema)
+  let result = @types.normalize_json_schema_for_openai(schema)
   match result {
     { "additionalProperties": False, .. } => ()
     _ => fail("Expected additionalProperties to be overridden to false")
@@ -234,7 +234,7 @@ test "normalize: recursively sets additionalProperties for nested objects" {
       },
     },
   }
-  let result = normalize_json_schema_for_openai(schema)
+  let result = @types.normalize_json_schema_for_openai(schema)
   match result {
     {
       "properties": { "user": { "additionalProperties": False, .. }, .. },
@@ -266,7 +266,7 @@ test "normalize: handles function schema with all normalizations" {
     },
     "required": Json::array([Json::string("query")]),
   }
-  let result = normalize_json_schema_for_openai(schema)
+  let result = @types.normalize_json_schema_for_openai(schema)
   // Check top-level
   match result {
     { "required": Array(req), "additionalProperties": False, .. } =>
@@ -310,7 +310,7 @@ test "normalize: handles function schema with all normalizations" {
 ///|
 test "normalize: handles empty schema" {
   let schema : Json = {}
-  let result = normalize_json_schema_for_openai(schema)
+  let result = @types.normalize_json_schema_for_openai(schema)
   match result {
     Object(map) => assert_eq(map.length(), 0)
     _ => fail("Expected empty object")
@@ -320,7 +320,7 @@ test "normalize: handles empty schema" {
 ///|
 test "normalize: handles non-object type schemas" {
   let schema : Json = { "type": "string" }
-  let result = normalize_json_schema_for_openai(schema)
+  let result = @types.normalize_json_schema_for_openai(schema)
   match result {
     { "additionalProperties": _, .. } =>
       fail("Non-object schemas shouldn't have additionalProperties")
@@ -340,7 +340,7 @@ test "normalize: preserves description and enum" {
       },
     },
   }
-  let result = normalize_json_schema_for_openai(schema)
+  let result = @types.normalize_json_schema_for_openai(schema)
   match result {
     {
       "properties": {
@@ -366,13 +366,13 @@ test "needs_normalization: returns true for missing additionalProperties" {
     "type": "object",
     "properties": { "name": { "type": "string" } },
   }
-  assert_true(schema_needs_normalization(schema))
+  assert_true(@types.schema_needs_normalization(schema))
 }
 
 ///|
 test "needs_normalization: returns true for uri format" {
   let schema : Json = { "type": "string", "format": "uri" }
-  assert_true(schema_needs_normalization(schema))
+  assert_true(@types.schema_needs_normalization(schema))
 }
 
 ///|
@@ -383,5 +383,5 @@ test "needs_normalization: returns false for already normalized schema" {
     "required": Json::array([Json::string("name")]),
     "additionalProperties": false,
   }
-  assert_false(schema_needs_normalization(schema))
+  assert_false(@types.schema_needs_normalization(schema))
 }

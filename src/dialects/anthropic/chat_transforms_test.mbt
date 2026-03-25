@@ -213,7 +213,7 @@ test "chat_request_to_anthropic maps OpenAI required tool_choice to any" {
 ///|
 test "request_to_chat: system multimodal content and params" {
   let body =
-    #|{"model":"claude-sonnet-4-20250514","system":"Be concise","messages":[{"role":"user","content":[{"type":"text","text":"Look at this"},{"type":"image","source":{"type":"base64","media_type":"image/png","data":"abc123"}}]}],"max_tokens":256,"temperature":0.3,"top_p":0.8,"top_k":5,"stop_sequences":["END"],"stream":true,"output_config":{"format":{"type":"json_schema","schema":{"type":"object"}}}}
+    #|{"model":"claude-sonnet-4-20250514","system":"Be concise","messages":[{"role":"user","content":[{"type":"text","text":"Look at this"},{"type":"image","source":{"type":"base64","media_type":"image/png","data":"abc123"}},{"type":"image","source":{"type":"url","url":"https://example.com/cat.png"}}]}],"max_tokens":256,"temperature":0.3,"top_p":0.8,"top_k":5,"stop_sequences":["END"],"stream":true,"output_config":{"format":{"type":"json_schema","schema":{"type":"object"}}}}
   let result = request_to_chat(body, {
     max_tokens: 0,
     max_tokens_field: "max_completion_tokens",
@@ -252,6 +252,14 @@ test "request_to_chat: system multimodal content and params" {
           ..
         } => assert_true(url.has_prefix("data:image/png;base64,abc123"))
         _ => fail("Expected image_url part")
+      }
+      match parts[2] {
+        {
+          "type": String("image_url"),
+          "image_url": { "url": String(url), .. },
+          ..
+        } => assert_eq(url, "https://example.com/cat.png")
+        _ => fail("Expected remote image_url part")
       }
     }
     _ => fail("unexpected structure: \{result}")
@@ -301,7 +309,7 @@ test "request_to_chat: missing top-level fields and mixed content fallbacks" {
 }
 
 ///|
-test "chat_request_to_anthropic: skips unsupported entries and pivots multimodal user parts" {
+test "chat_request_to_anthropic: preserves remote image URLs and pivots multimodal user parts" {
   let missing_fields = chat_request_to_anthropic(
     "{\"tools\":[{\"type\":\"not-function\"}]}",
     { max_tokens: 512, max_tokens_field: "max_tokens" },
@@ -346,6 +354,11 @@ test "chat_request_to_anthropic: skips unsupported entries and pivots multimodal
               },
               ..
             },
+            {
+              "type": String("image"),
+              "source": { "type": String("url"), "url": String(remote_url), .. },
+              ..
+            },
           ],
           ..
         },
@@ -356,6 +369,7 @@ test "chat_request_to_anthropic: skips unsupported entries and pivots multimodal
       assert_eq(text, "Working")
       assert_eq(user_text, "Look")
       assert_eq(data, "abc123")
+      assert_eq(remote_url, "https://example.com/not-supported.png")
       assert_eq(tool_name, "lookup")
     }
     _ => fail("Unexpected anthropic request result")

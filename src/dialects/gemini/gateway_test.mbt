@@ -80,24 +80,6 @@ test "resolve_completion rejects empty model paths" {
 }
 
 ///|
-test "extract_model_from_path extracts model" {
-  inspect(
-    extract_model_from_path("/v1/models/gemini-1.5-flash:generateContent"),
-    content="gemini-1.5-flash",
-  )
-}
-
-///|
-test "extract_model_from_stream_path extracts model" {
-  inspect(
-    extract_model_from_stream_path(
-      "/v1/models/gemini-pro:streamGenerateContent?alt=sse&key=abc",
-    ),
-    content="gemini-pro",
-  )
-}
-
-///|
 test "auth_headers returns Content-Type only" {
   let headers = auth_headers()
   inspect(headers.contains("Content-Type"), content="true")

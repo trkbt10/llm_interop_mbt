@@ -7,42 +7,15 @@ pub fn response_to_responses(
   response_id~ : String,
   model~ : String,
 ) -> Json {
-  match response {
-    { "candidates": Array(candidates), .. } =>
-      if candidates.length() > 0 {
-        match candidates[0] {
-          { "finishReason": String("SAFETY"), .. } =>
-            {
-              "error": {
-                "type": "content_filter",
-                "message": "Response blocked by safety filters",
-              },
-            }
-          { "content": { "parts": Array(_), .. }, .. } =>
-            merge_gemini_reasoning_output_items(
-              @openai.model_response_to_responses_json(
-                normalize_gemini_model_response_for_responses(
-                  parse_response(response),
-                ),
-                response_id~,
-                model~,
-              ),
-            )
-          _ =>
-            {
-              "error": {
-                "type": "error",
-                "message": "Invalid candidate format",
-              },
-            }
-        }
-      } else {
-        { "error": { "type": "error", "message": "No candidates in response" } }
-      }
-    { "error": { "message": String(msg), .. }, .. } =>
-      { "error": { "type": "error", "message": msg } }
-    _ => { "error": { "type": "error", "message": "Unknown response format" } }
-  }
+  let parsed = parse_response(response)
+  let normalized = normalize_gemini_model_response_for_responses(parsed)
+  merge_gemini_reasoning_output_items(
+    @openai_responses_contract.model_response_to_responses_json(
+      normalized,
+      response_id~,
+      model~,
+    ),
+  )
 }
 
 ///|
@@ -129,9 +102,4 @@ fn merge_adjacent_reasoning_items(output : Array[Json]) -> Array[Json] {
     }
   }
   result
-}
-
-///|
-pub fn parse_as_model_response(response : Json) -> @types.ModelResponse {
-  parse_response(response)
 }

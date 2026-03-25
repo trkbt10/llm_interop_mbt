@@ -11,27 +11,9 @@ pub fn accumulate_chat_completions(String) -> @types.ModelResponse raise
 
 pub fn accumulate_responses_api(String) -> @types.ModelResponse raise
 
-pub fn assemble_responses_output(Array[Json], Array[Json], reasoning_outputs? : Array[Json]) -> Array[Json]
-
 pub fn build_chat_body(String, Array[@types.ModelMessage], Array[@types.ToolDefinition], max_tokens? : Int?, temperature? : Double?, response_format? : @types.ResponseFormat?) -> Json
 
-pub fn build_chat_choice(Int, String, Array[Json], annotations? : Array[Json]) -> Json
-
-pub fn build_chat_response(String, String, Array[Json]) -> String
-
 pub fn build_responses_api_body(String, Array[@types.ModelMessage], Array[@types.ToolDefinition], response_format? : @types.ResponseFormat?) -> Json
-
-pub fn build_responses_function_call(String, String, Json) -> Json
-
-pub fn build_responses_message_output(Array[Json]) -> Json
-
-pub fn build_responses_reasoning_item(String, encrypted_content? : String?) -> Json
-
-pub fn build_responses_web_search_call(String, Json) -> Json
-
-pub fn build_tool_call_json(String, String, Json) -> Json
-
-pub fn chat_annotations_from_response_annotations(Array[@types.ResponseAnnotation]) -> Array[Json]
 
 pub fn chat_completions_auth_headers(String) -> Map[String, String]
 
@@ -45,20 +27,6 @@ pub fn chat_completions_resolve(String, String, String) -> (String, String)?
 
 pub fn github_copilot_default_base_url() -> String
 
-pub fn is_builtin_responses_tool_item_type(String) -> Bool
-
-pub fn message_to_json(@types.ModelMessage) -> Json
-
-pub fn messages_to_json(Array[@types.ModelMessage]) -> Array[Json]
-
-pub fn messages_to_responses_input(Array[@types.ModelMessage]) -> Array[Json]
-
-pub fn model_response_to_responses_json(@types.ModelResponse, response_id~ : String, model~ : String) -> Json
-
-pub fn model_response_to_responses_output(@types.ModelResponse) -> Array[Json]
-
-pub fn normalize_json_schema_for_openai(Json) -> Json
-
 pub fn ollama_default_base_url() -> String
 
 pub fn openrouter_default_base_url() -> String
@@ -67,52 +35,24 @@ pub fn parse_chat_response(Json) -> @types.ModelResponse
 
 pub fn parse_responses_api_response(Json) -> @types.ModelResponse
 
-pub fn parse_tool_calls(Json) -> Array[@types.ToolCallRequest]
-
 pub fn responses_api_default_base_url() -> String
 
 pub fn responses_api_path(String) -> String
 
 pub fn responses_api_resolve(String, String, String) -> (String, String)?
 
-pub fn schema_needs_normalization(Json) -> Bool
-
-pub fn tool_to_json(@types.ToolDefinition) -> Json
-
-pub fn tool_to_responses_api_json(@types.ToolDefinition) -> Json
-
-pub fn tools_to_json(Array[@types.ToolDefinition]) -> Array[Json]
-
-pub fn tools_to_responses_api_json(Array[@types.ToolDefinition]) -> Array[Json]
-
-pub fn web_search_tool_to_json() -> Json
-
 // Errors
 
 // Types and methods
-pub struct ChatCompletionsAccumulator {
-  text : StringBuilder
-  tool_calls : Array[@types.ToolCallAcc]
-  mut finish_reason : String
-}
+type ChatCompletionsAccumulator
 pub fn ChatCompletionsAccumulator::feed(Self, @sse.SseEvent) -> Unit
 pub fn ChatCompletionsAccumulator::finish(Self) -> @types.ModelResponse
 pub fn ChatCompletionsAccumulator::new() -> Self
 
-pub struct ResponsesApiAccumulator {
-  text : StringBuilder
-  refusal : StringBuilder
-  annotations : Array[@types.ResponseAnnotation]
-  function_calls : Array[@types.ToolCallAcc]
-  output_index_map : Map[String, Int]
-  web_search_traces : Array[WebSearchTraceAcc]
-  content_parts : Array[@types.ResponseContentPart]
-}
+type ResponsesApiAccumulator
 pub fn ResponsesApiAccumulator::feed(Self, @sse.SseEvent) -> Unit
 pub fn ResponsesApiAccumulator::finish(Self) -> @types.ModelResponse
 pub fn ResponsesApiAccumulator::new() -> Self
-
-type WebSearchTraceAcc
 
 // Type aliases
 

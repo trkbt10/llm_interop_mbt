@@ -47,6 +47,7 @@ pub(all) struct GenerationParams {
   top_k : Json
   stop : Json
   stream : Json
+  reasoning_effort : Json
   response_format : ResponseFormat?
   response_format_context : ResponseFormatContext?
 }
@@ -60,6 +61,21 @@ pub fn GenerationParams::from_gemini(Json) -> Self
 pub fn GenerationParams::from_openai(Json) -> Self
 pub fn GenerationParams::from_responses(Json) -> Self
 
+pub(all) struct ModelFailure {
+  type_ : String
+  message : String
+  code : Int?
+  retry_after : Int?
+  payload : Json?
+  body : String?
+}
+pub fn ModelFailure::new(type_~ : String, message~ : String, code? : Int?, retry_after? : Int?, payload? : Json?, body? : String?) -> Self
+pub fn ModelFailure::parse_error(message~ : String, payload? : Json?, body? : String?) -> Self
+pub fn ModelFailure::rate_limited(retry_after~ : Int, message? : String, code? : Int?, payload? : Json?, body? : String?) -> Self
+pub fn ModelFailure::to_anthropic_error_json(Self) -> Json
+pub fn ModelFailure::to_gemini_error_json(Self) -> Json
+pub fn ModelFailure::to_openai_error_json(Self) -> Json
+
 pub(all) enum ModelMessage {
   System(String)
   User(content~ : String, name~ : String?, content_parts~ : Array[ContentPart]?)
@@ -72,9 +88,11 @@ pub(all) enum ModelResponse {
   RichText(RichTextResponse)
   ToolCalls(Array[ToolCallRequest])
   ToolCallsWithContent(tool_calls~ : Array[ToolCallRequest], rich~ : RichTextResponse)
+  Failure(failure~ : ModelFailure)
   ModelError(String)
   RateLimited(retry_after~ : Int)
 }
+pub fn ModelResponse::as_failure(Self) -> ModelFailure?
 
 pub(all) enum ParameterType {
   String
@@ -91,11 +109,13 @@ pub(all) enum ResponseAnnotation {
   DocumentContentBlockCitation(cited_text~ : String, document_index~ : Int, document_title~ : String, file_id~ : String, start_block_index~ : Int, end_block_index~ : Int, start_index~ : Int, end_index~ : Int)
   WebSearchResultCitation(cited_text~ : String, encrypted_index~ : String, title~ : String, url~ : String, start_index~ : Int, end_index~ : Int)
   SearchResultCitation(cited_text~ : String, search_result_index~ : Int, source~ : String, title~ : String, start_block_index~ : Int, end_block_index~ : Int, start_index~ : Int, end_index~ : Int)
+  GeminiGroundingCitation(chunk_index~ : Int, chunk~ : Json, support~ : Json, cited_text~ : String, start_index~ : Int, end_index~ : Int)
 }
 pub fn ResponseAnnotation::document_char_citation(cited_text~ : String, document_index~ : Int, document_title~ : String, file_id~ : String, start_char_index~ : Int, end_char_index~ : Int, start_index~ : Int, end_index~ : Int) -> Self
 pub fn ResponseAnnotation::document_content_block_citation(cited_text~ : String, document_index~ : Int, document_title~ : String, file_id~ : String, start_block_index~ : Int, end_block_index~ : Int, start_index~ : Int, end_index~ : Int) -> Self
 pub fn ResponseAnnotation::document_page_citation(cited_text~ : String, document_index~ : Int, document_title~ : String, file_id~ : String, start_page_number~ : Int, end_page_number~ : Int, start_index~ : Int, end_index~ : Int) -> Self
 pub fn ResponseAnnotation::end_index(Self) -> Int
+pub fn ResponseAnnotation::gemini_grounding_citation(chunk_index~ : Int, chunk~ : Json, support~ : Json, cited_text~ : String, start_index~ : Int, end_index~ : Int) -> Self
 pub fn ResponseAnnotation::search_result_citation(cited_text~ : String, search_result_index~ : Int, source~ : String, title~ : String, start_block_index~ : Int, end_block_index~ : Int, start_index~ : Int, end_index~ : Int) -> Self
 pub fn ResponseAnnotation::start_index(Self) -> Int
 pub fn ResponseAnnotation::to_interop_json(Self) -> Json

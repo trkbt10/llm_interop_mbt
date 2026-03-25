@@ -107,6 +107,16 @@ test "create_responses_api_translator selects correct variants" {
     Gemini(_) => ()
     _ => fail("Expected gemini translator")
   }
+
+  match
+    create_responses_api_translator(
+      CodexAppServer,
+      response_id="resp_1",
+      model="codex",
+    ) {
+    Codex(_) => ()
+    _ => fail("Expected codex translator")
+  }
 }
 
 ///|
@@ -296,6 +306,107 @@ test "prepare_responses_api_upstream preserves structured output across streamin
 }
 
 ///|
+test "prepare_responses_api_upstream: same Responses contract can target OpenAI, Anthropic, and Gemini backends" {
+  let request : Json = {
+    "model": "demo",
+    "input": [{ "role": "user", "content": "Return a URL" }],
+    "tools": [
+      {
+        "type": "function",
+        "name": "lookup_verification_url",
+        "description": "Return URL",
+        "parameters": {
+          "type": "object",
+          "properties": { "label": { "type": "string" } },
+          "required": ["label"],
+        },
+      },
+    ],
+    "text": {
+      "format": {
+        "type": "json_schema",
+        "name": "answer",
+        "schema": {
+          "type": "object",
+          "properties": { "url": { "type": "string" } },
+          "required": ["url"],
+        },
+      },
+    },
+  }
+
+  let openai_upstream = prepare_responses_api_upstream(
+    ProviderConfig::new("openai", OpenAIResponses),
+    request,
+    "demo",
+    "https://api.example.com/v1",
+    "sk-test",
+  )
+  let openai_json : Json = @json.parse(openai_upstream.body) catch {
+    _ => fail("parse error")
+  }
+  match openai_json {
+    {
+      "input": Array(_),
+      "tools": Array(tools),
+      "text": { "format": { "type": String("json_schema"), .. }, .. },
+      ..
+    } => assert_eq(tools.length(), 1)
+    _ => fail("Expected Responses-native body")
+  }
+
+  let anthropic_upstream = prepare_responses_api_upstream(
+    ProviderConfig::new("anthropic", AnthropicMessages),
+    request,
+    "demo",
+    "https://api.anthropic.com/v1",
+    "sk-test",
+  )
+  let anthropic_json : Json = @json.parse(anthropic_upstream.body) catch {
+    _ => fail("parse error")
+  }
+  match anthropic_json {
+    {
+      "messages": Array(messages),
+      "tools": Array(tools),
+      "output_config": { "format": { "type": String("json_schema"), .. }, .. },
+      ..
+    } => {
+      assert_eq(messages.length(), 1)
+      assert_eq(tools.length(), 1)
+    }
+    _ => fail("Expected Anthropic body from Responses request")
+  }
+
+  let gemini_upstream = prepare_responses_api_upstream(
+    ProviderConfig::new("gemini", GoogleGenerativeAI),
+    request,
+    "demo",
+    "https://generativelanguage.googleapis.com/v1beta",
+    "ignored",
+  )
+  let gemini_json : Json = @json.parse(gemini_upstream.body) catch {
+    _ => fail("parse error")
+  }
+  match gemini_json {
+    {
+      "contents": Array(contents),
+      "tools": Array([{ "functionDeclarations": Array(decls), .. }]),
+      "generationConfig": {
+        "responseMimeType": String("application/json"),
+        "responseJsonSchema": { "type": String("object"), .. },
+        ..
+      },
+      ..
+    } => {
+      assert_eq(contents.length(), 1)
+      assert_eq(decls.length(), 1)
+    }
+    _ => fail("Expected Gemini body from Responses request")
+  }
+}
+
+///|
 test "ResponsesApiTranslator::translate passthrough preserves native events" {
   let event : @sse.SseEvent = {
     event: "response.completed",
@@ -333,14 +444,34 @@ test "ResponsesApiTranslator::translate covers anthropic and gemini translators"
     data: { "candidates": [{ "content": { "parts": [{ "text": "Hi" }] } }] },
   })
   assert_true(gemini_events.length() > 0)
+
+  let codex = create_responses_api_translator(
+    CodexAppServer,
+    response_id="resp_c",
+    model="codex",
+  )
+  let codex_events = codex.translate({
+    event: "message",
+    data: { "method": "item/agentMessage/delta", "params": { "delta": "Hi" } },
+  })
+  assert_true(codex_events.length() > 0)
 }
 
 ///|
 test "to_synthetic_sse_events returns expected events for supported backends" {
-  assert_eq(
-    to_synthetic_sse_events(OpenAIResponses, "{\"id\":\"resp_1\"}").length(),
-    0,
+  let responses_body = @openai_responses_contract.model_response_to_responses_json(
+    @types.ModelResponse::Text("Hello"),
+    response_id="resp_1",
+    model="gpt-4.1",
   )
+  let responses_events = to_synthetic_sse_events(
+    OpenAIResponses,
+    responses_body.stringify(),
+  )
+  assert_eq(responses_events.map(fn(event) { event.event }), [
+    "response.created", "response.in_progress", "response.output_item.added", "response.output_text.delta",
+    "response.output_text.done", "response.output_item.done", "response.completed",
+  ])
   assert_eq(to_synthetic_sse_events(OpenAICompletions, "not json").length(), 0)
 
   let chat_response =
@@ -361,6 +492,13 @@ test "to_synthetic_sse_events returns expected events for supported backends" {
     to_synthetic_sse_events(
       GoogleGenerativeAI,
       "{\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"Hi\"}]}}]}",
+    ).length(),
+    1,
+  )
+  assert_eq(
+    to_synthetic_sse_events(
+      CodexAppServer,
+      "[{\"method\":\"item/agentMessage/delta\",\"params\":{\"delta\":\"Hi\"}}]",
     ).length(),
     1,
   )
@@ -440,14 +578,28 @@ test "parse_responses_api_result preserves Gemini grounding through Responses pi
       assert_eq(rich.content, "Weather details")
       assert_eq(rich.annotations.length(), 1)
       match rich.annotations[0] {
-        @types.ResponseAnnotation::UrlCitation(
-          title~,
-          url~,
+        @types.ResponseAnnotation::GeminiGroundingCitation(
+          chunk_index~,
+          chunk~,
+          support~,
+          cited_text~,
           start_index~,
           end_index~
         ) => {
-          assert_eq(title, Some("Weather Source"))
-          assert_eq(url, "https://example.com/weather")
+          assert_eq(chunk_index, 0)
+          assert_eq(cited_text, "Weather")
+          match chunk {
+            { "web": { "uri": String(url), "title": String(title), .. }, .. } => {
+              assert_eq(title, "Weather Source")
+              assert_eq(url, "https://example.com/weather")
+            }
+            _ => fail("Expected preserved grounding chunk")
+          }
+          match support {
+            { "groundingChunkIndices": [Number(index, ..)], .. } =>
+              assert_eq(index.to_int(), 0)
+            _ => fail("Expected preserved grounding support")
+          }
           assert_eq(start_index, 0)
           assert_eq(end_index, 7)
         }
@@ -462,8 +614,99 @@ test "parse_responses_api_result preserves Gemini grounding through Responses pi
 test "parse_responses_api_result reports native JSON parse errors" {
   match
     parse_responses_api_result(OpenAIResponses, "not json", model="gpt-4.1") {
-    @types.ModelResponse::ModelError(message) =>
-      assert_eq(message, "JSON parse error")
-    _ => fail("Expected model error")
+    @types.ModelResponse::Failure(failure~) => {
+      assert_eq(failure.type_, "parse_error")
+      assert_eq(failure.message, "JSON parse error")
+      assert_eq(failure.body, Some("not json"))
+    }
+    _ => fail("Expected structured parse failure")
+  }
+}
+
+///|
+test "transform_response_to_responses_json preserves native and translated responses" {
+  let native = transform_response_to_responses_json(
+    OpenAIResponses,
+    "{\"id\":\"resp_1\",\"model\":\"gpt-4.1\",\"output\":[{\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"output_text\",\"text\":\"Hi there!\"}]}]}",
+    model="gpt-4.1",
+  )
+  match native {
+    { "id": "resp_1", "output": Array(output), .. } =>
+      assert_eq(output.length(), 1)
+    _ => fail("Expected native Responses JSON passthrough")
+  }
+
+  let anthropic_body =
+    #|{"id":"msg_cited","model":"claude-sonnet-4-20250514","content":[{"type":"text","text":"Weather details","citations":[{"type":"web_search_result_location","cited_text":"Weather details","encrypted_index":"enc_tokyo","title":"Tokyo Weather","url":"https://example.com/tokyo"}]}],"stop_reason":"end_turn"}
+  let anthropic_json = transform_response_to_responses_json(
+    AnthropicMessages,
+    anthropic_body,
+    model="claude-sonnet-4-20250514",
+  )
+  match anthropic_json {
+    {
+      "output": [
+        {
+          "type": "message",
+          "content": [
+            {
+              "type": "output_text",
+              "annotations": [
+                {
+                  "type": "web_search_result_location",
+                  "title": "Tokyo Weather",
+                  "url": "https://example.com/tokyo",
+                  ..
+                },
+              ],
+              ..
+            },
+          ],
+          ..
+        },
+      ],
+      ..
+    } => ()
+    _ => fail("Expected preserved Anthropic citation in Responses JSON")
+  }
+
+  let gemini_body =
+    #|{"candidates":[{"content":{"parts":[{"text":"Weather details"}],"role":"model"},"groundingMetadata":{"groundingChunks":[{"web":{"uri":"https://example.com/weather","title":"Weather Source"}}],"groundingSupports":[{"groundingChunkIndices":[0],"segment":{"text":"Weather","startIndex":0,"endIndex":7}}]},"finishReason":"STOP"}]}
+  let gemini_json = transform_response_to_responses_json(
+    GoogleGenerativeAI,
+    gemini_body,
+    model="gemini-2.0-flash",
+  )
+  match gemini_json {
+    {
+      "output": [
+        {
+          "type": "message",
+          "content": [
+            {
+              "type": "output_text",
+              "annotations": [
+                {
+                  "type": "gemini_grounding",
+                  "chunk": {
+                    "web": {
+                      "uri": "https://example.com/weather",
+                      "title": "Weather Source",
+                      ..
+                    },
+                    ..
+                  },
+                  ..
+                },
+              ],
+              ..
+            },
+          ],
+          ..
+        },
+      ],
+      ..
+    } => ()
+    _ => fail("Expected preserved Gemini grounding in Responses JSON")
   }
 }

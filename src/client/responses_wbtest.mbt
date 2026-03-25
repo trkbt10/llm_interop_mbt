@@ -186,8 +186,12 @@ test "responses helpers build requests, parse sync responses, and process stream
       status: 429,
       body: "rate limited",
     }) {
-    @types.ModelResponse::RateLimited(..) => ()
-    _ => fail("Expected RateLimited helper response")
+    @types.ModelResponse::Failure(failure~) => {
+      assert_eq(failure.type_, "rate_limit_error")
+      assert_eq(failure.retry_after, Some(60))
+      assert_eq(failure.body, Some("rate limited"))
+    }
+    _ => fail("Expected structured rate limit helper response")
   }
 
   match
@@ -406,8 +410,11 @@ async test "chat_gateway_responses_stream returns RateLimited on 429" {
     on_event=fn(_event) {  },
   )
   match result {
-    @types.ModelResponse::RateLimited(..) => ()
-    _ => fail("Expected RateLimited")
+    @types.ModelResponse::Failure(failure~) => {
+      assert_eq(failure.type_, "rate_limit_error")
+      assert_eq(failure.retry_after, Some(60))
+    }
+    _ => fail("Expected structured rate limit failure")
   }
 }
 

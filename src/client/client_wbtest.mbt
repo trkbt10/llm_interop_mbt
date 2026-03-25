@@ -809,8 +809,11 @@ async test "chat_gateway_responses: 429 returns RateLimited directly" {
     "claude-sonnet-4-20250514",
   )
   match result {
-    @types.ModelResponse::RateLimited(..) => ()
-    _ => fail("expected RateLimited")
+    @types.ModelResponse::Failure(failure~) => {
+      assert_eq(failure.type_, "rate_limit_error")
+      assert_eq(failure.retry_after, Some(60))
+    }
+    _ => fail("expected structured rate limit failure")
   }
 }
 
@@ -1363,7 +1366,10 @@ async test "chat_gateway: 429 returns RateLimited" {
     "gpt-4",
   )
   match result {
-    @types.ModelResponse::RateLimited(..) => ()
-    _ => fail("expected RateLimited")
+    @types.ModelResponse::Failure(failure~) => {
+      assert_eq(failure.type_, "rate_limit_error")
+      assert_eq(failure.retry_after, Some(60))
+    }
+    _ => fail("expected structured rate limit failure")
   }
 }

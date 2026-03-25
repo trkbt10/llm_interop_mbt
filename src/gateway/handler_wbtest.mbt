@@ -523,6 +523,156 @@ test "prepare_upstream: OpenAI chat request survives Codex transform as prompt p
   }
 }
 
+///|
+test "prepare_upstream: same OpenAI chat contract can target OpenAI, Anthropic, and Gemini backends" {
+  let openai_body =
+    #|{"model":"demo-model","messages":[{"role":"system","content":"Be terse"},{"role":"user","content":"Summarize MoonBit"}],"tools":[{"type":"function","function":{"name":"lookup_verification_url","description":"Return URL","parameters":{"type":"object","properties":{"label":{"type":"string"}},"required":["label"]}}}],"tool_choice":{"type":"function","function":{"name":"lookup_verification_url"}},"max_tokens":256,"temperature":0.2}
+
+  let openai_provider : ProviderConfig = {
+    id: "openai",
+    base_url: "https://api.openai.com/v1",
+    api_key: "sk-test",
+    auth: ApiKey,
+    api: OpenAICompletions,
+    headers: {},
+    auth_header: true,
+    models: [],
+    model_patterns: [],
+    models_from_endpoint: true,
+    codex: None,
+    claude_mcp: None,
+    model_aliases: {},
+  }
+  let openai_req = prepare_upstream(
+    openai_provider,
+    openai_body,
+    OpenAI,
+    "demo-model",
+    "https://api.openai.com/v1",
+    "sk-test",
+  )
+  let openai_json : Json = @json.parse(openai_req.body) catch {
+    _ => fail("failed to parse OpenAI request body")
+  }
+  match openai_json {
+    {
+      "messages": [
+        { "role": String("system"), "content": String(system), .. },
+        { "role": String("user"), "content": String(user), .. },
+      ],
+      "tools": Array(tools),
+      ..
+    } => {
+      assert_eq(system, "Be terse")
+      assert_eq(user, "Summarize MoonBit")
+      assert_eq(tools.length(), 1)
+    }
+    _ => fail("Expected OpenAI chat body")
+  }
+
+  let anthropic_provider : ProviderConfig = {
+    id: "anthropic",
+    base_url: "https://api.anthropic.com",
+    api_key: "sk-ant-test",
+    auth: ApiKey,
+    api: AnthropicMessages,
+    headers: {},
+    auth_header: true,
+    models: [],
+    model_patterns: [],
+    models_from_endpoint: true,
+    codex: None,
+    claude_mcp: None,
+    model_aliases: {},
+  }
+  let anthropic_req = prepare_upstream(
+    anthropic_provider,
+    openai_body,
+    OpenAI,
+    "demo-model",
+    "https://api.anthropic.com",
+    "sk-ant-test",
+  )
+  let anthropic_json : Json = @json.parse(anthropic_req.body) catch {
+    _ => fail("failed to parse Anthropic request body")
+  }
+  match anthropic_json {
+    {
+      "system": String(system),
+      "messages": [{ "role": String("user"), "content": String(user), .. }],
+      "tools": Array(tools),
+      "tool_choice": { "type": String("tool"), "name": String(choice_name), .. },
+      ..
+    } => {
+      assert_eq(system, "Be terse")
+      assert_eq(user, "Summarize MoonBit")
+      assert_eq(tools.length(), 1)
+      assert_eq(choice_name, "lookup_verification_url")
+    }
+    _ => fail("Expected Anthropic body")
+  }
+
+  let gemini_provider : ProviderConfig = {
+    id: "gemini",
+    base_url: "https://generativelanguage.googleapis.com/v1",
+    api_key: "gemini-key",
+    auth: ApiKey,
+    api: GoogleGenerativeAI,
+    headers: {},
+    auth_header: true,
+    models: [],
+    model_patterns: [],
+    models_from_endpoint: true,
+    codex: None,
+    claude_mcp: None,
+    model_aliases: {},
+  }
+  let gemini_req = prepare_upstream(
+    gemini_provider,
+    openai_body,
+    OpenAI,
+    "demo-model",
+    "https://generativelanguage.googleapis.com/v1",
+    "gemini-key",
+  )
+  let gemini_json : Json = @json.parse(gemini_req.body) catch {
+    _ => fail("failed to parse Gemini request body")
+  }
+  match gemini_json {
+    {
+      "systemInstruction": { "parts": Array(system_parts), .. },
+      "contents": [{ "role": String("user"), "parts": Array(user_parts), .. }],
+      "tools": [{ "functionDeclarations": Array(decls), .. }],
+      ..
+    } => {
+      let mut found_system = false
+      for part in system_parts {
+        match part {
+          { "text": String(text), .. } =>
+            if text == "Be terse" {
+              found_system = true
+            }
+          _ => ()
+        }
+      }
+      assert_true(found_system)
+      let mut found_user = false
+      for part in user_parts {
+        match part {
+          { "text": String(text), .. } =>
+            if text == "Summarize MoonBit" {
+              found_user = true
+            }
+          _ => ()
+        }
+      }
+      assert_true(found_user)
+      assert_eq(decls.length(), 1)
+    }
+    _ => fail("Expected Gemini body")
+  }
+}
+
 // =============================================================================
 // prepare_models_request tests
 // =============================================================================
@@ -680,24 +830,6 @@ test "list_configured_models returns all models" {
   assert_true(ids.contains("gpt-4o"))
   assert_true(ids.contains("claude-sonnet-4-20250514"))
   assert_true(ids.contains("gemini-pro"))
-}
-
-///|
-test "extract_model_from_path extracts model correctly" {
-  assert_eq(
-    @gemini.extract_model_from_path("/v1/models/gemini-pro:generateContent"),
-    "gemini-pro",
-  )
-}
-
-///|
-test "extract_model_from_path handles complex model names" {
-  assert_eq(
-    @gemini.extract_model_from_path(
-      "/v1/models/gemini-1.5-pro-latest:generateContent",
-    ),
-    "gemini-1.5-pro-latest",
-  )
 }
 
 // =============================================================================

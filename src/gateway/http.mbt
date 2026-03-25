@@ -20,7 +20,10 @@ pub fn HttpResponse::json(status : Int, body : Json) -> HttpResponse {
 ///|
 /// Create an error JSON response with the given status code and message.
 pub fn HttpResponse::error(status : Int, message : String) -> HttpResponse {
-  HttpResponse::json(status, { "error": { "message": message } })
+  HttpResponse::json(
+    status,
+    @types.ModelFailure::new(type_="error", message~).to_openai_error_json(),
+  )
 }
 
 ///|

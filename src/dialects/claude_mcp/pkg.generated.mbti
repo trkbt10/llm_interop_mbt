@@ -27,6 +27,8 @@ pub fn default_base_url() -> String
 
 pub fn model_to_mcp_tool(String, String, String) -> @mcp.McpToolDefinition
 
+pub fn parse_response(String) -> @types.ModelResponse
+
 pub fn prepare_chat_upstream(ClaudeMcpSession, String, @types.TransformContext) -> ClaudeMcpUpstreamRequest
 
 pub fn prepare_initialize(ClaudeMcpSession) -> ClaudeMcpUpstreamRequest
@@ -35,9 +37,11 @@ pub fn prepare_tools_call(ClaudeMcpSession, String, Json) -> ClaudeMcpUpstreamRe
 
 pub fn prepare_tools_list(ClaudeMcpSession) -> ClaudeMcpUpstreamRequest
 
-pub fn tools_call_params_to_chat_request(Json?) -> ClaudeMcpToolCallChatRequest?
+pub fn response_to_chat(String, id? : String, model? : String) -> String
 
-pub fn tools_result_to_chat(String) -> String
+pub fn response_to_responses(String, response_id~ : String, model? : String) -> Json
+
+pub fn tools_call_params_to_chat_request(Json?) -> ClaudeMcpToolCallChatRequest?
 
 pub fn update_session_tools(ClaudeMcpSession, Array[@mcp.McpToolDefinition]) -> ClaudeMcpSession
 

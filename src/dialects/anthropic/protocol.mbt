@@ -7,7 +7,7 @@
 
 ///|
 /// Convert ModelMessage to JSON (Anthropic format)
-pub fn message_to_json(message : @types.ModelMessage) -> Json {
+fn message_to_json(message : @types.ModelMessage) -> Json {
   match message {
     @types.ModelMessage::System(content) =>
       { "role": "system", "content": content }
@@ -53,36 +53,12 @@ pub fn message_to_json(message : @types.ModelMessage) -> Json {
 
 ///|
 /// Convert message array to Anthropic format JSON array (excludes System messages)
-pub fn messages_to_json(messages : Array[@types.ModelMessage]) -> Array[Json] {
+fn messages_to_json(messages : Array[@types.ModelMessage]) -> Array[Json] {
   let result : Array[Json] = []
   for msg in messages {
     match msg {
       @types.ModelMessage::System(_) => ()
-      @types.ModelMessage::User(content~, content_parts~, ..) =>
-        match content_parts {
-          Some(parts) =>
-            result.push({
-              "role": "user",
-              "content": Json::array(content_parts_to_anthropic_json(parts)),
-            })
-          None => result.push({ "role": "user", "content": content })
-        }
-      @types.ModelMessage::Assistant(content~, tool_calls~) =>
-        result.push({
-          "role": "assistant",
-          "content": assistant_content_to_json(content, tool_calls),
-        })
-      @types.ModelMessage::ToolResult(tool_call_id~, content~) =>
-        result.push({
-          "role": "user",
-          "content": Json::array([
-            {
-              "type": "tool_result",
-              "tool_use_id": tool_call_id,
-              "content": content,
-            },
-          ]),
-        })
+      _ => result.push(message_to_json(msg))
     }
   }
   result
@@ -90,7 +66,7 @@ pub fn messages_to_json(messages : Array[@types.ModelMessage]) -> Array[Json] {
 
 ///|
 /// Extract system message from message array
-pub fn extract_system_message(messages : Array[@types.ModelMessage]) -> String {
+fn extract_system_message(messages : Array[@types.ModelMessage]) -> String {
   for msg in messages {
     match msg {
       @types.ModelMessage::System(content) => return content
@@ -137,10 +113,9 @@ fn content_parts_to_anthropic_json(
       // documents text/image/document request blocks for MessageParam.content;
       // audio input blocks are not part of the published ContentBlockParam union.
       @types.ContentPart::Audio(..) =>
-        result.push({
-          "type": "text",
-          "text": "[Audio input not supported by Anthropic Messages API]",
-        })
+        abort(
+          "Anthropic Messages API cannot represent audio input without loss",
+        )
       // Ref: docs/upstream/anthropic-messages-api.md:250
       //   DocumentBlockParam = object { source, type, cache_control, context, citations, title }
       @types.ContentPart::Document(data~, media_type~, title~) => {
@@ -169,18 +144,16 @@ fn content_parts_to_anthropic_json(
       // Ref: docs/upstream/anthropic-files-api.md —
       // Anthropic documents use uploaded file IDs or inline bytes, not remote URLs.
       @types.ContentPart::FileUrl(url~) =>
-        result.push({
-          "type": "text",
-          "text": "[Remote file URL input not supported by Anthropic Messages API; upload via Files API first] \{url}",
-        })
+        abort(
+          "Anthropic Messages API cannot represent remote file URLs without loss; upload via Files API first: \{url}",
+        )
       // Inference: docs/upstream/anthropic-messages-api.md:74-80,193-250
       // documents text/image/document request blocks for MessageParam.content;
       // video input blocks are not part of the published ContentBlockParam union.
       @types.ContentPart::Video(..) =>
-        result.push({
-          "type": "text",
-          "text": "[Video input not supported by Anthropic Messages API]",
-        })
+        abort(
+          "Anthropic Messages API cannot represent video input without loss",
+        )
     }
   }
   result
@@ -217,7 +190,7 @@ fn assistant_content_to_json(
 
 ///|
 /// Convert ToolDefinition to JSON (Anthropic format)
-pub fn tool_to_json(tool : @types.ToolDefinition) -> Json {
+fn tool_to_json(tool : @types.ToolDefinition) -> Json {
   match tool.kind {
     @types.ToolDefinitionKind::Function =>
       {
@@ -365,7 +338,7 @@ fn upsert_tool_trace(
 
 ///|
 /// Convert tool definition array to Anthropic format JSON array
-pub fn tools_to_json(tools : Array[@types.ToolDefinition]) -> Array[Json] {
+fn tools_to_json(tools : Array[@types.ToolDefinition]) -> Array[Json] {
   let result : Array[Json] = []
   for tool in tools {
     result.push(tool_to_json(tool))
@@ -626,18 +599,52 @@ pub fn parse_response(response_json : Json) -> @types.ModelResponse {
             @types.ModelResponse::Text(content_str)
           }
         }
-        _ => @types.ModelResponse::ModelError("Invalid content format")
+        _ =>
+          @types.ModelResponse::Failure(
+            failure=@types.ModelFailure::parse_error(
+              message="Invalid content format",
+              payload=Some(response_json),
+            ),
+          )
       }
     }
-    { "error": { "message": String(msg), .. }, .. } =>
-      @types.ModelResponse::ModelError(msg)
-    _ => @types.ModelResponse::ModelError("Unknown response format")
+    { "error": error_obj, .. } =>
+      match error_obj {
+        { "message": String(message), .. } => {
+          let failure_type = match error_obj {
+            { "type": String(type_), .. } => type_
+            _ => "api_error"
+          }
+          @types.ModelResponse::Failure(
+            failure=@types.ModelFailure::new(
+              type_=failure_type,
+              message~,
+              payload=Some(error_obj),
+            ),
+          )
+        }
+        _ =>
+          @types.ModelResponse::Failure(
+            failure=@types.ModelFailure::new(
+              type_="api_error",
+              message=error_obj.stringify(),
+              payload=Some(error_obj),
+            ),
+          )
+      }
+    _ =>
+      @types.ModelResponse::Failure(
+        failure=@types.ModelFailure::parse_error(
+          message="Unknown response format",
+          payload=Some(response_json),
+        ),
+      )
   }
 }
 
 ///|
 /// Parse tool calls from Anthropic response
-pub fn parse_tool_calls(content : Json) -> Array[@types.ToolCallRequest] {
+fn parse_tool_calls(content : Json) -> Array[@types.ToolCallRequest] {
   let result : Array[@types.ToolCallRequest] = []
   match content {
     Array(items) =>

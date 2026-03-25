@@ -7,12 +7,11 @@
 ///|
 /// Anthropic SSE to Responses API event translator
 /// Accumulative: holds state while generating translation events
-pub struct AnthropicToResponsesTranslator {
+struct AnthropicToResponsesTranslator {
   response_id : String
   mut output_index : Int
   mut has_emitted_created : Bool
   mut current_tool_call_id : String
-  mut current_tool_name : String
   mut current_tool_mode : String
   mut current_block_type : String
   tool_input_buffer : StringBuilder
@@ -35,7 +34,6 @@ pub fn AnthropicToResponsesTranslator::new(
     output_index: 0,
     has_emitted_created: false,
     current_tool_call_id: "",
-    current_tool_name: "",
     current_tool_mode: "",
     current_block_type: "",
     tool_input_buffer: StringBuilder::new(),
@@ -84,7 +82,6 @@ pub fn AnthropicToResponsesTranslator::translate(
           // Convert Claude tool use ID to Responses API format
           let call_id = @interop_util.anthropic_to_openai_responses_call_id(id)
           self.current_tool_call_id = call_id
-          self.current_tool_name = name
           self.current_tool_mode = "function"
           self.tool_input_buffer.reset()
           self.output_index = self.output_index + 1
@@ -117,7 +114,6 @@ pub fn AnthropicToResponsesTranslator::translate(
           self.current_block_type = "server_tool_use"
           let call_id = @interop_util.anthropic_to_openai_responses_call_id(id)
           self.current_tool_call_id = call_id
-          self.current_tool_name = name
           self.tool_input_buffer.reset()
           self.output_index = self.output_index + 1
           if name == @types.web_search_tool_name() {
@@ -384,7 +380,6 @@ pub fn AnthropicToResponsesTranslator::translate(
           )
         }
         self.current_tool_call_id = ""
-        self.current_tool_name = ""
         self.current_tool_mode = ""
         self.tool_input_buffer.reset()
       }

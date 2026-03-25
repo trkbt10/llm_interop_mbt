@@ -2,7 +2,7 @@
 /// Gateway core helper tests
 
 ///|
-test "prepare_upstream applies model alias replacement and non-object fallback" {
+test "prepare_upstream applies model alias replacement" {
   let provider = {
     ..ProviderConfig::new("openai", OpenAICompletions),
     model_aliases: { "o1": "backend-o1" },
@@ -20,16 +20,6 @@ test "prepare_upstream applies model alias replacement and non-object fallback" 
     { "model": String(model), .. } => assert_eq(model, "backend-o1")
     _ => fail("Expected aliased model field")
   }
-
-  let non_object = prepare_upstream(
-    provider,
-    "[]",
-    OpenAI,
-    "o1",
-    "https://api.openai.com/v1",
-    "sk-test",
-  )
-  assert_eq(non_object.body, "[]")
 }
 
 ///|
@@ -55,4 +45,76 @@ test "transform_for_provider uses model-specific transform context" {
       assert_eq(value.to_int(), 9)
     _ => fail("Expected model-specific max token field")
   }
+}
+
+///|
+test "panic prepare_upstream rejects model alias replacement for non-object bodies" {
+  let provider = {
+    ..ProviderConfig::new("openai", OpenAICompletions),
+    model_aliases: { "o1": "backend-o1" },
+  }
+  ignore(
+    prepare_upstream(
+      provider,
+      "[]",
+      OpenAI,
+      "o1",
+      "https://api.openai.com/v1",
+      "sk-test",
+    ),
+  )
+}
+
+///|
+test "panic prepare_upstream rejects model alias replacement for invalid JSON bodies" {
+  let provider = {
+    ..ProviderConfig::new("openai", OpenAICompletions),
+    model_aliases: { "o1": "backend-o1" },
+  }
+  ignore(
+    prepare_upstream(
+      provider,
+      "{",
+      OpenAI,
+      "o1",
+      "https://api.openai.com/v1",
+      "sk-test",
+    ),
+  )
+}
+
+///|
+test "panic transform_for_provider rejects same-surface non-object bodies when normalization is required" {
+  let provider = {
+    ..ProviderConfig::new("openai", OpenAICompletions),
+    models: [
+      {
+        ..ModelConfig::new("o1-mini"),
+        max_tokens: 4096,
+        compat: {
+          ..ModelCompatConfig::default(),
+          max_tokens_field: "max_completion_tokens",
+        },
+      },
+    ],
+  }
+  ignore(transform_for_provider(provider, "[]", OpenAI, OpenAI, "o1-mini"))
+}
+
+///|
+test "panic transform_for_provider rejects same-surface invalid JSON when normalization is required" {
+  let provider = {
+    ..ProviderConfig::new("openai", OpenAICompletions),
+    models: [
+      {
+        ..ModelConfig::new("o1-mini"),
+        max_tokens: 4096,
+        compat: {
+          ..ModelCompatConfig::default(),
+          max_tokens_field: "max_completion_tokens",
+        },
+      },
+    ],
+  }
+  ignore(transform_for_provider(provider, "{", OpenAI, OpenAI, "o1-mini"))
 }

@@ -51,7 +51,12 @@ fn parse_chat_gateway_transport_response(
   resp : TransportResponse,
 ) -> @types.ModelResponse raise ClientError {
   if resp.status == 429 {
-    return @types.ModelResponse::RateLimited(retry_after=60)
+    return @types.ModelResponse::Failure(
+      failure=@types.ModelFailure::rate_limited(
+        retry_after=60,
+        body=Some(resp.body),
+      ),
+    )
   }
   if resp.status < 200 || resp.status >= 300 {
     raise ClientError::ApiError(code=resp.status, message=resp.body)

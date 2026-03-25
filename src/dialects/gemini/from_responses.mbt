@@ -20,6 +20,10 @@ pub fn responses_request_to_gemini(request : Json) -> Json {
   for message in @harmony.responses_input_to_messages(input) {
     messages.push(message)
   }
+  let messages = @interop_util.convert_message_tool_call_ids(
+    messages,
+    @interop_util.ToolCallIdProvider::GoogleGemini,
+  )
   let tools = match request {
     { "tools": Array(t), .. } => convert_responses_tools_to_gemini(t)
     _ => []

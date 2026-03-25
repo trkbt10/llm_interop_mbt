@@ -11,4 +11,6 @@ import {
   "trkbt10/llm_interop/dialects/harmony" @harmony,
   "trkbt10/llm_interop/dialects/codex" @codex,
   "trkbt10/llm_interop/dialects/claude_mcp" @claude_mcp,
+  "trkbt10/llm_interop/interop/openai_chat_contract" @openai_chat_contract,
+  "trkbt10/llm_interop/interop/openai_responses_contract" @openai_responses_contract,
 }

@@ -216,6 +216,24 @@ fn count_gemini_function_calls(body : String) -> Int {
   }
 }
 
+///|
+test "resp matrix: OpenAI, Anthropic, and Gemini text responses converge on the same OpenAI contract" {
+  let openai = transform_response(openai_cc_text_response(), OpenAI, OpenAI)
+  let anthropic = transform_response(
+    anthropic_text_response(),
+    Anthropic,
+    OpenAI,
+  )
+  let gemini = transform_response(gemini_text_response(), Gemini, OpenAI)
+
+  for body in [openai, anthropic, gemini] {
+    match parse_as_model_response(body) {
+      @types.ModelResponse::Text(text) => assert_eq(text, "Hello!")
+      _ => fail("Expected canonical OpenAI text response")
+    }
+  }
+}
+
 // #####################################################################
 // A. transform_request: OpenAI → Anthropic
 // #####################################################################
@@ -512,13 +530,24 @@ test "resp Gem→OAI: mixed text+functionCall" {
 }
 
 ///|
-test "resp Gem→OAI: error (unparseable passes through)" {
+test "resp Gem→OAI: error becomes OpenAI error shape" {
   let r = transform_response(
     "{\"error\":{\"code\":400,\"message\":\"bad\",\"status\":\"INVALID_ARGUMENT\"}}",
     Gemini,
     OpenAI,
   )
-  assert_true(r.contains("bad"))
+  let json : Json = @json.parse(r) catch { _ => fail("parse error") }
+  match json {
+    {
+      "error": {
+        "message": String("bad"),
+        "type": String("invalid_request_error"),
+        ..
+      },
+      ..
+    } => ()
+    _ => fail("Expected OpenAI error shape")
+  }
 }
 
 // #####################################################################
@@ -691,7 +720,19 @@ test "resp Gem→Anth: error" {
   let body =
     #|{"error":{"code":400,"message":"gemini error","status":"INVALID_ARGUMENT"}}
   let r = transform_response(body, Gemini, Anthropic)
-  assert_true(r.contains("gemini error") || r.contains("error"))
+  let json : Json = @json.parse(r) catch { _ => fail("parse error") }
+  match json {
+    {
+      "type": String("error"),
+      "error": {
+        "message": String("gemini error"),
+        "type": String("invalid_request_error"),
+        ..
+      },
+      ..
+    } => ()
+    _ => fail("Expected Anthropic error shape")
+  }
 }
 
 // #####################################################################

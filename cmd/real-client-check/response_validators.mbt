@@ -1,4 +1,16 @@
 fn extract_response_text(response : @types.ModelResponse) -> String raise LiveCheckError {
+  match response.as_failure() {
+    Some(failure) =>
+      match failure.retry_after {
+        Some(retry_after) if failure.type_ == "rate_limit_error" =>
+          raise ModelUnavailable("rate limited: retry_after=\{retry_after}")
+        _ =>
+          raise ValidationFailed(
+            "model failure response [\{failure.type_}]: " + failure.message,
+          )
+      }
+    None => ()
+  }
   match response {
     @types.ModelResponse::Text(text) => text
     @types.ModelResponse::RichText(rich) => rich.content
@@ -9,10 +21,7 @@ fn extract_response_text(response : @types.ModelResponse) -> String raise LiveCh
           "\{call.id}:\{call.name}:\{call.arguments.stringify()}"
         }).join(" | "),
       )
-    @types.ModelResponse::ModelError(message) =>
-      raise ValidationFailed("model error response: " + message)
-    @types.ModelResponse::RateLimited(retry_after~) =>
-      raise ModelUnavailable("rate limited: retry_after=\{retry_after}")
+    _ => raise ValidationFailed("unreachable non-text response variant")
   }
 }
 

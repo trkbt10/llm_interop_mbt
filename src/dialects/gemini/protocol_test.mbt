@@ -1,215 +1,6 @@
 ///|
 /// Gemini dialect protocol tests
 
-// =============================================================================
-// Message Conversion Tests (Gemini Format)
-// =============================================================================
-
-///|
-test "message_to_content converts User message" {
-  let msg = @types.ModelMessage::User(
-    content="Hello Gemini",
-    name=None,
-    content_parts=None,
-  )
-  match message_to_content(msg) {
-    Some(content) => {
-      inspect(content.role, content="user")
-      inspect(content.parts.length(), content="1")
-      match content.parts[0] {
-        GeminiPart::Text(t) => inspect(t, content="Hello Gemini")
-        _ => fail("Expected Text part")
-      }
-    }
-    None => fail("Expected Some content")
-  }
-}
-
-///|
-test "message_to_content converts ImageUrl to text placeholder" {
-  let msg = @types.ModelMessage::User(
-    content="",
-    name=None,
-    content_parts=Some([
-      @types.ContentPart::ImageUrl(
-        url="https://example.com/cat.png",
-        detail=None,
-      ),
-    ]),
-  )
-  match message_to_content(msg) {
-    Some(content) => {
-      inspect(content.role, content="user")
-      inspect(content.parts.length(), content="1")
-      match content.parts[0] {
-        GeminiPart::Text(text) =>
-          inspect(text, content="[Image: https://example.com/cat.png]")
-        _ => fail("Expected Text placeholder")
-      }
-    }
-    None => fail("Expected Some content")
-  }
-}
-
-///|
-test "message_to_content converts FileUrl to text placeholder" {
-  let msg = @types.ModelMessage::User(
-    content="",
-    name=None,
-    content_parts=Some([
-      @types.ContentPart::FileUrl(url="https://example.com/report.pdf"),
-    ]),
-  )
-  match message_to_content(msg) {
-    Some(content) => {
-      inspect(content.role, content="user")
-      inspect(content.parts.length(), content="1")
-      match content.parts[0] {
-        GeminiPart::Text(text) =>
-          inspect(text, content="[File: https://example.com/report.pdf]")
-        _ => fail("Expected Text placeholder")
-      }
-    }
-    None => fail("Expected Some content")
-  }
-}
-
-///|
-test "message_to_content converts Assistant with tool_calls" {
-  let calls = [
-    @types.ToolCallRequest::new(id="gemini_search_0", name="search", arguments={
-      "query": "MoonBit",
-    }),
-  ]
-  let msg = @types.ModelMessage::Assistant(content="", tool_calls=Some(calls))
-  match message_to_content(msg) {
-    Some(content) => {
-      inspect(content.role, content="model")
-      inspect(content.parts.length(), content="1")
-      match content.parts[0] {
-        GeminiPart::FunctionCall(name~, ..) => inspect(name, content="search")
-        _ => fail("Expected FunctionCall part")
-      }
-    }
-    None => fail("Expected Some content")
-  }
-}
-
-///|
-test "content_to_json converts text content" {
-  let content : GeminiContent = {
-    role: "user",
-    parts: [GeminiPart::Text("Hello")],
-  }
-  let json = content_to_json(content)
-  match json {
-    { "role": "user", "parts": Array(parts), .. } => {
-      inspect(parts.length(), content="1")
-      match parts[0] {
-        { "text": "Hello", .. } => ()
-        _ => fail("Expected text part")
-      }
-    }
-    _ => fail("Unexpected JSON format")
-  }
-}
-
-///|
-test "content_to_json converts function call" {
-  let content : GeminiContent = {
-    role: "model",
-    parts: [
-      GeminiPart::FunctionCall(name="get_weather", args={ "city": "Tokyo" }),
-    ],
-  }
-  let json = content_to_json(content)
-  match json {
-    { "role": "model", "parts": Array(parts), .. } =>
-      match parts[0] {
-        {
-          "functionCall": {
-            "name": "get_weather",
-            "args": { "city": "Tokyo", .. },
-            ..
-          },
-          ..
-        } => ()
-        _ => fail("Expected functionCall part")
-      }
-    _ => fail("Unexpected JSON format")
-  }
-}
-
-///|
-test "tool_to_json creates correct format" {
-  let tool = @types.ToolDefinition::new(
-    name="calculator",
-    description="Calculate math expressions",
-    parameters={ "type": "object", "properties": {} },
-  )
-  let json = tool_to_json(tool)
-  match json {
-    {
-      "name": "calculator",
-      "description": "Calculate math expressions",
-      "parameters": _,
-      ..
-    } => ()
-    _ => fail("Unexpected JSON format")
-  }
-}
-
-///|
-test "tools_to_json wraps in functionDeclarations" {
-  let tools = [
-    @types.ToolDefinition::new(name="tool1", description="First tool", parameters={}),
-    @types.ToolDefinition::new(name="tool2", description="Second tool", parameters={}),
-  ]
-  let json = tools_to_json(tools)
-  match json {
-    { "functionDeclarations": Array(decls), .. } =>
-      inspect(decls.length(), content="2")
-    _ => fail("Expected functionDeclarations array")
-  }
-}
-
-///|
-test "tools_to_json includes codeExecution builtin" {
-  let tools = [
-    @types.ToolDefinition::new(name="tool1", description="First tool", parameters={}),
-    @types.ToolDefinition::builtin(type_="codeExecution"),
-  ]
-  let json = tools_to_json(tools)
-  match json {
-    { "functionDeclarations": Array(decls), "codeExecution": Object(_), .. } =>
-      inspect(decls.length(), content="1")
-    _ => fail("Expected mixed Gemini tool object")
-  }
-}
-
-///|
-test "tools_to_json includes native Gemini builtin tools" {
-  let tools = [
-    @types.ToolDefinition::builtin(type_="googleSearch"),
-    @types.ToolDefinition::builtin(type_="fileSearch", config={
-      "fileSearchStoreNames": Json::array([
-        Json::string("fileSearchStores/docs-123"),
-      ]),
-    }),
-    @types.ToolDefinition::builtin(type_="urlContext"),
-  ]
-  let json = tools_to_json(tools)
-  match json {
-    {
-      "googleSearch": Object(_),
-      "fileSearch": { "fileSearchStoreNames": Array(stores), .. },
-      "urlContext": Object(_),
-      ..
-    } => assert_eq(stores.length(), 1)
-    _ => fail("Expected native Gemini builtin tools")
-  }
-}
-
 ///|
 test "build_body creates valid body" {
   let messages = [
@@ -360,14 +151,34 @@ test "parse_response preserves Gemini grounding annotations" {
       assert_eq(rich.content, "Weather details")
       assert_eq(rich.annotations.length(), 1)
       match rich.annotations[0] {
-        @types.ResponseAnnotation::UrlCitation(
-          title~,
-          url~,
+        @types.ResponseAnnotation::GeminiGroundingCitation(
+          chunk_index~,
+          chunk~,
+          support~,
+          cited_text~,
           start_index~,
           end_index~
         ) => {
-          assert_eq(title, Some("Weather Source"))
-          assert_eq(url, "https://example.com/weather")
+          assert_eq(chunk_index, 0)
+          assert_eq(cited_text, "Weather")
+          match chunk {
+            { "web": { "uri": String(url), "title": String(title), .. }, .. } => {
+              assert_eq(title, "Weather Source")
+              assert_eq(url, "https://example.com/weather")
+            }
+            _ => fail("Expected preserved grounding chunk")
+          }
+          match support {
+            {
+              "groundingChunkIndices": [Number(index, ..)],
+              "segment": { "text": String(text), .. },
+              ..
+            } => {
+              assert_eq(index.to_int(), 0)
+              assert_eq(text, "Weather")
+            }
+            _ => fail("Expected preserved grounding support")
+          }
           assert_eq(start_index, 0)
           assert_eq(end_index, 7)
         }
@@ -506,8 +317,11 @@ test "parse_response handles safety block" {
   }
   let response = parse_response(json)
   match response {
-    @types.ModelResponse::ModelError(msg) => assert_true(msg.contains("safety"))
-    _ => fail("Expected ModelError response")
+    @types.ModelResponse::Failure(failure~) => {
+      assert_eq(failure.type_, "content_filter")
+      assert_true(failure.message.contains("safety"))
+    }
+    _ => fail("Expected Failure response")
   }
 }
 
@@ -625,15 +439,23 @@ test "response_to_responses preserves Gemini grounding via canonical path" {
       assert_eq(annotations.length(), 1)
       match annotations[0] {
         {
-          "type": String("url_citation"),
-          "url": String(url),
-          "title": String(title),
+          "type": String("gemini_grounding"),
+          "chunk_index": Number(chunk_index, ..),
+          "chunk": {
+            "web": { "uri": String(url), "title": String(title), .. },
+            ..
+          },
+          "support": { "groundingChunkIndices": [Number(index, ..)], .. },
+          "cited_text": String(cited_text),
           "start_index": Number(start_index, ..),
           "end_index": Number(end_index, ..),
           ..
         } => {
+          assert_eq(chunk_index.to_int(), 0)
           assert_eq(url, "https://example.com/weather")
           assert_eq(title, "Weather Source")
+          assert_eq(index.to_int(), 0)
+          assert_eq(cited_text, "Weather")
           assert_eq(start_index.to_int(), 0)
           assert_eq(end_index.to_int(), 7)
         }
@@ -641,93 +463,6 @@ test "response_to_responses preserves Gemini grounding via canonical path" {
       }
     }
     _ => fail("Expected Responses output with grounding")
-  }
-}
-
-///|
-test "message_to_content handles audio content_parts" {
-  let msg = @types.ModelMessage::User(
-    content="Transcribe this audio",
-    name=None,
-    content_parts=Some([
-      @types.ContentPart::Text("Transcribe this audio"),
-      @types.ContentPart::Audio(data="base64audio", format="wav"),
-    ]),
-  )
-  match message_to_content(msg) {
-    Some(content) => {
-      inspect(content.parts.length(), content="2")
-      match content.parts[1] {
-        GeminiPart::InlineData(mime_type~, data~) => {
-          inspect(mime_type, content="audio/wav")
-          inspect(data, content="base64audio")
-        }
-        _ => fail("Expected InlineData for audio")
-      }
-    }
-    None => fail("Expected content")
-  }
-}
-
-///|
-test "message_to_content handles document content_parts" {
-  let msg = @types.ModelMessage::User(
-    content="Summarize this PDF",
-    name=None,
-    content_parts=Some([
-      @types.ContentPart::Text("Summarize this PDF"),
-      @types.ContentPart::Document(
-        data="base64pdf",
-        media_type="application/pdf",
-        title=Some("report.pdf"),
-      ),
-    ]),
-  )
-  match message_to_content(msg) {
-    Some(content) => {
-      inspect(content.parts.length(), content="2")
-      match content.parts[1] {
-        GeminiPart::InlineData(mime_type~, data~) => {
-          inspect(mime_type, content="application/pdf")
-          inspect(data, content="base64pdf")
-        }
-        _ => fail("Expected InlineData for document")
-      }
-    }
-    None => fail("Expected content")
-  }
-}
-
-///|
-test "parse_stream_chunk extracts executableCode and codeExecutionResult" {
-  let chunk : Json = {
-    "candidates": Json::array([
-      {
-        "content": {
-          "role": "model",
-          "parts": Json::array([
-            { "text": "Let me calculate." },
-            { "executableCode": { "language": "PYTHON", "code": "print(2+2)" } },
-            {
-              "codeExecutionResult": {
-                "outcome": "OUTCOME_OK",
-                "output": "4\n",
-              },
-            },
-          ]),
-        },
-      },
-    ]),
-  }
-  match parse_stream_chunk(chunk) {
-    Some((text, _calls)) => {
-      assert_true(text.contains("Let me calculate"))
-      assert_true(text.contains("```python"))
-      assert_true(text.contains("print(2+2)"))
-      assert_true(text.contains("OUTCOME_OK"))
-      assert_true(text.contains("4"))
-    }
-    None => fail("Expected parsed chunk")
   }
 }
 
@@ -751,6 +486,22 @@ test "parse_response canonicalizes wrapped Gemini structured output" {
     @types.ModelResponse::Text(text) =>
       assert_eq(text, "{\"url\":\"https://example.com/interop-check\"}")
     _ => fail("Expected normalized Gemini text response")
+  }
+}
+
+///|
+test "response_to_responses serializes Gemini failures via canonical path" {
+  let converted = response_to_responses(
+    { "candidates": Json::array([{ "finishReason": "SAFETY" }]) },
+    response_id="resp_failure",
+    model="gemini-2.0-flash",
+  )
+  match converted {
+    { "error": { "type": String(type_), "message": String(message), .. }, .. } => {
+      assert_eq(type_, "content_filter")
+      assert_true(message.contains("safety"))
+    }
+    _ => fail("Expected canonical Gemini failure response")
   }
 }
 

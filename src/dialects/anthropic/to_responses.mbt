@@ -7,26 +7,36 @@
 ///|
 /// Convert Anthropic Messages API response JSON to Responses API response JSON
 pub fn response_to_responses(response : Json, response_id~ : String) -> Json {
-  match response {
-    { "content": Array(_), "model": String(model), .. } =>
-      // SoT: reuse the canonical Anthropic parser plus the OpenAI Responses
-      // serializer so rich annotations/tool traces stay aligned across direct,
-      // synthetic-stream, and typed ModelResponse paths.
-      @openai.model_response_to_responses_json(
-        normalize_anthropic_model_response_for_responses(
-          parse_response(response),
-        ),
+  let parsed = parse_response(response)
+  match parsed.as_failure() {
+    Some(_) =>
+      @openai_responses_contract.model_response_to_responses_json(
+        parsed,
         response_id~,
-        model~,
+        model="",
       )
-    { "content": Array(_), .. } =>
-      abort(
-        "Anthropic success response is missing required model field: " +
-        response.stringify(),
-      )
-    { "error": { "message": String(msg), .. }, .. } =>
-      { "error": { "type": "error", "message": msg } }
-    _ => { "error": { "type": "error", "message": "Unknown response format" } }
+    None =>
+      match response {
+        { "content": Array(_), "model": String(model), .. } =>
+          // SoT: reuse the canonical Anthropic parser plus the OpenAI Responses
+          // serializer so rich annotations/tool traces stay aligned across direct,
+          // synthetic-stream, and typed ModelResponse paths.
+          @openai_responses_contract.model_response_to_responses_json(
+            normalize_anthropic_model_response_for_responses(parsed),
+            response_id~,
+            model~,
+          )
+        { "content": Array(_), .. } =>
+          abort(
+            "Anthropic success response is missing required model field: " +
+            response.stringify(),
+          )
+        _ =>
+          abort(
+            "Anthropic response was neither successful nor a structured failure: " +
+            response.stringify(),
+          )
+      }
   }
 }
 
@@ -58,22 +68,4 @@ fn normalize_anthropic_tool_call_for_responses(
     arguments: call.arguments,
     kind: call.kind,
   }
-}
-
-///|
-/// Parse Anthropic response JSON and convert to ModelResponse
-pub fn parse_anthropic_as_model_response(
-  response : Json,
-) -> @types.ModelResponse {
-  parse_response(response)
-}
-
-///|
-/// Full pipeline: Parse Anthropic response and convert to Responses API JSON
-pub fn anthropic_to_responses_full(
-  response : Json,
-  response_id~ : String,
-) -> Json {
-  // Option 1: Direct JSON conversion (preserves all details)
-  response_to_responses(response, response_id~)
 }

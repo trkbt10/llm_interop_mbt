@@ -90,12 +90,17 @@ test "transform_request: OpenAI to Codex extracts prompt and messages" {
 }
 
 ///|
-test "transform_request: Codex to Anthropic is passthrough" {
+test "transform_request: Codex to Anthropic routes through Responses bridge" {
   let body = "{\"prompt\":\"hello from codex\"}"
-  assert_eq(
-    transform_request(body, Codex, Anthropic, "ignored", smoke_ctx()),
-    body,
-  )
+  let result = transform_request(body, Codex, Anthropic, "ignored", smoke_ctx())
+  let json : Json = @json.parse(result) catch { _ => fail("parse error") }
+  match json {
+    {
+      "messages": [{ "role": String("user"), "content": String(content), .. }],
+      ..
+    } => assert_eq(content, "hello from codex")
+    _ => fail("Expected Anthropic request from Codex protocol bridge")
+  }
 }
 
 ///|
@@ -186,6 +191,34 @@ test "transform_request: Gemini to OpenAI and Codex pivot correctly" {
 }
 
 ///|
+test "transform_request: OpenAI to Anthropic preserves structured output and tool_choice via Responses bridge" {
+  let body =
+    #|{"model":"claude-sonnet-4-6","messages":[{"role":"system","content":"Return JSON only."},{"role":"user","content":"Look up the URL"}],"tools":[{"type":"function","function":{"name":"lookup","description":"Lookup URL","parameters":{"type":"object","properties":{"label":{"type":"string"}},"required":["label"]}}}],"tool_choice":{"type":"function","function":{"name":"lookup"}},"response_format":{"type":"json_schema","json_schema":{"name":"resp","schema":{"type":"object","properties":{"url":{"type":"string"}},"required":["url"]},"strict":true}}}
+  let result = transform_request(
+    body,
+    OpenAI,
+    Anthropic,
+    "claude-sonnet-4-6",
+    smoke_ctx(),
+  )
+  let json : Json = @json.parse(result) catch { _ => fail("parse error") }
+  match json {
+    {
+      "system": "Return JSON only.",
+      "messages": Array(messages),
+      "tools": Array(tools),
+      "tool_choice": { "type": String("tool"), "name": String("lookup"), .. },
+      "output_config": { "format": { "type": "json_schema", .. }, .. },
+      ..
+    } => {
+      assert_eq(messages.length(), 1)
+      assert_eq(tools.length(), 1)
+    }
+    _ => fail("Expected Anthropic request translated via Responses contract")
+  }
+}
+
+///|
 test "transform_request: Anthropic to Gemini and Codex to Codex are covered" {
   let anthropic_body =
     #|{"model":"claude","system":"Be concise","messages":[{"role":"user","content":"Hi"}]}
@@ -212,21 +245,42 @@ test "transform_request: Anthropic to Gemini and Codex to Codex are covered" {
 }
 
 ///|
-test "transform_request: non-object same-surface bodies stay unchanged" {
-  let body = "[]"
-  assert_eq(
-    transform_request(body, OpenAI, OpenAI, "o1-mini", {
+test "panic transform_request rejects non-object OpenAI same-surface normalization bodies" {
+  ignore(
+    transform_request("[]", OpenAI, OpenAI, "o1-mini", {
       max_tokens: 0,
       max_tokens_field: "max_completion_tokens",
     }),
-    body,
   )
-  assert_eq(
-    transform_request(body, Anthropic, Anthropic, "claude", {
+}
+
+///|
+test "panic transform_request rejects invalid JSON OpenAI same-surface normalization bodies" {
+  ignore(
+    transform_request("{", OpenAI, OpenAI, "o1-mini", {
+      max_tokens: 0,
+      max_tokens_field: "max_completion_tokens",
+    }),
+  )
+}
+
+///|
+test "panic transform_request rejects non-object Anthropic same-surface normalization bodies" {
+  ignore(
+    transform_request("[]", Anthropic, Anthropic, "claude", {
       max_tokens: 128,
       max_tokens_field: "max_tokens",
     }),
-    body,
+  )
+}
+
+///|
+test "panic transform_request rejects invalid JSON Anthropic same-surface normalization bodies" {
+  ignore(
+    transform_request("{", Anthropic, Anthropic, "claude", {
+      max_tokens: 128,
+      max_tokens_field: "max_tokens",
+    }),
   )
 }
 
@@ -238,15 +292,30 @@ test "transform_response: Anthropic error to Anthropic stays unchanged" {
 }
 
 ///|
-test "transform_response: incomplete Anthropic error payload becomes normalized error" {
+test "panic transform_response rejects invalid JSON for cross-surface translation" {
+  ignore(transform_response("{", OpenAI, Gemini))
+}
+
+///|
+test "panic transform_response rejects invalid JSON when Codex translation is required" {
+  ignore(transform_response("{", OpenAI, Codex))
+}
+
+///|
+test "transform_response: invalid JSON stays unchanged only for identity paths" {
+  assert_eq(transform_response("{", OpenAI, OpenAI), "{")
+}
+
+///|
+test "transform_response: incomplete Anthropic error payload preserves top-level error body" {
   let body = "{\"type\":\"error\"}"
   let json : Json = @json.parse(transform_response(body, Anthropic, OpenAI)) catch {
     _ => fail("parse error")
   }
   match json {
     { "error": { "message": String(message), "type": String(kind), .. }, .. } => {
-      assert_eq(message, "{}")
-      assert_eq(kind, "api_error")
+      assert_eq(message, "{\"type\":\"error\"}")
+      assert_eq(kind, "error")
     }
     _ => fail("Expected normalized OpenAI error")
   }
@@ -338,6 +407,61 @@ test "transform_response: Gemini to OpenAI chat preserves url_citation subset" {
 }
 
 ///|
+test "panic transform_response rejects Anthropic annotations without OpenAI chat carrier" {
+  ignore(
+    transform_response(
+      "{\"id\":\"msg_page\",\"model\":\"claude\",\"content\":[{\"type\":\"text\",\"text\":\"MoonBit\",\"citations\":[{\"type\":\"page_location\",\"cited_text\":\"MoonBit\",\"document_index\":0,\"document_title\":\"Spec\",\"file_id\":\"file_spec\",\"start_page_number\":1,\"end_page_number\":1}]}],\"stop_reason\":\"end_turn\"}",
+      Anthropic,
+      OpenAI,
+    ),
+  )
+}
+
+///|
+test "transform_response: OpenAI chat url_citation subset becomes Gemini grounding metadata" {
+  let result = transform_response(
+    "{\"id\":\"chatcmpl-1\",\"model\":\"gpt-4.1\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"hi\",\"annotations\":[{\"type\":\"url_citation\",\"url_citation\":{\"title\":\"Docs\",\"url\":\"https://example.com\",\"start_index\":0,\"end_index\":2}}]},\"finish_reason\":\"stop\"}]}",
+    OpenAI,
+    Gemini,
+  )
+  let json : Json = @json.parse(result) catch { _ => fail("parse error") }
+  match json {
+    {
+      "candidates": [
+        {
+          "groundingMetadata": {
+            "groundingChunks": [
+              { "web": { "uri": String(url), "title": String(title), .. }, .. },
+            ],
+            "groundingSupports": [
+              {
+                "segment": {
+                  "text": String(text),
+                  "startIndex": Number(start, ..),
+                  "endIndex": Number(end_, ..),
+                  ..
+                },
+                ..
+              },
+            ],
+            ..
+          },
+          ..
+        },
+      ],
+      ..
+    } => {
+      assert_eq(url, "https://example.com")
+      assert_eq(title, "Docs")
+      assert_eq(text, "hi")
+      assert_eq(start.to_int(), 0)
+      assert_eq(end_.to_int(), 2)
+    }
+    _ => fail("Expected Gemini grounding metadata")
+  }
+}
+
+///|
 test "transform_response: Codex to OpenAI produces chat completion" {
   let body =
     #|[{"method":"item/agentMessage/delta","params":{"delta":"Hello from Codex"}},{"method":"turn/completed","params":{"turn":{"id":"turn_1","status":"completed"}}}]
@@ -351,7 +475,7 @@ test "transform_response: Codex to OpenAI produces chat completion" {
 }
 
 ///|
-test "transform_response: Codex to Anthropic and Gemini pivot through OpenAI" {
+test "transform_response: Codex to Anthropic and Gemini route through Responses bridge" {
   let body =
     #|[{"method":"item/agentMessage/delta","params":{"delta":"Hello from Codex"}},{"method":"turn/completed","params":{"turn":{"id":"turn_1","status":"completed"}}}]
   let anthropic_json : Json = @json.parse(
@@ -375,10 +499,35 @@ test "transform_response: Codex to Anthropic and Gemini pivot through OpenAI" {
 }
 
 ///|
-test "transform_response: success responses passthrough when targeting Codex" {
+test "transform_response: OpenAI text responses become Codex event arrays via Responses bridge" {
   let openai_body =
     #|{"id":"chatcmpl-1","object":"chat.completion","model":"gpt-4","choices":[{"index":0,"message":{"role":"assistant","content":"Hello"},"finish_reason":"stop"}]}
-  assert_eq(transform_response(openai_body, OpenAI, Codex), openai_body)
+  let result = transform_response(openai_body, OpenAI, Codex)
+  let json : Json = @json.parse(result) catch { _ => fail("parse error") }
+  match json {
+    Array(events) => assert_true(events.length() >= 2)
+    _ => fail("Expected Codex event array")
+  }
+  let round_trip = @codex.response_to_chat(result)
+  let round_trip_json : Json = @json.parse(round_trip) catch {
+    _ => fail("round-trip parse error")
+  }
+  match round_trip_json {
+    { "choices": [{ "message": { "content": String(content), .. }, .. }], .. } =>
+      assert_eq(content, "Hello")
+    _ => fail("Expected OpenAI chat round-trip")
+  }
+}
+
+///|
+test "panic transform_response rejects tool-calling responses when targeting Codex" {
+  ignore(
+    transform_response(
+      "{\"id\":\"chatcmpl-1\",\"object\":\"chat.completion\",\"model\":\"gpt-4\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"tool_calls\":[{\"id\":\"call_1\",\"type\":\"function\",\"function\":{\"name\":\"lookup\",\"arguments\":\"{}\"}}],\"content\":null},\"finish_reason\":\"tool_calls\"}]}",
+      OpenAI,
+      Codex,
+    ),
+  )
 }
 
 ///|

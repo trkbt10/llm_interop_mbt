@@ -28,7 +28,7 @@
 
 ///|
 /// OpenAI/Groq Responses API stream accumulator
-pub struct ResponsesApiAccumulator {
+struct ResponsesApiAccumulator {
   text : StringBuilder
   /// Refusal delta accumulator — used only if output_item.done lacks refusal
   refusal : StringBuilder
@@ -41,7 +41,7 @@ pub struct ResponsesApiAccumulator {
 }
 
 ///|
-struct WebSearchTraceAcc {
+priv struct WebSearchTraceAcc {
   id : String
   statuses : Array[@types.ToolCallStatus]
   arguments : Map[String, Json]

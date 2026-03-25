@@ -165,7 +165,11 @@ pub fn prepare_chat_upstream(
 ) -> ClaudeMcpUpstreamRequest {
   let prompt = match extract_prompt_from_chat(openai_body, ctx) {
     Some(prompt) => prompt
-    None => openai_body
+    None =>
+      abort(
+        "`claude mcp serve` chat bridge requires a valid OpenAI Chat messages array: " +
+        openai_body,
+      )
   }
   prepare_tools_call(session, "Bash", { "command": prompt })
 }

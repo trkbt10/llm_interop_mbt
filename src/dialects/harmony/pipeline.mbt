@@ -25,10 +25,14 @@ pub fn responses_request_to_chat_completions(
       [@types.ModelMessage::User(content=text, name=None, content_parts=None)]
     _ => []
   }
-  for m in input_messages {
+  let normalized_input_messages = @interop_util.convert_message_tool_call_ids(
+    input_messages,
+    @interop_util.ToolCallIdProvider::OpenAIChatCompletions,
+  )
+  for m in normalized_input_messages {
     messages.push(m)
   }
-  let msgs_json = @openai.messages_to_json(messages)
+  let msgs_json = @openai_chat_contract.messages_to_json(messages)
   // Build Chat Completions body
   let body : Map[String, Json] = {
     "model": Json::string(model),
@@ -166,7 +170,7 @@ fn convert_responses_tools_to_chat(tools : Array[Json]) -> Array[Json] {
     match tool {
       { "type": String("web_search_preview"), .. }
       | { "type": String("web_search_preview_2025_03_11"), .. } =>
-        result.push(@openai.web_search_tool_to_json())
+        result.push(@openai_chat_contract.web_search_tool_to_json())
       // Responses API function tool: flat {type,name,description,parameters}
       // → Chat Completions: nested {type:"function",function:{name,description,parameters}}
       { "type": String("function"), "name": String(name), .. } => {

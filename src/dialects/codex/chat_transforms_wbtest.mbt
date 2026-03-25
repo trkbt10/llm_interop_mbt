@@ -2,29 +2,7 @@
 /// Whitebox coverage for Codex chat request/response helper branches
 
 ///|
-test "request helpers cover fallback model, multipart prompts, and non-message passthrough" {
-  assert_eq(
-    build_prompt_from_messages([
-      { "role": "system", "content": "System rules" },
-      {
-        "role": "user",
-        "content": Json::array([
-          {
-            "type": "image_url",
-            "image_url": { "url": "https://example.com/a.png" },
-          },
-          { "type": "text", "text": "First" },
-          {
-            "type": "input_audio",
-            "input_audio": { "data": "AAA", "format": "wav" },
-          },
-          { "type": "text", "text": "Second" },
-        ]),
-      },
-      { "role": "assistant", "content": "Ignored" },
-    ]),
-    "System rules\n\nFirst\nSecond",
-  )
+test "request helpers cover text-only prompt extraction and fallback model" {
   assert_eq(
     build_prompt_from_messages([
       { "role": "assistant", "content": "Ignored" },
@@ -37,18 +15,16 @@ test "request helpers cover fallback model, multipart prompts, and non-message p
       {
         "role": "user",
         "content": Json::array([
-          {
-            "type": "image_url",
-            "image_url": { "url": "https://example.com/a.png" },
-          },
+          { "type": "text", "text": "Alpha" },
+          { "type": "text", "text": "Beta" },
         ]),
       },
     ]),
-    "",
+    "Alpha\nBeta",
   )
 
   let fallback_body =
-    #|{"messages":[{"role":"user","content":[{"type":"text","text":"Alpha"},{"type":"image_url","image_url":{"url":"https://example.com/a.png"}},{"type":"text","text":"Beta"}]}]}
+    #|{"messages":[{"role":"user","content":[{"type":"text","text":"Alpha"},{"type":"text","text":"Beta"}]}]}
   let fallback_model = chat_request_to_protocol(
     fallback_body,
     @types.TransformContext::default(),
@@ -63,24 +39,40 @@ test "request helpers cover fallback model, multipart prompts, and non-message p
     }
     _ => fail("Expected prompt and fallback model")
   }
+}
 
+///|
+test "panic request helpers reject multimodal and non-message passthrough fallbacks" {
+  ignore(
+    build_prompt_from_messages([
+      { "role": "system", "content": "System rules" },
+      {
+        "role": "user",
+        "content": Json::array([
+          {
+            "type": "image_url",
+            "image_url": { "url": "https://example.com/a.png" },
+          },
+          { "type": "text", "text": "First" },
+        ]),
+      },
+    ]),
+  )
   let body_without_messages =
     #|{"model":"codex","input":"hello"}
-  assert_eq(
+  ignore(
     chat_request_to_protocol(
       body_without_messages,
       @types.TransformContext::default(),
     ),
-    body_without_messages,
   )
   let body_with_non_array_messages =
     #|{"model":"codex","messages":"hello"}
-  assert_eq(
+  ignore(
     chat_request_to_protocol(
       body_with_non_array_messages,
       @types.TransformContext::default(),
     ),
-    body_with_non_array_messages,
   )
 }
 
@@ -212,7 +204,14 @@ test "status and extraction helpers cover invalid token usage and non-summary it
 
 ///|
 test "events_to_chat and process_event ignore malformed event shapes" {
-  assert_eq(events_to_chat("{\"not\":\"an array\"}"), "{\"not\":\"an array\"}")
+  let malformed = @json.parse(events_to_chat("{\"not\":\"an array\"}")) catch {
+    _ => fail("expected structured parse error")
+  }
+  match malformed {
+    { "error": { "type": String(type_), .. }, .. } =>
+      assert_eq(type_, "parse_error")
+    _ => fail("expected codex parse error")
+  }
 
   let acc = EventAccumulator::new()
   process_event(acc, { "method": "item/agentMessage/delta", "params": {} })

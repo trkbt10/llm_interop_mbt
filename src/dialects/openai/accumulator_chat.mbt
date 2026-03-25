@@ -4,7 +4,7 @@
 ///|
 /// OpenAI Chat Completions stream accumulator
 /// Accumulates text and tool calls from choices[0].delta
-pub struct ChatCompletionsAccumulator {
+struct ChatCompletionsAccumulator {
   text : StringBuilder
   tool_calls : Array[@types.ToolCallAcc]
   mut finish_reason : String

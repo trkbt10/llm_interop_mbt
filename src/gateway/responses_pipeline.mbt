@@ -132,12 +132,9 @@ pub fn parse_responses_api_result(
   response_body : String,
   model~ : String,
 ) -> @types.ModelResponse {
-  if api == OpenAIResponses {
-    // Native Responses API: parse directly
-    let json = @json.parse(response_body) catch {
-      _ => return @types.ModelResponse::ModelError("JSON parse error")
-    }
-    return @openai.parse_responses_api_response(json)
+  match direct_model_response_from_backend(api, response_body) {
+    Some(response) => return response
+    None => ()
   }
   // Other backends: synthetic events → translator → Responses API accumulator
   let response_id = extract_response_id(response_body, model)
@@ -154,6 +151,125 @@ pub fn parse_responses_api_result(
   acc.finish()
 }
 
+///|
+fn direct_model_response_from_backend(
+  api : ModelApi,
+  response_body : String,
+) -> @types.ModelResponse? {
+  match api {
+    OpenAIResponses => {
+      let json = @json.parse(response_body) catch {
+        _ =>
+          return Some(
+            @types.ModelResponse::Failure(
+              failure=@types.ModelFailure::parse_error(
+                message="JSON parse error",
+                body=Some(response_body),
+              ),
+            ),
+          )
+      }
+      Some(@openai.parse_responses_api_response(json))
+    }
+    OpenAICompletions
+    | Ollama
+    | GithubCopilot
+    | BedrockConverseStream
+    | OpenRouter => Some(parse_openai_chat_response_or_failure(response_body))
+    AnthropicMessages =>
+      Some(parse_anthropic_response_or_failure(response_body))
+    GoogleGenerativeAI => Some(parse_gemini_response_or_failure(response_body))
+    CodexAppServer =>
+      Some(
+        parse_openai_chat_response_or_failure(
+          @codex.response_to_chat(response_body),
+        ),
+      )
+    ClaudeMcpServe => Some(@claude_mcp.parse_response(response_body))
+  }
+}
+
+///|
+fn parse_openai_chat_response_or_failure(
+  response_body : String,
+) -> @types.ModelResponse {
+  let json = @json.parse(response_body) catch {
+    _ =>
+      return @types.ModelResponse::Failure(
+        failure=@types.ModelFailure::parse_error(
+          message="JSON parse error",
+          body=Some(response_body),
+        ),
+      )
+  }
+  @openai.parse_chat_response(json)
+}
+
+///|
+fn parse_anthropic_response_or_failure(
+  response_body : String,
+) -> @types.ModelResponse {
+  let json = @json.parse(response_body) catch {
+    _ =>
+      return @types.ModelResponse::Failure(
+        failure=@types.ModelFailure::parse_error(
+          message="JSON parse error",
+          body=Some(response_body),
+        ),
+      )
+  }
+  @anthropic.parse_response(json)
+}
+
+///|
+fn parse_gemini_response_or_failure(
+  response_body : String,
+) -> @types.ModelResponse {
+  let json = @json.parse(response_body) catch {
+    _ =>
+      return @types.ModelResponse::Failure(
+        failure=@types.ModelFailure::parse_error(
+          message="JSON parse error",
+          body=Some(response_body),
+        ),
+      )
+  }
+  @gemini.parse_response(json)
+}
+
+///|
+/// Transform a non-streaming backend response into canonical OpenAI Responses
+/// JSON. This is the preserve-first response-side counterpart to
+/// prepare_responses_api_upstream(...).
+pub fn transform_response_to_responses_json(
+  api : ModelApi,
+  response_body : String,
+  model~ : String,
+) -> Json {
+  if api == OpenAIResponses {
+    return @json.parse(response_body) catch {
+      _ =>
+        @openai_responses_contract.model_response_to_responses_json(
+          @types.ModelResponse::Failure(
+            failure=@types.ModelFailure::parse_error(
+              message="JSON parse error",
+              body=Some(response_body),
+            ),
+          ),
+          response_id=fallback_response_id(model),
+          model~,
+        )
+    }
+  }
+  let response_id = extract_response_id(response_body, model)
+  let parsed = parse_responses_api_result(api, response_body, model~)
+  @openai_responses_contract.model_response_to_responses_json(
+    parsed,
+    response_id~,
+    model~,
+  )
+}
+
 // =============================================================================
 // Streaming SSE translation
 // =============================================================================
@@ -168,6 +284,8 @@ pub(all) enum ResponsesApiTranslator {
   Anthropic(@anthropic.AnthropicToResponsesTranslator)
   /// Gemini SSE → Responses API events
   Gemini(@gemini.GeminiToResponsesTranslator)
+  /// Codex JSONL events → Responses API events
+  Codex(@codex.CodexToResponsesTranslator)
   /// Native Responses API SSE → pass through
   PassThrough
 }
@@ -186,9 +304,10 @@ pub fn create_responses_api_translator(
     | GithubCopilot
     | BedrockConverseStream
     | OpenRouter
-    | CodexAppServer
     | ClaudeMcpServe =>
       Harmony(@harmony.HarmonyToResponsesTranslator::new(response_id~, model~))
+    CodexAppServer =>
+      Codex(@codex.CodexToResponsesTranslator::new(response_id~, model~))
     AnthropicMessages =>
       Anthropic(@anthropic.AnthropicToResponsesTranslator::new(response_id~))
     GoogleGenerativeAI =>
@@ -206,6 +325,7 @@ pub fn ResponsesApiTranslator::translate(
     Harmony(t) => t.translate(event)
     Anthropic(t) => t.translate(event)
     Gemini(t) => t.translate(event)
+    Codex(t) => t.translate(event)
     PassThrough => [(event.event, event.data)]
   }
 }
@@ -222,18 +342,231 @@ pub fn to_synthetic_sse_events(
 ) -> Array[@sse.SseEvent] {
   let json = @json.parse(response_body) catch { _ => return [] }
   match api {
-    OpenAIResponses =>
-      // Native Responses API: not applicable for synthetic events.
-      // Callers should use parse_responses_api_response directly.
-      []
+    OpenAIResponses => responses_json_to_synthetic_events(json)
     OpenAICompletions
     | Ollama
     | GithubCopilot
     | BedrockConverseStream
     | OpenRouter
-    | CodexAppServer
     | ClaudeMcpServe => @harmony.chat_completion_to_synthetic_events(json)
+    CodexAppServer => @codex.non_streaming_to_synthetic_events(json)
     AnthropicMessages => @anthropic.non_streaming_to_synthetic_events(json)
     GoogleGenerativeAI => @gemini.non_streaming_to_synthetic_events(json)
+  }
+}
+
+///|
+fn responses_json_to_synthetic_events(
+  response_json : Json,
+) -> Array[@sse.SseEvent] {
+  let response = @openai.parse_responses_api_response(response_json)
+  match response.as_failure() {
+    Some(_) => []
+    None => {
+      let response_id = match response_json {
+        { "id": String(id), .. } => id
+        _ => fallback_response_id("")
+      }
+      let model = match response_json {
+        { "model": String(model), .. } => model
+        _ => ""
+      }
+      let output = @openai_responses_contract.model_response_to_responses_output(
+        response,
+      )
+      let events : Array[@sse.SseEvent] = [
+        {
+          event: "response.created",
+          data: {
+            "type": "response.created",
+            "response": { "id": response_id },
+          },
+        },
+        {
+          event: "response.in_progress",
+          data: {
+            "type": "response.in_progress",
+            "response": { "id": response_id, "status": "in_progress" },
+          },
+        },
+      ]
+      for output_index in 0..<output.length() {
+        let item = output[output_index]
+        emit_responses_output_item_events(events, item, output_index)
+      }
+      let completed_response : Map[String, Json] = {
+        "id": Json::string(response_id),
+        "status": Json::string("completed"),
+        "output": Json::array(output),
+      }
+      if model.length() > 0 {
+        completed_response["model"] = Json::string(model)
+      }
+      events.push({
+        event: "response.completed",
+        data: {
+          "type": "response.completed",
+          "response": Json::object(completed_response),
+        },
+      })
+      events
+    }
+  }
+}
+
+///|
+fn emit_responses_output_item_events(
+  events : Array[@sse.SseEvent],
+  item : Json,
+  output_index : Int,
+) -> Unit {
+  let output_index_json = Json::number(output_index.to_double())
+  events.push({
+    event: "response.output_item.added",
+    data: {
+      "type": "response.output_item.added",
+      "output_index": output_index_json,
+      "item": item,
+    },
+  })
+  match item {
+    { "type": String("message"), "content": Array(contents), .. } =>
+      emit_responses_message_content_events(events, contents, output_index)
+    { "type": String("function_call"), "arguments": String(arguments), .. } =>
+      emit_responses_function_call_events(events, item, arguments, output_index)
+    {
+      "type": String("web_search_call"),
+      "id": String(item_id),
+      "status": String(status),
+      ..
+    } =>
+      emit_responses_web_search_status_event(
+        events, item_id, status, output_index,
+      )
+    _ => ()
+  }
+  events.push({
+    event: "response.output_item.done",
+    data: {
+      "type": "response.output_item.done",
+      "output_index": output_index_json,
+      "item": item,
+    },
+  })
+}
+
+///|
+fn emit_responses_message_content_events(
+  events : Array[@sse.SseEvent],
+  contents : Array[Json],
+  output_index : Int,
+) -> Unit {
+  let output_index_json = Json::number(output_index.to_double())
+  for content_index in 0..<contents.length() {
+    match contents[content_index] {
+      {
+        "type": String("output_text"),
+        "text": String(text),
+        "annotations": Array(annotations),
+        ..
+      } => {
+        let content_index_json = Json::number(content_index.to_double())
+        if text.length() > 0 {
+          events.push({
+            event: "response.output_text.delta",
+            data: {
+              "type": "response.output_text.delta",
+              "delta": text,
+              "content_index": content_index_json,
+              "output_index": output_index_json,
+            },
+          })
+        }
+        for annotation in annotations {
+          events.push({
+            event: "response.output_text.annotation.added",
+            data: {
+              "type": "response.output_text.annotation.added",
+              "annotation": annotation,
+              "content_index": content_index_json,
+              "output_index": output_index_json,
+            },
+          })
+        }
+        events.push({
+          event: "response.output_text.done",
+          data: {
+            "type": "response.output_text.done",
+            "text": text,
+            "content_index": content_index_json,
+            "output_index": output_index_json,
+          },
+        })
+      }
+      _ => ()
+    }
+  }
+}
+
+///|
+fn emit_responses_function_call_events(
+  events : Array[@sse.SseEvent],
+  item : Json,
+  arguments : String,
+  output_index : Int,
+) -> Unit {
+  let output_index_json = Json::number(output_index.to_double())
+  let item_id = match item {
+    { "call_id": String(call_id), .. } => call_id
+    { "id": String(id), .. } => id
+    _ => ""
+  }
+  if arguments.length() > 0 {
+    events.push({
+      event: "response.function_call_arguments.delta",
+      data: {
+        "type": "response.function_call_arguments.delta",
+        "delta": arguments,
+        "item_id": item_id,
+        "output_index": output_index_json,
+      },
+    })
+  }
+  events.push({
+    event: "response.function_call_arguments.done",
+    data: {
+      "type": "response.function_call_arguments.done",
+      "arguments": arguments,
+      "item_id": item_id,
+      "output_index": output_index_json,
+    },
+  })
+}
+
+///|
+fn emit_responses_web_search_status_event(
+  events : Array[@sse.SseEvent],
+  item_id : String,
+  status : String,
+  output_index : Int,
+) -> Unit {
+  let output_index_json = Json::number(output_index.to_double())
+  let event = match status {
+    "in_progress" => Some("response.web_search_call.in_progress")
+    "searching" => Some("response.web_search_call.searching")
+    "completed" => Some("response.web_search_call.completed")
+    _ => None
+  }
+  match event {
+    Some(event_name) =>
+      events.push({
+        event: event_name,
+        data: {
+          "type": event_name,
+          "item_id": item_id,
+          "output_index": output_index_json,
+        },
+      })
+    None => ()
   }
 }

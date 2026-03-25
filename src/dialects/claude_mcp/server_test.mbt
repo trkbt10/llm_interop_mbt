@@ -542,8 +542,8 @@ test "IO flow: client-side parser can consume server-side responses" {
   match call_result {
     Some(r) => {
       assert_eq(r.is_error, false)
-      // Client-side tools_result_to_chat should be able to convert this
-      let chat = tools_result_to_chat(call_response)
+      // Client-side response_to_chat should be able to convert this
+      let chat = response_to_chat(call_response)
       let chat_json = @json.parse(chat) catch { _ => fail("invalid chat json") }
       match chat_json {
         { "choices": [{ "message": { "content": String(c), .. }, .. }, ..], .. } =>

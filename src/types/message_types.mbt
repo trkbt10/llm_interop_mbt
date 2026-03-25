@@ -68,6 +68,17 @@ pub(all) enum ResponseAnnotation {
     start_index~ : Int,
     end_index~ : Int
   )
+  /// Interop extension for Gemini grounding metadata.
+  /// Preserves the raw grounding chunk/support payloads for lossless
+  /// round-tripping through the Responses intermediate layer.
+  GeminiGroundingCitation(
+    chunk_index~ : Int,
+    chunk~ : Json,
+    support~ : Json,
+    cited_text~ : String,
+    start_index~ : Int,
+    end_index~ : Int
+  )
 } derive(Show, Eq)
 
 ///|
@@ -201,7 +212,8 @@ pub(all) enum ContentPart {
   /// - OpenAI Chat: {"type":"image_url","image_url":{"url":"...","detail":"auto|low|high"}}
   /// - OpenAI Responses: {"type":"input_image","image_url":"...","detail":"..."}
   /// - Anthropic: {"type":"image","source":{"type":"url","url":"..."}}
-  /// - Gemini: {"fileData":{"fileUri":"...","mimeType":"image/*"}}
+  /// - Gemini: uploaded file URIs only via {"fileData":{"fileUri":"files/...","mimeType":"image/*"}}
+  ///   Generic remote HTTP(S) image URLs are not a documented GenerateContent carrier.
   ImageUrl(url~ : String, detail~ : String?)
   /// Base64-encoded inline image
   /// - OpenAI Chat: {"type":"image_url","image_url":{"url":"data:image/png;base64,..."}}
@@ -295,6 +307,17 @@ pub(all) enum ToolResult {
 }
 
 ///|
+/// Structured failure information for preserve-first interop.
+pub(all) struct ModelFailure {
+  type_ : String
+  message : String
+  code : Int?
+  retry_after : Int?
+  payload : Json?
+  body : String?
+}
+
+///|
 /// Model response
 pub(all) enum ModelResponse {
   /// Text response
@@ -308,6 +331,8 @@ pub(all) enum ModelResponse {
     tool_calls~ : Array[ToolCallRequest],
     rich~ : RichTextResponse
   )
+  /// Structured failure with provider/native metadata preserved where possible.
+  Failure(failure~ : ModelFailure)
   /// Error
   ModelError(String)
   /// Rate limited

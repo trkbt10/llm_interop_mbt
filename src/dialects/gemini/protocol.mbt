@@ -7,7 +7,7 @@
 
 ///|
 /// Gemini part types
-pub(all) enum GeminiPart {
+priv enum GeminiPart {
   /// Text part
   Text(String)
   /// Function call part (no ID - name-based reference)
@@ -22,7 +22,7 @@ pub(all) enum GeminiPart {
 
 ///|
 /// Gemini content
-pub(all) struct GeminiContent {
+priv struct GeminiContent {
   role : String // "user" | "model" | "function"
   parts : Array[GeminiPart]
 }
@@ -33,7 +33,7 @@ pub(all) struct GeminiContent {
 
 ///|
 /// Convert ModelMessage to GeminiContent
-pub fn message_to_content(message : @types.ModelMessage) -> GeminiContent? {
+fn message_to_content(message : @types.ModelMessage) -> GeminiContent? {
   match message {
     @types.ModelMessage::System(content) =>
       // Ref: docs/upstream/gemini-generate-content.md:52-63,650-682 —
@@ -57,11 +57,13 @@ pub fn message_to_content(message : @types.ModelMessage) -> GeminiContent? {
               // Ref: docs/upstream/gemini-video-understanding.md:241-280 —
               // preview YouTube URLs are a documented fileUri exception.
               // Inference: the vendored snapshot does not document generic
-              // remote image URLs as Part.fileData inputs, so ImageUrl falls
-              // back to a text placeholder instead of emitting an undocumented
-              // request shape.
+              // remote image URLs as Gemini request parts, so preserve
+              // correctness by rejecting this unsupported carrier instead of
+              // inventing a text placeholder.
               @types.ContentPart::ImageUrl(url~, ..) =>
-                gemini_parts.push(GeminiPart::Text("[Image: \{url}]"))
+                abort(
+                  "Gemini protocol cannot represent remote image URL without loss: \{url}",
+                )
               // Ref: Part.inlineData — {"inlineData":{"mimeType":"image/*","data":"..."}}
               @types.ContentPart::ImageBase64(data~, media_type~) =>
                 gemini_parts.push(
@@ -88,7 +90,9 @@ pub fn message_to_content(message : @types.ModelMessage) -> GeminiContent? {
               // Ref: docs/upstream/gemini-files-api.md —
               // generic HTTP(S) document URLs are not documented fileData URIs.
               @types.ContentPart::FileUrl(url~) =>
-                gemini_parts.push(GeminiPart::Text("[File: \{url}]"))
+                abort(
+                  "Gemini protocol cannot represent remote file URL without loss: \{url}",
+                )
               // Ref: Part.inlineData — {"inlineData":{"mimeType":"video/*","data":"..."}}
               // Ref: https://ai.google.dev/gemini-api/docs/video-understanding
               @types.ContentPart::Video(data~, media_type~) =>
@@ -132,7 +136,7 @@ pub fn message_to_content(message : @types.ModelMessage) -> GeminiContent? {
 
 ///|
 /// Convert message array to Gemini contents
-pub fn messages_to_contents(
+fn messages_to_contents(
   messages : Array[@types.ModelMessage],
 ) -> Array[GeminiContent] {
   let result : Array[GeminiContent] = []
@@ -239,7 +243,7 @@ fn gemini_part_to_json(part : GeminiPart) -> Json {
 
 ///|
 /// Convert GeminiContent to JSON
-pub fn content_to_json(content : GeminiContent) -> Json {
+fn content_to_json(content : GeminiContent) -> Json {
   let parts = content.parts.map(gemini_part_to_json)
   { "role": content.role, "parts": Json::array(parts) }
 }
@@ -250,7 +254,7 @@ pub fn content_to_json(content : GeminiContent) -> Json {
 
 ///|
 /// Convert ToolDefinition to Gemini function declaration JSON
-pub fn tool_to_json(tool : @types.ToolDefinition) -> Json {
+fn tool_to_json(tool : @types.ToolDefinition) -> Json {
   match tool.kind {
     @types.ToolDefinitionKind::Function =>
       {
@@ -344,7 +348,7 @@ fn web_search_tool_to_json() -> Json {
 
 ///|
 /// Convert tool definitions array to Gemini tools format
-pub fn tools_to_json(tools : Array[@types.ToolDefinition]) -> Json {
+fn tools_to_json(tools : Array[@types.ToolDefinition]) -> Json {
   let function_declarations : Array[Json] = []
   let native_tools : Map[String, Json] = {}
   for tool in tools {
@@ -441,7 +445,12 @@ pub fn parse_response(response_json : Json) -> @types.ModelResponse {
   match response_json {
     { "candidates": Array(candidates), .. } => {
       if candidates.length() == 0 {
-        return @types.ModelResponse::ModelError("No candidates in response")
+        return @types.ModelResponse::Failure(
+          failure=@types.ModelFailure::parse_error(
+            message="No candidates in response",
+            payload=Some(response_json),
+          ),
+        )
       }
       let candidate = candidates[0]
       match candidate {
@@ -510,21 +519,65 @@ pub fn parse_response(response_json : Json) -> @types.ModelResponse {
           }
         }
         { "finishReason": String("SAFETY"), .. } =>
-          @types.ModelResponse::ModelError("Response blocked by safety filters")
-        _ => @types.ModelResponse::ModelError("Invalid candidate format")
+          @types.ModelResponse::Failure(
+            failure=@types.ModelFailure::new(
+              type_="content_filter",
+              message="Response blocked by safety filters",
+              payload=Some(candidate),
+            ),
+          )
+        _ =>
+          @types.ModelResponse::Failure(
+            failure=@types.ModelFailure::parse_error(
+              message="Invalid candidate format",
+              payload=Some(candidate),
+            ),
+          )
       }
     }
-    { "error": { "message": String(msg), .. }, .. } =>
-      @types.ModelResponse::ModelError(msg)
-    _ => @types.ModelResponse::ModelError("Unknown response format")
+    { "error": error_obj, .. } =>
+      match error_obj {
+        { "message": String(message), .. } => {
+          let failure_type = match error_obj {
+            { "status": String(status), .. } =>
+              gemini_status_to_openai_error_type(status)
+            _ => "api_error"
+          }
+          let failure_code = match error_obj {
+            { "code": Number(code, ..), .. } => Some(code.to_int())
+            _ => None
+          }
+          @types.ModelResponse::Failure(
+            failure=@types.ModelFailure::new(
+              type_=failure_type,
+              message~,
+              code=failure_code,
+              payload=Some(error_obj),
+            ),
+          )
+        }
+        _ =>
+          @types.ModelResponse::Failure(
+            failure=@types.ModelFailure::new(
+              type_="api_error",
+              message=error_obj.stringify(),
+              payload=Some(error_obj),
+            ),
+          )
+      }
+    _ =>
+      @types.ModelResponse::Failure(
+        failure=@types.ModelFailure::parse_error(
+          message="Unknown response format",
+          payload=Some(response_json),
+        ),
+      )
   }
 }
 
 ///|
 /// Parse function calls from Gemini response parts
-pub fn parse_function_calls(
-  parts : Array[Json],
-) -> Array[@types.ToolCallRequest] {
+fn parse_function_calls(parts : Array[Json]) -> Array[@types.ToolCallRequest] {
   let result : Array[@types.ToolCallRequest] = []
   let mut index = 0
   for part in parts {
@@ -656,7 +709,7 @@ fn extract_gemini_content_parts(
 /// shapes seen in streaming responses:
 ///   executableCode: {"language":"PYTHON","code":"..."}
 ///   codeExecutionResult: {"outcome":"OUTCOME_OK","output":"..."}
-pub fn parse_stream_chunk(
+fn parse_stream_chunk(
   chunk_json : Json,
 ) -> (String, Array[@types.ToolCallRequest])? {
   match chunk_json {

@@ -1,0 +1,38 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "trkbt10/llm_interop/interop/openai_chat_contract"
+
+import {
+  "trkbt10/llm_interop/types",
+}
+
+// Values
+pub fn build_chat_choice(Int, String, Array[Json], annotations? : Array[Json]) -> Json
+
+pub fn build_chat_response(String, String, Array[Json]) -> String
+
+pub fn build_tool_call_json(String, String, Json) -> Json
+
+pub fn chat_annotations_from_response_annotations(Array[@types.ResponseAnnotation]) -> Array[Json]
+
+pub fn chat_request_to_responses_request(String) -> Json
+
+pub fn message_to_json(@types.ModelMessage) -> Json
+
+pub fn messages_to_json(Array[@types.ModelMessage]) -> Array[Json]
+
+pub fn model_response_to_chat_response(@types.ModelResponse, id~ : String, model~ : String) -> String
+
+pub fn tool_to_json(@types.ToolDefinition) -> Json
+
+pub fn tools_to_json(Array[@types.ToolDefinition]) -> Array[Json]
+
+pub fn web_search_tool_to_json() -> Json
+
+// Errors
+
+// Types and methods
+
+// Type aliases
+
+// Traits
+

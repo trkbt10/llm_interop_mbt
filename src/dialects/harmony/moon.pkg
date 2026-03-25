@@ -2,10 +2,12 @@ import {
   "moonbitlang/core/json",
   "trkbt10/llm_interop/types",
   "trkbt10/llm_interop/sse" @sse,
-  "trkbt10/llm_interop/dialects/openai" @openai,
+  "trkbt10/llm_interop/interop/openai_chat_contract" @openai_chat_contract,
+  "trkbt10/llm_interop/interop/openai_responses_contract" @openai_responses_contract,
   "trkbt10/llm_interop/interop/id" @interop_util,
 }
 
 import {
+  "trkbt10/llm_interop/dialects/openai" @openai,
   "trkbt10/llm_interop/utils" @utils,
 } for "test"

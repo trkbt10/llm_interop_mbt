@@ -21,6 +21,10 @@ pub fn responses_request_to_anthropic(request : Json) -> Json {
   for message in @harmony.responses_input_to_messages(input) {
     messages.push(message)
   }
+  let messages = @interop_util.convert_message_tool_call_ids(
+    messages,
+    @interop_util.ToolCallIdProvider::AnthropicClaude,
+  )
   let msgs_json = messages_to_json(messages)
   // Extract system message
   let system = extract_system_message(messages)

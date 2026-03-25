@@ -25,6 +25,7 @@ pub(all) struct GenerationParams {
   top_k : Json
   stop : Json
   stream : Json
+  reasoning_effort : Json
   response_format : ResponseFormat?
   response_format_context : ResponseFormatContext?
 }
@@ -39,6 +40,7 @@ pub fn GenerationParams::empty() -> GenerationParams {
     top_k: Json::null(),
     stop: Json::null(),
     stream: Json::null(),
+    reasoning_effort: Json::null(),
     response_format: None,
     response_format_context: None,
   }
@@ -392,6 +394,11 @@ pub fn GenerationParams::from_openai(json : Json) -> GenerationParams {
     _ => params
   }
   let params = match json {
+    { "reasoning_effort": String(_) as effort, .. } =>
+      { ..params, reasoning_effort: effort }
+    _ => params
+  }
+  let params = match json {
     { "response_format": format, .. } =>
       {
         ..params,
@@ -426,6 +433,11 @@ pub fn GenerationParams::from_responses(json : Json) -> GenerationParams {
   let params = match json {
     { "stream": True, .. } => { ..params, stream: Json::boolean(true) }
     { "stream": False, .. } => { ..params, stream: Json::boolean(false) }
+    _ => params
+  }
+  let params = match json {
+    { "reasoning": { "effort": String(_) as effort, .. }, .. } =>
+      { ..params, reasoning_effort: effort }
     _ => params
   }
   let params = match json {
@@ -471,6 +483,11 @@ pub fn GenerationParams::from_anthropic(json : Json) -> GenerationParams {
   let params = match json {
     { "stream": True, .. } => { ..params, stream: Json::boolean(true) }
     { "stream": False, .. } => { ..params, stream: Json::boolean(false) }
+    _ => params
+  }
+  let params = match json {
+    { "output_config": { "effort": String(_) as effort, .. }, .. } =>
+      { ..params, reasoning_effort: effort }
     _ => params
   }
   let params = match json {
@@ -577,6 +594,9 @@ pub fn GenerationParams::apply_to_openai(
   if self.stream is True {
     obj["stream"] = self.stream
   }
+  if self.reasoning_effort is String(_) {
+    obj["reasoning_effort"] = self.reasoning_effort
+  }
   match self.response_format {
     Some(format) =>
       obj["response_format"] = match
@@ -608,6 +628,9 @@ pub fn GenerationParams::apply_to_responses(
   }
   if self.stream is True {
     obj["stream"] = self.stream
+  }
+  if self.reasoning_effort is String(_) {
+    obj["reasoning"] = Json::object({ "effort": self.reasoning_effort })
   }
   match self.response_format {
     Some(format) =>
@@ -672,6 +695,20 @@ pub fn GenerationParams::apply_to_anthropic(
           }
       }
     None => ()
+  }
+  if self.reasoning_effort is String(_) {
+    let output_config = match obj.get("output_config") {
+      Some(Object(fields)) => {
+        let copy : Map[String, Json] = {}
+        for key, value in fields {
+          copy[key] = value
+        }
+        copy
+      }
+      _ => {}
+    }
+    output_config["effort"] = self.reasoning_effort
+    obj["output_config"] = Json::object(output_config)
   }
 }
 

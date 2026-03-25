@@ -11,7 +11,9 @@ pub fn request_to_chat(
   model : String,
   ctx : @types.TransformContext,
 ) -> String {
-  let json = @json.parse(body) catch { _ => return body }
+  let json = @json.parse(body) catch {
+    _ => abort("Gemini request transform requires valid JSON: " + body)
+  }
   let result : Map[String, Json] = {}
   result["model"] = Json::string(model)
   // Convert contents to messages
@@ -60,7 +62,12 @@ pub fn chat_request_to_gemini(
   body : String,
   ctx : @types.TransformContext,
 ) -> String {
-  let json = @json.parse(body) catch { _ => return body }
+  let json = @json.parse(body) catch {
+    _ =>
+      abort(
+        "Gemini chat request transform requires valid OpenAI Chat JSON: " + body,
+      )
+  }
   // Transform messages to Gemini contents format
   let contents : Array[Json] = []
   let system_text = StringBuilder::new()
@@ -268,7 +275,10 @@ fn transform_openai_content_to_gemini(content : Json) -> Array[Json] {
                 p["inline_data"] = Json::object(inline_data)
                 gemini_parts.push(Json::object(p))
               }
-              None => ()
+              None =>
+                abort(
+                  "Gemini chat transform does not support remote image URLs; upload via Files API or inline as data URL: \{url}",
+                )
             }
           _ => ()
         }
@@ -282,7 +292,9 @@ fn transform_openai_content_to_gemini(content : Json) -> Array[Json] {
 ///|
 /// Transform Gemini GenerateContent response to OpenAI Chat Completions format
 pub fn response_to_chat(body : String) -> String {
-  let json = @json.parse(body) catch { _ => return body }
+  let json = @json.parse(body) catch {
+    _ => abort("Gemini response transform requires valid JSON: " + body)
+  }
   let choices : Array[Json] = []
   let mut idx = 0
   let mut tool_call_counter = 0
@@ -307,7 +319,9 @@ pub fn response_to_chat(body : String) -> String {
                     gemini_id,
                   )
                   tool_calls.push(
-                    @openai.build_tool_call_json(openai_id, name, args),
+                    @openai_chat_contract.build_tool_call_json(
+                      openai_id, name, args,
+                    ),
                   )
                   tool_call_counter = tool_call_counter + 1
                 }
@@ -317,26 +331,38 @@ pub fn response_to_chat(body : String) -> String {
           _ => ()
         }
         let content = normalize_structured_output_fragments(texts, "\n\n")
-        let annotations = @openai.chat_annotations_from_response_annotations(
+        let annotations = @openai_chat_contract.chat_annotations_from_response_annotations(
           collect_gemini_grounding_annotations(candidate, content),
         )
         choices.push(
-          @openai.build_chat_choice(idx, content, tool_calls, annotations~),
+          @openai_chat_contract.build_chat_choice(
+            idx,
+            content,
+            tool_calls,
+            annotations~,
+          ),
         )
         idx = idx + 1
       }
     _ => ()
   }
   let id = "gemini-" + idx.to_string()
-  @openai.build_chat_response(id, "gemini", choices)
+  @openai_chat_contract.build_chat_response(id, "gemini", choices)
 }
 
 ///|
 /// Transform OpenAI Chat Completions response to Gemini GenerateContent format.
 /// Handles both text and tool_calls.
 pub fn chat_response_to_gemini(body : String) -> String {
-  let json = @json.parse(body) catch { _ => return body }
+  let json = @json.parse(body) catch {
+    _ =>
+      abort(
+        "Gemini chat response transform requires valid OpenAI Chat JSON: " +
+        body,
+      )
+  }
   let parts : Array[Json] = []
+  let message_annotations : Array[@types.ResponseAnnotation] = []
   let mut saw_choice = false
   let mut saw_message = false
   let mut saw_explicit_content = false
@@ -345,6 +371,13 @@ pub fn chat_response_to_gemini(body : String) -> String {
       match choices.get(0) {
         Some(choice) => {
           saw_choice = true
+          match choice {
+            { "message": { "annotations": Array(annotations), .. }, .. } =>
+              for annotation in parse_openai_chat_annotations(annotations) {
+                message_annotations.push(annotation)
+              }
+            _ => ()
+          }
           // Text content
           match choice {
             { "message": { "content": String(c), .. }, .. } => {
@@ -409,6 +442,16 @@ pub fn chat_response_to_gemini(body : String) -> String {
   content["role"] = Json::string("model")
   let candidate : Map[String, Json] = {}
   candidate["content"] = Json::object(content)
+  let rendered_text = rendered_text_from_gemini_parts(parts)
+  if message_annotations.length() > 0 {
+    match
+      response_annotations_to_grounding_metadata(
+        message_annotations, rendered_text,
+      ) {
+      Some(metadata) => candidate["groundingMetadata"] = metadata
+      None => ()
+    }
+  }
   candidate["finishReason"] = Json::string("STOP")
   candidate["index"] = Json::number(0.0)
   let result : Map[String, Json] = {}
@@ -422,6 +465,59 @@ pub fn chat_response_to_gemini(body : String) -> String {
 }
 
 ///|
+fn parse_openai_chat_annotations(
+  annotations : Array[Json],
+) -> Array[@types.ResponseAnnotation] {
+  let result : Array[@types.ResponseAnnotation] = []
+  for annotation in annotations {
+    match annotation {
+      {
+        "type": String("url_citation"),
+        "url_citation": {
+          "url": String(url),
+          "start_index": Number(start_index, ..),
+          "end_index": Number(end_index, ..),
+          ..
+        },
+        ..
+      } => {
+        let title = match annotation {
+          { "url_citation": { "title": String(value), .. }, .. } if value.length() >
+            0 => Some(value)
+          _ => None
+        }
+        result.push(
+          @types.ResponseAnnotation::url_citation(
+            url~,
+            start_index=start_index.to_int(),
+            end_index=end_index.to_int(),
+            title~,
+          ),
+        )
+      }
+      _ =>
+        abort(
+          "Gemini response transform cannot parse OpenAI chat annotation: " +
+          annotation.stringify(),
+        )
+    }
+  }
+  result
+}
+
+///|
+fn rendered_text_from_gemini_parts(parts : Array[Json]) -> String {
+  let buf = StringBuilder::new()
+  for part in parts {
+    match part {
+      { "text": String(text), .. } => buf.write_string(text)
+      _ => ()
+    }
+  }
+  buf.to_string()
+}
+
+///|
 fn normalized_openai_error_message(json : Json) -> String {
   match json {
     { "error": { "message": String(msg), .. }, .. } => msg
@@ -431,15 +527,112 @@ fn normalized_openai_error_message(json : Json) -> String {
 }
 
 ///|
+fn openai_error_type_to_gemini_status_and_code(
+  type_ : String,
+) -> (String, Double) {
+  match type_ {
+    "invalid_request_error" => ("INVALID_ARGUMENT", 400.0)
+    "authentication_error" => ("UNAUTHENTICATED", 401.0)
+    "permission_error" => ("PERMISSION_DENIED", 403.0)
+    "not_found_error" => ("NOT_FOUND", 404.0)
+    "rate_limit_error" => ("RESOURCE_EXHAUSTED", 429.0)
+    "overloaded_error" => ("UNAVAILABLE", 503.0)
+    "api_error" => ("INTERNAL", 500.0)
+    _ => ("UNKNOWN", 500.0)
+  }
+}
+
+///|
+fn gemini_status_to_openai_error_type(status : String) -> String {
+  match status {
+    "INVALID_ARGUMENT" => "invalid_request_error"
+    "UNAUTHENTICATED" => "authentication_error"
+    "PERMISSION_DENIED" => "permission_error"
+    "NOT_FOUND" => "not_found_error"
+    "RESOURCE_EXHAUSTED" => "rate_limit_error"
+    "UNAVAILABLE" => "overloaded_error"
+    "INTERNAL" => "api_error"
+    _ => "api_error"
+  }
+}
+
+///|
+fn normalized_gemini_error_message(error_obj : Json) -> String {
+  match error_obj {
+    { "message": String(msg), .. } => msg
+    _ => error_obj.stringify()
+  }
+}
+
+///|
+pub fn is_error(json : Json) -> Bool {
+  match json {
+    { "error": { "message": String(_), "status": String(_), .. }, .. } => true
+    { "error": { "message": String(_), "code": Number(_, ..), .. }, .. } => true
+    _ => false
+  }
+}
+
+///|
+pub fn error_to_openai(error_obj : Json) -> String {
+  let failure_type = match error_obj {
+    { "status": String(status), .. } =>
+      gemini_status_to_openai_error_type(status)
+    _ => "api_error"
+  }
+  let failure_code = match error_obj {
+    { "code": Number(code, ..), .. } => Some(code.to_int())
+    _ => None
+  }
+  @types.ModelFailure::new(
+    type_=failure_type,
+    message=normalized_gemini_error_message(error_obj),
+    code=failure_code,
+  )
+  .to_openai_error_json()
+  .stringify()
+}
+
+///|
+pub fn error_to_anthropic(error_obj : Json) -> String {
+  let failure_type = match error_obj {
+    { "status": String(status), .. } =>
+      gemini_status_to_openai_error_type(status)
+    _ => "api_error"
+  }
+  let failure_code = match error_obj {
+    { "code": Number(code, ..), .. } => Some(code.to_int())
+    _ => None
+  }
+  @types.ModelFailure::new(
+    type_=failure_type,
+    message=normalized_gemini_error_message(error_obj),
+    code=failure_code,
+  )
+  .to_anthropic_error_json()
+  .stringify()
+}
+
+///|
 /// Transform OpenAI error to Gemini error format
 pub fn openai_error_to_gemini(body : String) -> String {
-  let json = @json.parse(body) catch { _ => return body }
+  let json = @json.parse(body) catch {
+    _ =>
+      return @types.ModelFailure::new(type_="api_error", message=body)
+        .to_gemini_error_json()
+        .stringify()
+  }
   let message = normalized_openai_error_message(json)
-  let result : Map[String, Json] = {}
-  let error : Map[String, Json] = {}
-  error["code"] = Json::number(400.0)
-  error["message"] = Json::string(message)
-  error["status"] = Json::string("INVALID_ARGUMENT")
-  result["error"] = Json::object(error)
-  Json::object(result).stringify()
+  let (failure_type, code) = match json {
+    { "error": { "type": String(type_), .. }, .. } => {
+      let (_, resolved_code) = openai_error_type_to_gemini_status_and_code(
+        type_,
+      )
+      (type_, Some(resolved_code.to_int()))
+    }
+    _ => ("api_error", None)
+  }
+  @types.ModelFailure::new(type_=failure_type, message~, code~)
+  .to_gemini_error_json()
+  .stringify()
 }

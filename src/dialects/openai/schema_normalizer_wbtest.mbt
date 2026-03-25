@@ -3,7 +3,7 @@
 
 ///|
 test "normalizer covers array roots and scalar passthrough" {
-  let normalized = normalize_json_schema_for_openai(
+  let normalized = @types.normalize_json_schema_for_openai(
     Json::array([
       {
         "type": "object",
@@ -27,7 +27,7 @@ test "normalizer covers array roots and scalar passthrough" {
   }
 
   assert_eq(
-    normalize_json_schema_for_openai(Json::string("plain")),
+    @types.normalize_json_schema_for_openai(Json::string("plain")),
     Json::string("plain"),
   )
 }
@@ -35,10 +35,12 @@ test "normalizer covers array roots and scalar passthrough" {
 ///|
 test "schema_needs_normalization covers required mismatches, nested props, items, and scalars" {
   assert_true(
-    schema_needs_normalization({ "properties": { "a": { "type": "string" } } }),
+    @types.schema_needs_normalization({
+      "properties": { "a": { "type": "string" } },
+    }),
   )
   assert_true(
-    schema_needs_normalization({
+    @types.schema_needs_normalization({
       "type": "object",
       "additionalProperties": false,
       "properties": { "a": { "type": "string" } },
@@ -46,7 +48,7 @@ test "schema_needs_normalization covers required mismatches, nested props, items
     }),
   )
   assert_true(
-    schema_needs_normalization({
+    @types.schema_needs_normalization({
       "type": "object",
       "additionalProperties": false,
       "properties": {
@@ -59,10 +61,10 @@ test "schema_needs_normalization covers required mismatches, nested props, items
     }),
   )
   assert_true(
-    schema_needs_normalization({
+    @types.schema_needs_normalization({
       "type": "array",
       "items": { "type": "object", "properties": { "a": { "type": "string" } } },
     }),
   )
-  assert_false(schema_needs_normalization(Json::string("plain")))
+  assert_false(@types.schema_needs_normalization(Json::string("plain")))
 }

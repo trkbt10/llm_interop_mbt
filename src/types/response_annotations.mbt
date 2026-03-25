@@ -9,7 +9,8 @@ pub fn ResponseAnnotation::start_index(self : ResponseAnnotation) -> Int {
     | DocumentPageCitation(start_index~, ..)
     | DocumentContentBlockCitation(start_index~, ..)
     | WebSearchResultCitation(start_index~, ..)
-    | SearchResultCitation(start_index~, ..) => start_index
+    | SearchResultCitation(start_index~, ..)
+    | GeminiGroundingCitation(start_index~, ..) => start_index
   }
 }
 
@@ -21,7 +22,8 @@ pub fn ResponseAnnotation::end_index(self : ResponseAnnotation) -> Int {
     | DocumentPageCitation(end_index~, ..)
     | DocumentContentBlockCitation(end_index~, ..)
     | WebSearchResultCitation(end_index~, ..)
-    | SearchResultCitation(end_index~, ..) => end_index
+    | SearchResultCitation(end_index~, ..)
+    | GeminiGroundingCitation(end_index~, ..) => end_index
   }
 }
 
@@ -142,6 +144,23 @@ pub fn ResponseAnnotation::to_interop_json(self : ResponseAnnotation) -> Json {
         "start_index": start_index,
         "end_index": end_index,
       }
+    GeminiGroundingCitation(
+      chunk_index~,
+      chunk~,
+      support~,
+      cited_text~,
+      start_index~,
+      end_index~
+    ) =>
+      {
+        "type": "gemini_grounding",
+        "chunk_index": chunk_index,
+        "chunk": chunk,
+        "support": support,
+        "cited_text": cited_text,
+        "start_index": start_index,
+        "end_index": end_index,
+      }
   }
 }
 
@@ -231,6 +250,15 @@ pub fn parse_interop_response_annotation(
         start_index=annotation_required_int(annotation, "start_index"),
         end_index=annotation_required_int(annotation, "end_index"),
       )
+    { "type": String("gemini_grounding"), .. } =>
+      ResponseAnnotation::gemini_grounding_citation(
+        chunk_index=annotation_required_int(annotation, "chunk_index"),
+        chunk=annotation_required_json(annotation, "chunk"),
+        support=annotation_required_json(annotation, "support"),
+        cited_text=annotation_required_string(annotation, "cited_text"),
+        start_index=annotation_required_int(annotation, "start_index"),
+        end_index=annotation_required_int(annotation, "end_index"),
+      )
     { "type": String(_), .. } =>
       abort("Unsupported response annotation type: " + annotation.stringify())
     _ =>
@@ -270,6 +298,26 @@ fn annotation_required_int(annotation : Json, field : String) -> Int {
         _ =>
           abort(
             "Response annotation is missing required numeric field \{field}: " +
+            annotation.stringify(),
+          )
+      }
+    _ =>
+      abort(
+        "Response annotation must be an object with field \{field}: " +
+        annotation.stringify(),
+      )
+  }
+}
+
+///|
+fn annotation_required_json(annotation : Json, field : String) -> Json {
+  match annotation {
+    Object(fields) =>
+      match fields.get(field) {
+        Some(value) => value
+        None =>
+          abort(
+            "Response annotation is missing required JSON field \{field}: " +
             annotation.stringify(),
           )
       }

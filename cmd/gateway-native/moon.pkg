@@ -1,9 +1,12 @@
 import {
   "trkbt10/llm_interop/gateway" @gw,
   "trkbt10/llm_interop/dialects/harmony" @harmony,
-  "trkbt10/llm_interop/dialects/openai" @openai,
   "trkbt10/llm_interop/dialects/codex" @codex,
   "trkbt10/llm_interop/dialects/claude_mcp" @claude_mcp,
+  "trkbt10/llm_interop/dialects/openai" @openai,
+  "trkbt10/llm_interop/dialects/anthropic" @anthropic,
+  "trkbt10/llm_interop/dialects/gemini" @gemini,
+  "trkbt10/llm_interop/interop/openai_responses_contract" @openai_responses_contract,
   "trkbt10/llm_interop/jsonrpc" @jsonrpc,
   "trkbt10/llm_interop/types" @types,
   "trkbt10/llm_interop/sse" @sse,

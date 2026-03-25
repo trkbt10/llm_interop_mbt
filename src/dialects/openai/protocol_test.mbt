@@ -17,7 +17,7 @@ let test_response_id : String = "resp_123"
 ///|
 test "message_to_json converts System message" {
   let msg = @types.ModelMessage::System("You are a helpful assistant")
-  let json = message_to_json(msg)
+  let json = @openai_chat_contract.message_to_json(msg)
   match json {
     { "role": "system", "content": "You are a helpful assistant", .. } => ()
     _ => fail("Unexpected JSON format")
@@ -31,7 +31,7 @@ test "message_to_json converts User message" {
     name=None,
     content_parts=None,
   )
-  let json = message_to_json(msg)
+  let json = @openai_chat_contract.message_to_json(msg)
   match json {
     { "role": "user", "content": "Hello", .. } => ()
     _ => fail("Unexpected JSON format")
@@ -46,7 +46,7 @@ test "message_to_json converts Assistant with tool_calls" {
     }),
   ]
   let msg = @types.ModelMessage::Assistant(content="", tool_calls=Some(calls))
-  let json = message_to_json(msg)
+  let json = @openai_chat_contract.message_to_json(msg)
   match json {
     { "role": "assistant", "tool_calls": Array(tc), .. } => {
       inspect(tc.length(), content="1")
@@ -66,7 +66,7 @@ test "message_to_json converts ToolResult" {
     tool_call_id="call_123",
     content="Sunny, 25C",
   )
-  let json = message_to_json(msg)
+  let json = @openai_chat_contract.message_to_json(msg)
   match json {
     { "role": "tool", "tool_call_id": "call_123", "content": "Sunny, 25C", .. } =>
       ()
@@ -88,60 +88,10 @@ test "tool_to_json creates correct format" {
       "properties": { "city": { "type": "string" } },
     },
   )
-  let json = tool_to_json(tool)
+  let json = @openai_chat_contract.tool_to_json(tool)
   match json {
     { "type": "function", "function": { "name": "get_weather", .. }, .. } => ()
     _ => fail("Unexpected JSON format")
-  }
-}
-
-///|
-test "tool_to_responses_api_json creates correct format" {
-  let tool = @types.ToolDefinition::new(
-    name="search",
-    description="Search the web",
-    parameters={ "type": "object", "properties": {} },
-  )
-  let json = tool_to_responses_api_json(tool)
-  match json {
-    {
-      "type": "function",
-      "name": "search",
-      "description": "Search the web",
-      ..
-    } => ()
-    _ => fail("Unexpected JSON format")
-  }
-}
-
-///|
-test "tool_to_responses_api_json creates web search builtin format" {
-  let tool = @types.ToolDefinition::web_search_preview(
-    search_context_size=Some("medium"),
-    user_location_country=Some("US"),
-  )
-  let json = tool_to_responses_api_json(tool)
-  match json {
-    {
-      "type": "web_search_preview",
-      "search_context_size": "medium",
-      "user_location": { "type": "approximate", "country": "US", .. },
-      ..
-    } => ()
-    _ => fail("Unexpected web search tool format")
-  }
-}
-
-///|
-test "tool_to_responses_api_json preserves generic builtin config" {
-  let tool = @types.ToolDefinition::builtin(type_="code_interpreter", config={
-    "container": { "type": "auto" },
-  })
-  let json = tool_to_responses_api_json(tool)
-  match json {
-    { "type": "code_interpreter", "container": { "type": "auto", .. }, .. } =>
-      ()
-    _ => fail("Unexpected builtin tool format")
   }
 }
 
@@ -203,7 +153,7 @@ test "messages_to_responses_input preserves builtin assistant tool items" {
       ]),
     ),
   ]
-  let input = messages_to_responses_input(messages)
+  let input = @openai_responses_contract.messages_to_responses_input(messages)
   match input[0] {
     {
       "type": String("mcp_approval_request"),
@@ -230,7 +180,7 @@ test "messages_to_responses_input re-emits wrapped builtin tool results" {
       ),
     ),
   ]
-  let input = messages_to_responses_input(messages)
+  let input = @openai_responses_contract.messages_to_responses_input(messages)
   match input[0] {
     {
       "type": String("mcp_approval_response"),
@@ -258,7 +208,7 @@ test "messages_to_responses_input restores builtin tool result identifier fields
       content="{\"type\":\"apply_patch_call_output\",\"status\":\"completed\"}",
     ),
   ]
-  let input = messages_to_responses_input(messages)
+  let input = @openai_responses_contract.messages_to_responses_input(messages)
   match input[0] {
     {
       "type": String("local_shell_call_output"),
@@ -297,7 +247,7 @@ test "messages_to_responses_input restores identifiers across builtin output ite
       content="{\"type\":\"shell_call_output\",\"output\":\"ok\"}",
     ),
   ]
-  let input = messages_to_responses_input(messages)
+  let input = @openai_responses_contract.messages_to_responses_input(messages)
   match input[0] {
     {
       "type": String("computer_call_output"),
@@ -373,7 +323,7 @@ test "build_chat_body normalizes strict json_schema response format" {
   )
   match body {
     { "response_format": { "json_schema": { "schema": schema, .. }, .. }, .. } =>
-      assert_false(schema_needs_normalization(schema))
+      assert_false(@types.schema_needs_normalization(schema))
     _ => fail("Expected normalized chat response_format")
   }
 }
@@ -428,7 +378,7 @@ test "build_responses_api_body sets nested text.format for structured output" {
   )
   match body {
     { "text": { "format": { "schema": schema, .. }, .. }, .. } =>
-      assert_false(schema_needs_normalization(schema))
+      assert_false(@types.schema_needs_normalization(schema))
     _ => fail("Expected nested Responses text.format")
   }
 }
@@ -753,7 +703,7 @@ test "message_to_json converts User with content_parts (multimodal)" {
       ),
     ]),
   )
-  let json = message_to_json(msg)
+  let json = @openai_chat_contract.message_to_json(msg)
   match json {
     { "role": "user", "content": Array(parts), .. } => {
       inspect(parts.length(), content="2")
@@ -781,7 +731,7 @@ test "message_to_json converts User with base64 image" {
       @types.ContentPart::ImageBase64(data="abc123", media_type="image/png"),
     ]),
   )
-  let json = message_to_json(msg)
+  let json = @openai_chat_contract.message_to_json(msg)
   match json {
     { "role": "user", "content": Array(parts), .. } =>
       match parts[1] {
@@ -808,7 +758,7 @@ test "messages_to_responses_input handles multimodal User" {
       ]),
     ),
   ]
-  let input = messages_to_responses_input(messages)
+  let input = @openai_responses_contract.messages_to_responses_input(messages)
   match input[0] {
     { "role": "user", "content": Array(blocks), .. } => {
       inspect(blocks.length(), content="2")
@@ -1024,7 +974,7 @@ test "message_to_json converts User with audio content_parts" {
       @types.ContentPart::Audio(data="base64audio", format="wav"),
     ]),
   )
-  let json = message_to_json(msg)
+  let json = @openai_chat_contract.message_to_json(msg)
   match json {
     { "role": "user", "content": Array(parts), .. } => {
       inspect(parts.length(), content="2")
@@ -1038,50 +988,6 @@ test "message_to_json converts User with audio content_parts" {
       }
     }
     _ => fail("Expected array content")
-  }
-}
-
-///|
-test "reasoning item roundtrip: generate then parse" {
-  // Generate a reasoning item via build_responses_reasoning_item
-  let reasoning_json = build_responses_reasoning_item("Step 1: analyze...")
-  // Wrap in a full response with a message
-  let response : Json = {
-    "output": Json::array([
-      reasoning_json,
-      {
-        "type": "message",
-        "role": "assistant",
-        "content": Json::array([
-          { "type": "output_text", "text": "The answer is 42." },
-        ]),
-      },
-    ]),
-  }
-  // Parse it back
-  let result = parse_responses_api_response(response)
-  match result {
-    @types.ModelResponse::RichText(rich) => {
-      inspect(rich.content, content="The answer is 42.")
-      match rich.content_parts {
-        Some(parts) => {
-          // Should have Thinking (from summary_text) + OutputText
-          let mut thinking_found = false
-          for p in parts {
-            match p {
-              @types.ResponseContentPart::Thinking(text~) => {
-                inspect(text, content="Step 1: analyze...")
-                thinking_found = true
-              }
-              _ => ()
-            }
-          }
-          assert_true(thinking_found)
-        }
-        None => fail("Expected content_parts with reasoning")
-      }
-    }
-    _ => fail("Expected RichText")
   }
 }
 
@@ -1128,45 +1034,6 @@ test "parse_responses_api_response reads reasoning_text from content array" {
 }
 
 ///|
-test "reasoning item roundtrip preserves encrypted_content" {
-  let reasoning_json = build_responses_reasoning_item(
-    "",
-    encrypted_content=Some("enc_blob"),
-  )
-  let response : Json = {
-    "output": Json::array([
-      reasoning_json,
-      {
-        "type": "message",
-        "role": "assistant",
-        "content": Json::array([{ "type": "output_text", "text": "Done." }]),
-      },
-    ]),
-  }
-  let result = parse_responses_api_response(response)
-  match result {
-    @types.ModelResponse::RichText(rich) =>
-      match rich.content_parts {
-        Some(parts) => {
-          let mut found = false
-          for part in parts {
-            match part {
-              @types.ResponseContentPart::RedactedThinking(data~) =>
-                if data == "enc_blob" {
-                  found = true
-                }
-              _ => ()
-            }
-          }
-          assert_true(found)
-        }
-        None => fail("Expected content_parts")
-      }
-    _ => fail("Expected RichText")
-  }
-}
-
-///|
 test "model_response_to_responses_json preserves builtin hosted tool traces" {
   let response = @types.ModelResponse::RichText(
     @types.RichTextResponse::new(content="Found relevant docs.", tool_traces=[
@@ -1186,7 +1053,7 @@ test "model_response_to_responses_json preserves builtin hosted tool traces" {
       ),
     ]),
   )
-  let json = model_response_to_responses_json(
+  let json = @openai_responses_contract.model_response_to_responses_json(
     response,
     response_id=test_response_id,
     model=test_model_openai_responses,
@@ -1258,7 +1125,7 @@ test "model_response_to_responses_json preserves hosted builtin trace subtypes" 
       ),
     ]),
   )
-  let json = model_response_to_responses_json(
+  let json = @openai_responses_contract.model_response_to_responses_json(
     response,
     response_id=test_response_id,
     model=test_model_openai_responses,
@@ -1318,7 +1185,7 @@ test "messages_to_responses_input handles document via input_file" {
       ]),
     ),
   ]
-  let input = messages_to_responses_input(messages)
+  let input = @openai_responses_contract.messages_to_responses_input(messages)
   match input[0] {
     { "role": "user", "content": Array(blocks), .. } =>
       match blocks[1] {
@@ -1346,7 +1213,7 @@ test "messages_to_responses_input handles remote file url via input_file" {
       ]),
     ),
   ]
-  let input = messages_to_responses_input(messages)
+  let input = @openai_responses_contract.messages_to_responses_input(messages)
   match input[0] {
     { "role": "user", "content": Array(blocks), .. } =>
       match blocks[1] {
@@ -1372,7 +1239,7 @@ test "Chat Completions document renders as file content part" {
       ),
     ]),
   )
-  let json = message_to_json(msg)
+  let json = @openai_chat_contract.message_to_json(msg)
   match json {
     { "role": "user", "content": Array(parts), .. } =>
       match parts[1] {
@@ -1404,7 +1271,7 @@ test "Chat Completions text/plain document uses file_data" {
       ),
     ]),
   )
-  let json = message_to_json(msg)
+  let json = @openai_chat_contract.message_to_json(msg)
   match json {
     { "role": "user", "content": Array(parts), .. } =>
       match parts[1] {
@@ -1432,7 +1299,7 @@ test "Chat Completions file ref uses file_id content part" {
       @types.ContentPart::FileRef(file_id="file_123", media_type=None),
     ]),
   )
-  let json = message_to_json(msg)
+  let json = @openai_chat_contract.message_to_json(msg)
   match json {
     { "role": "user", "content": Array(parts), .. } =>
       match parts[1] {
@@ -1445,25 +1312,17 @@ test "Chat Completions file ref uses file_id content part" {
 }
 
 ///|
-test "Chat Completions file url falls back to text part" {
-  let msg = @types.ModelMessage::User(
-    content="Read this file",
-    name=None,
-    content_parts=Some([
-      @types.ContentPart::Text("Read this file"),
-      @types.ContentPart::FileUrl(url="https://example.com/report.pdf"),
-    ]),
+test "panic Chat Completions rejects file url content parts" {
+  ignore(
+    @openai_chat_contract.message_to_json(
+      @types.ModelMessage::User(
+        content="Read this file",
+        name=None,
+        content_parts=Some([
+          @types.ContentPart::Text("Read this file"),
+          @types.ContentPart::FileUrl(url="https://example.com/report.pdf"),
+        ]),
+      ),
+    ),
   )
-  let json = message_to_json(msg)
-  match json {
-    { "role": "user", "content": Array(parts), .. } =>
-      match parts[1] {
-        { "type": "text", "text": String(text), .. } => {
-          assert_true(text.contains("Remote file URL input"))
-          assert_true(text.contains("https://example.com/report.pdf"))
-        }
-        _ => fail("Expected text fallback content part")
-      }
-    _ => fail("Expected array content")
-  }
 }

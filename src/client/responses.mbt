@@ -128,7 +128,12 @@ fn parse_responses_transport_response(
   resp : TransportResponse,
 ) -> @types.ModelResponse raise ClientError {
   if resp.status == 429 {
-    return @types.ModelResponse::RateLimited(retry_after=60)
+    return @types.ModelResponse::Failure(
+      failure=@types.ModelFailure::rate_limited(
+        retry_after=60,
+        body=Some(resp.body),
+      ),
+    )
   }
   if resp.status < 200 || resp.status >= 300 {
     raise ClientError::ApiError(code=resp.status, message=resp.body)
@@ -218,7 +223,9 @@ pub async fn chat_gateway_responses_stream(
       raise ClientError::HttpError("Transport timeout")
   }
   if streaming_resp.status == 429 {
-    return @types.ModelResponse::RateLimited(retry_after=60)
+    return @types.ModelResponse::Failure(
+      failure=@types.ModelFailure::rate_limited(retry_after=60),
+    )
   }
   if streaming_resp.status < 200 || streaming_resp.status >= 300 {
     let error_body = read_all_from_stream(streaming_resp.reader) catch {

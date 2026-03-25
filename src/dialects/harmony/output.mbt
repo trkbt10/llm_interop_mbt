@@ -9,5 +9,9 @@ pub fn model_response_to_responses_json(
   response_id~ : String,
   model~ : String,
 ) -> Json {
-  @openai.model_response_to_responses_json(response, response_id~, model~)
+  @openai_responses_contract.model_response_to_responses_json(
+    response,
+    response_id~,
+    model~,
+  )
 }

@@ -5,13 +5,11 @@
 /// Groq/OpenAI Chat Completions with Harmony format accumulator
 /// gpt-oss models return reasoning/channel fields in addition to content/tool_calls
 /// This accumulator captures all Harmony-specific fields for full interoperability
-pub struct HarmonyAccumulator {
+struct HarmonyAccumulator {
   /// Final output text (channel=final)
   text : StringBuilder
   /// Reasoning/chain-of-thought (channel=analysis)
   reasoning : StringBuilder
-  /// Current channel being accumulated
-  mut current_channel : String
   /// Tool calls
   tool_calls : Array[@types.ToolCallAcc]
   /// Finish reason
@@ -24,7 +22,6 @@ pub fn HarmonyAccumulator::new() -> HarmonyAccumulator {
   {
     text: StringBuilder::new(),
     reasoning: StringBuilder::new(),
-    current_channel: "",
     tool_calls: [],
     finish_reason: "",
   }
@@ -43,11 +40,6 @@ pub fn HarmonyAccumulator::feed(
         let choice = choices[0]
         match choice {
           { "delta": delta, .. } => {
-            // Update current channel
-            match delta {
-              { "channel": String(ch), .. } => self.current_channel = ch
-              _ => ()
-            }
             // Reasoning delta (channel=analysis)
             match delta {
               { "reasoning": String(r), .. } => self.reasoning.write_string(r)

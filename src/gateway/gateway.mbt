@@ -53,13 +53,23 @@ pub fn prepare_upstream(
 ///|
 /// Replace the "model" field in a JSON body with the given model name
 fn replace_model_in_body(body : String, model : String) -> String {
-  let json = @json.parse(body) catch { _ => return body }
+  let json = @json.parse(body) catch {
+    _ =>
+      abort(
+        "Gateway model alias replacement requires a JSON object request body: " +
+        body,
+      )
+  }
   match json {
     Object(obj) => {
       obj["model"] = Json::string(model)
       Json::object(obj).stringify()
     }
-    _ => body
+    _ =>
+      abort(
+        "Gateway model alias replacement requires a JSON object request body: " +
+        body,
+      )
   }
 }
 

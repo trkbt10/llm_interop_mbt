@@ -461,7 +461,7 @@ test "snapshot: harmony conversion for toolcall multiturn turn2" {
   inspect(
     result.stringify(),
     content=(
-      #|{"model":"openai/gpt-oss-20b","messages":[{"role":"system","content":"Be concise"},{"role":"user","content":"What time is it now?"},{"role":"assistant","content":"","tool_calls":[{"id":"fc_001","type":"function","function":{"name":"datetime","arguments":"{}"}}]},{"role":"tool","tool_call_id":"fc_001","content":"2026-03-18T16:25:00+09:00"},{"role":"user","content":"And what day of the week is that?"}],"stream":true,"tools":[{"type":"function","function":{"name":"datetime","description":"Get current datetime","parameters":{"type":"object","properties":{}}}}],"tool_choice":"auto"}
+      #|{"model":"openai/gpt-oss-20b","messages":[{"role":"system","content":"Be concise"},{"role":"user","content":"What time is it now?"},{"role":"assistant","content":"","tool_calls":[{"id":"call_001","type":"function","function":{"name":"datetime","arguments":"{}"}}]},{"role":"tool","tool_call_id":"call_001","content":"2026-03-18T16:25:00+09:00"},{"role":"user","content":"And what day of the week is that?"}],"stream":true,"tools":[{"type":"function","function":{"name":"datetime","description":"Get current datetime","parameters":{"type":"object","properties":{}}}}],"tool_choice":"auto"}
     ),
   )
 }

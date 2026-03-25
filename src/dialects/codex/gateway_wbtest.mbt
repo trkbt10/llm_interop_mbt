@@ -1,12 +1,12 @@
 ///|
-/// Whitebox coverage for Codex gateway fallbacks and model-list helpers
+/// Whitebox coverage for Codex gateway helpers and model-list behavior
 
 ///|
-test "gateway helpers cover auth, fallback upstream preparation, and model list" {
+test "gateway helpers cover auth, upstream preparation, and model list" {
   assert_eq(default_base_url(), "")
   assert_eq(auth_headers("sk").length(), 0)
 
-  let fallback_session : CodexSession = {
+  let init_session : CodexSession = {
     phase: Initializing,
     thread_id: "",
     next_id: 7,
@@ -14,15 +14,15 @@ test "gateway helpers cover auth, fallback upstream preparation, and model list"
     approval_policy: "never",
     model: "codex-fallback",
   }
-  let fallback_req = prepare_codex_upstream(
-    "plain prompt body", fallback_session,
+  let init_req = prepare_codex_upstream(
+    "{\"prompt\":\"plain prompt body\"}", init_session,
   )
-  assert_eq(fallback_req.steps.length(), 4)
-  assert_eq(fallback_req.steps[0].kind, Request)
-  assert_eq(fallback_req.steps[3].kind, TurnStart)
-  assert_true(fallback_req.steps[3].message.contains("plain prompt body"))
-  assert_true(fallback_req.steps[2].message.contains("codex-fallback"))
-  assert_eq(fallback_req.next_session.model, "codex-fallback")
+  assert_eq(init_req.steps.length(), 4)
+  assert_eq(init_req.steps[0].kind, Request)
+  assert_eq(init_req.steps[3].kind, TurnStart)
+  assert_true(init_req.steps[3].message.contains("plain prompt body"))
+  assert_true(init_req.steps[2].message.contains("codex-fallback"))
+  assert_eq(init_req.next_session.model, "codex-fallback")
 
   let ready_session : CodexSession = {
     phase: Ready,
@@ -37,7 +37,7 @@ test "gateway helpers cover auth, fallback upstream preparation, and model list"
   assert_eq(ready_models.steps[0].kind, Request)
   assert_eq(ready_models.next_session.next_id, 11)
 
-  let init_models = prepare_codex_model_list(fallback_session)
+  let init_models = prepare_codex_model_list(init_session)
   assert_eq(init_models.steps.length(), 3)
   assert_eq(init_models.steps[0].kind, Request)
   assert_eq(init_models.steps[1].kind, Notification)
@@ -59,6 +59,19 @@ test "gateway helpers cover auth, fallback upstream preparation, and model list"
       ()
     _ => fail("Expected normalized model listing")
   }
+}
+
+///|
+test "panic gateway helpers reject non-protocol prompt bodies" {
+  let session : CodexSession = {
+    phase: Initializing,
+    thread_id: "",
+    next_id: 7,
+    cwd: "/workspace",
+    approval_policy: "never",
+    model: "codex-fallback",
+  }
+  ignore(prepare_codex_upstream("plain prompt body", session))
 }
 
 ///|

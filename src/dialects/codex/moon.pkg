@@ -1,6 +1,7 @@
 import {
   "moonbitlang/core/json",
   "trkbt10/llm_interop/types",
+  "trkbt10/llm_interop/sse" @sse,
   "trkbt10/llm_interop/jsonrpc" @jsonrpc,
 }
 

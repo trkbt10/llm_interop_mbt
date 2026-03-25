@@ -3,7 +3,7 @@
 
 ///|
 test "messages_to_responses_input covers system, multimodal user parts, assistant tool variants, and fallback tool results" {
-  let input = messages_to_responses_input([
+  let input = @openai_responses_contract.messages_to_responses_input([
     @types.ModelMessage::System("System prompt"),
     @types.ModelMessage::User(
       content="ignored",
@@ -97,7 +97,7 @@ test "messages_to_responses_input covers system, multimodal user parts, assistan
   match input[3] {
     {
       "type": "function_call",
-      "call_id": "call_fn",
+      "call_id": "fc_fn",
       "name": "lookup",
       "arguments": String(arguments),
       ..
@@ -121,14 +121,14 @@ test "messages_to_responses_input covers system, multimodal user parts, assistan
   match input[7] {
     {
       "type": "function_call_output",
-      "call_id": "call_out",
+      "call_id": "fc_out",
       "output": "plain output",
       ..
     } => ()
     _ => fail("Expected fallback tool result item")
   }
 
-  let fallback = messages_to_responses_input([
+  let fallback = @openai_responses_contract.messages_to_responses_input([
     @types.ModelMessage::ToolResult(
       tool_call_id="call_out",
       content="plain output",
@@ -136,140 +136,64 @@ test "messages_to_responses_input covers system, multimodal user parts, assistan
   ])
   assert_eq(fallback[0], {
     "type": "function_call_output",
-    "call_id": "call_out",
+    "call_id": "fc_out",
     "output": "plain output",
   })
 }
 
 ///|
-test "private responses helpers cover scalar configs, embedded result parsing, ids, and status defaults" {
-  assert_eq(build_builtin_tool_json("builtin_alpha", Json::string("ignored")), {
-    "type": "builtin_alpha",
-  })
-
-  match
-    parse_embedded_responses_tool_result_item(
-      "call_1", "{\"type\":\"computer_call_output\",\"output\":\"ok\"}",
-    ) {
-    Some({ "type": "computer_call_output", "id": "call_1", .. }) => ()
-    _ => fail("Expected embedded builtin result with synthesized id")
-  }
-  match
-    parse_embedded_responses_tool_result_item(
-      "call_1", "{\"type\":\"not_supported\"}",
-    ) {
-    None => ()
-    Some(_) => fail("Expected unsupported embedded item to be ignored")
-  }
-  match parse_embedded_responses_tool_result_item("call_1", "[]") {
-    None => ()
-    Some(_) => fail("Expected non-object embedded item to be ignored")
-  }
-
-  assert_eq(
-    ensure_tool_result_item_id(
-      Json::string("raw"),
-      "computer_call_output",
-      "id_1",
-    ),
-    Json::string("raw"),
-  )
-  assert_eq(build_web_search_tool_json("web_search_preview", None, None), {
-    "type": "web_search_preview",
-  })
-
-  let builtin_item = build_responses_builtin_tool_item(
-    "local_shell_call",
-    "shell_1",
-    "shell",
-    Json::string("ignored"),
-    statuses=[@types.ToolCallStatus::InProgress],
-  )
-  match builtin_item {
-    {
-      "type": "local_shell_call",
-      "id": "shell_1",
-      "name": "shell",
-      "status": "in_progress",
-      ..
-    } => ()
-    _ => fail("Expected synthesized builtin item")
-  }
-
-  match
-    rich_parts_for_responses_output(
-      @types.RichTextResponse::from_parts(content="", content_parts=[]),
-    ) {
-    [] => ()
-    _ => fail("Expected empty rich parts fallback")
-  }
-  match
-    rich_parts_for_responses_output(
-      @types.RichTextResponse::from_parts(content="plain", content_parts=[]),
-    ) {
-    [@types.ResponseContentPart::OutputText(text)] => assert_eq(text, "plain")
-    _ => fail("Expected text rich parts fallback")
-  }
-
-  assert_eq(
-    response_annotation_to_json(
-      @types.ResponseAnnotation::url_citation(
-        url="https://example.com",
-        start_index=0,
-        end_index=4,
-        title=None,
-      ),
-    ),
-    {
-      "type": "url_citation",
-      "url": "https://example.com",
-      "start_index": 0,
-      "end_index": 4,
-    },
-  )
-  assert_eq(
-    response_annotation_to_json(
-      @types.ResponseAnnotation::web_search_result_citation(
-        cited_text="Berkshire Hathaway",
-        encrypted_index="enc_berkshire",
-        title="Berkshire Hathaway",
-        url="https://example.com/berkshire",
-        start_index=0,
-        end_index=18,
-      ),
-    ),
-    {
-      "type": "web_search_result_location",
-      "cited_text": "Berkshire Hathaway",
-      "encrypted_index": "enc_berkshire",
-      "title": "Berkshire Hathaway",
-      "url": "https://example.com/berkshire",
-      "start_index": 0,
-      "end_index": 18,
-    },
-  )
-  assert_eq(tool_trace_status_to_json([]), Json::string("completed"))
-  assert_eq(
-    tool_trace_status_to_json([@types.ToolCallStatus::InProgress]),
-    Json::string("in_progress"),
-  )
-}
-
-///|
 test "output builders cover error responses, builtin web-search alias, rich decomposition, and request bodies without tools" {
   assert_eq(
-    model_response_to_responses_output(@types.ModelResponse::ModelError("boom")).length(),
+    @openai_responses_contract.model_response_to_responses_output(
+      @types.ModelResponse::Failure(
+        failure=@types.ModelFailure::new(
+          type_="invalid_request_error",
+          message="boom",
+        ),
+      ),
+    ).length(),
     0,
   )
   assert_eq(
-    model_response_to_responses_output(
+    @openai_responses_contract.model_response_to_responses_output(
+      @types.ModelResponse::ModelError("boom"),
+    ).length(),
+    0,
+  )
+  assert_eq(
+    @openai_responses_contract.model_response_to_responses_output(
       @types.ModelResponse::RateLimited(retry_after=3),
     ).length(),
     0,
   )
 
   match
-    model_response_to_responses_json(
+    @openai_responses_contract.model_response_to_responses_json(
+      @types.ModelResponse::Failure(
+        failure=@types.ModelFailure::new(
+          type_="invalid_request_error",
+          message="boom",
+          code=Some(400),
+          payload=Some({ "field": "messages" }),
+        ),
+      ),
+      response_id="resp_fail",
+      model="gpt-4.1",
+    ) {
+    {
+      "error": {
+        "type": "invalid_request_error",
+        "message": "boom",
+        "code": Number(code, ..),
+        "payload": { "field": "messages", .. },
+        ..
+      },
+      ..
+    } => assert_eq(code.to_int(), 400)
+    _ => fail("Expected structured failure response json")
+  }
+  match
+    @openai_responses_contract.model_response_to_responses_json(
       @types.ModelResponse::ModelError("boom"),
       response_id="resp_err",
       model="gpt-4.1",
@@ -278,7 +202,7 @@ test "output builders cover error responses, builtin web-search alias, rich deco
     _ => fail("Expected error response json")
   }
   match
-    model_response_to_responses_json(
+    @openai_responses_contract.model_response_to_responses_json(
       @types.ModelResponse::RateLimited(retry_after=9),
       response_id="resp_rate",
       model="gpt-4.1",
@@ -292,99 +216,6 @@ test "output builders cover error responses, builtin web-search alias, rich deco
       ..
     } => assert_eq(retry_after.to_int(), 9)
     _ => fail("Expected rate limit response json")
-  }
-
-  let tool_outputs = build_responses_output_from_tool_calls([
-    @types.ToolCallRequest::builtin(
-      id="builtin_ws",
-      type_=@types.web_search_tool_name(),
-      payload={ "query": "moonbit" },
-      name=@types.web_search_tool_name(),
-    ),
-    @types.ToolCallRequest::builtin(
-      id="builtin_shell",
-      type_="local_shell_call",
-      payload={ "command": "pwd" },
-      name="local_shell_call",
-    ),
-  ])
-  assert_eq(tool_outputs.length(), 2)
-  match tool_outputs[0] {
-    { "type": "web_search_call", "id": "builtin_ws", .. } => ()
-    _ => fail("Expected builtin web search alias")
-  }
-  match tool_outputs[1] {
-    { "type": "local_shell_call", "id": "builtin_shell", .. } => ()
-    _ => fail("Expected builtin shell output")
-  }
-
-  let (message_parts, trace_outputs, reasoning_outputs) = decompose_responses_rich_content(
-    [
-      @types.ResponseContentPart::OutputText("Hello"),
-      @types.ResponseContentPart::Refusal("No"),
-      @types.ResponseContentPart::RedactedThinking(data="ENC"),
-      @types.ResponseContentPart::CodeExecution(
-        language="python",
-        code="print(1)",
-      ),
-      @types.ResponseContentPart::CodeResult(outcome="OUTCOME_OK", output="1"),
-      @types.ResponseContentPart::AudioOutput(data="AUDIO", transcript="spoken"),
-    ],
-    [
-      @types.ResponseAnnotation::url_citation(
-        url="https://example.com",
-        start_index=0,
-        end_index=5,
-        title=None,
-      ),
-    ],
-    [
-      @types.ToolCallTrace::new(
-        id="ws_1",
-        name=@types.web_search_tool_name(),
-        kind=@types.ToolCallKind::WebSearch,
-        statuses=[@types.ToolCallStatus::Searching],
-        arguments={ "query": "moonbit" },
-      ),
-      @types.ToolCallTrace::new(
-        id="shell_1",
-        name="local_shell_call",
-        kind=@types.ToolCallKind::Builtin(builtin_type="local_shell_call"),
-        statuses=[@types.ToolCallStatus::Completed],
-        arguments={ "command": "pwd" },
-      ),
-      @types.ToolCallTrace::new(
-        id="fn_1",
-        name="lookup",
-        kind=@types.ToolCallKind::Function,
-        statuses=[],
-        arguments={},
-      ),
-    ],
-  )
-  assert_eq(message_parts.length(), 5)
-  assert_eq(trace_outputs.length(), 2)
-  assert_eq(reasoning_outputs.length(), 1)
-  match message_parts[1] {
-    { "type": "refusal", "refusal": "No", .. } => ()
-    _ => fail("Expected refusal message part")
-  }
-  match message_parts[2] {
-    { "type": "output_text", "text": String(text), .. } =>
-      assert_true(text.contains("```python"))
-    _ => fail("Expected code execution message part")
-  }
-  match message_parts[4] {
-    { "type": "output_text", "text": "spoken", .. } => ()
-    _ => fail("Expected audio transcript output")
-  }
-  match trace_outputs[0] {
-    { "type": "web_search_call", "status": "searching", .. } => ()
-    _ => fail("Expected web search trace")
-  }
-  match reasoning_outputs[0] {
-    { "type": "reasoning", "encrypted_content": "ENC", .. } => ()
-    _ => fail("Expected encrypted reasoning output")
   }
 
   assert_eq(
@@ -401,14 +232,65 @@ test "output builders cover error responses, builtin web-search alias, rich deco
 }
 
 ///|
+test "responses tool builders cover function, web search, and generic builtin helpers" {
+  match
+    tool_to_responses_api_json(
+      @types.ToolDefinition::new(name="search", description="Search the web", parameters={
+        "type": "object",
+        "properties": {},
+      }),
+    ) {
+    {
+      "type": "function",
+      "name": "search",
+      "description": "Search the web",
+      ..
+    } => ()
+    _ => fail("Expected function tool json")
+  }
+
+  match
+    tool_to_responses_api_json(
+      @types.ToolDefinition::web_search_preview(
+        search_context_size=Some("medium"),
+        user_location_country=Some("US"),
+      ),
+    ) {
+    {
+      "type": "web_search_preview",
+      "search_context_size": "medium",
+      "user_location": { "type": "approximate", "country": "US", .. },
+      ..
+    } => ()
+    _ => fail("Expected web search tool json")
+  }
+
+  match
+    tool_to_responses_api_json(
+      @types.ToolDefinition::builtin(type_="code_interpreter", config={
+        "container": { "type": "auto" },
+      }),
+    ) {
+    { "type": "code_interpreter", "container": { "type": "auto", .. }, .. } =>
+      ()
+    _ => fail("Expected generic builtin tool json")
+  }
+}
+
+///|
 test "parser helpers cover provider errors, builtin traces, reasoning parsing, annotations, and mixed outputs" {
   match parse_responses_api_response({ "error": { "message": "boom" } }) {
-    @types.ModelResponse::ModelError(message) => assert_eq(message, "boom")
+    @types.ModelResponse::Failure(failure~) => {
+      assert_eq(failure.type_, "error")
+      assert_eq(failure.message, "boom")
+    }
     _ => fail("Expected provider error")
   }
   match parse_responses_api_response({}) {
-    @types.ModelResponse::ModelError(message) =>
-      assert_eq(message, "Unknown response format")
+    @types.ModelResponse::Failure(failure~) => {
+      assert_eq(failure.type_, "parse_error")
+      assert_eq(failure.message, "Unknown response format")
+    }
     _ => fail("Expected unknown format error")
   }
 

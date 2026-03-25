@@ -6,7 +6,7 @@
 
 ///|
 /// Gemini SSE to Responses API event translator
-pub struct GeminiToResponsesTranslator {
+struct GeminiToResponsesTranslator {
   response_id : String
   model : String
   mut next_output_index : Int
@@ -22,7 +22,7 @@ pub struct GeminiToResponsesTranslator {
 }
 
 ///|
-struct GeminiToolCallState {
+priv struct GeminiToolCallState {
   output_index : Int
   call_id : String
   name : String

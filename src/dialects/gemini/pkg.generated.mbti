@@ -19,17 +19,13 @@ pub fn chat_response_to_gemini(String) -> String
 
 pub fn completion_path(String, String, String) -> String
 
-pub fn content_to_json(GeminiContent) -> Json
-
 pub fn default_base_url() -> String
 
-pub fn extract_model_from_path(String) -> String
+pub fn error_to_anthropic(Json) -> String
 
-pub fn extract_model_from_stream_path(String) -> String
+pub fn error_to_openai(Json) -> String
 
-pub fn message_to_content(@types.ModelMessage) -> GeminiContent?
-
-pub fn messages_to_contents(Array[@types.ModelMessage]) -> Array[GeminiContent]
+pub fn is_error(Json) -> Bool
 
 pub fn models_path(String, String) -> String
 
@@ -37,13 +33,7 @@ pub fn non_streaming_to_synthetic_events(Json) -> Array[@sse.SseEvent]
 
 pub fn openai_error_to_gemini(String) -> String
 
-pub fn parse_as_model_response(Json) -> @types.ModelResponse
-
-pub fn parse_function_calls(Array[Json]) -> Array[@types.ToolCallRequest]
-
 pub fn parse_response(Json) -> @types.ModelResponse
-
-pub fn parse_stream_chunk(Json) -> (String, Array[@types.ToolCallRequest])?
 
 pub fn request_to_chat(String, String, @types.TransformContext) -> String
 
@@ -57,54 +47,17 @@ pub fn responses_request_to_gemini(Json) -> Json
 
 pub fn stream_completion_path(String, String, String) -> String
 
-pub fn tool_to_json(@types.ToolDefinition) -> Json
-
-pub fn tools_to_json(Array[@types.ToolDefinition]) -> Json
-
 // Errors
 
 // Types and methods
-pub struct GeminiAccumulator {
-  text : StringBuilder
-  tool_calls : Array[@types.ToolCallAcc]
-  mut annotations : Array[@types.ResponseAnnotation]
-  mut finished : Bool
-}
+type GeminiAccumulator
 pub fn GeminiAccumulator::feed(Self, @sse.SseEvent) -> Unit
 pub fn GeminiAccumulator::finish(Self) -> @types.ModelResponse
 pub fn GeminiAccumulator::new() -> Self
 
-pub(all) struct GeminiContent {
-  role : String
-  parts : Array[GeminiPart]
-}
-
-pub(all) enum GeminiPart {
-  Text(String)
-  FunctionCall(name~ : String, args~ : Json)
-  FunctionResponse(name~ : String, response~ : Json)
-  InlineData(mime_type~ : String, data~ : String)
-  FileData(file_uri~ : String, mime_type~ : String?)
-}
-
-pub struct GeminiToResponsesTranslator {
-  response_id : String
-  model : String
-  mut next_output_index : Int
-  mut has_emitted_created : Bool
-  mut has_emitted_in_progress : Bool
-  mut has_open_message : Bool
-  mut current_message_output_index : Int
-  mut current_message_item_id : String
-  mut current_message_text : String
-  mut current_message_annotations : Array[@types.ResponseAnnotation]
-  tool_calls : Array[GeminiToolCallState]
-  completed_output : Array[Json]
-}
+type GeminiToResponsesTranslator
 pub fn GeminiToResponsesTranslator::new(response_id~ : String, model? : String) -> Self
 pub fn GeminiToResponsesTranslator::translate(Self, @sse.SseEvent) -> Array[(String, Json)]
-
-type GeminiToolCallState
 
 // Type aliases
 

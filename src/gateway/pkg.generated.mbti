@@ -54,6 +54,8 @@ pub fn transform_request(String, GatewaySurface, GatewaySurface, String, @types.
 
 pub fn transform_response(String, GatewaySurface, GatewaySurface) -> String
 
+pub fn transform_response_to_responses_json(ModelApi, String, model~ : String) -> Json
+
 // Errors
 pub(all) suberror GatewayError {
   ConfigError(String)
@@ -220,6 +222,7 @@ pub(all) enum ResponsesApiTranslator {
   Harmony(@harmony.HarmonyToResponsesTranslator)
   Anthropic(@anthropic.AnthropicToResponsesTranslator)
   Gemini(@gemini.GeminiToResponsesTranslator)
+  Codex(@codex.CodexToResponsesTranslator)
   PassThrough
 }
 pub fn ResponsesApiTranslator::translate(Self, @sse.SseEvent) -> Array[(String, Json)]

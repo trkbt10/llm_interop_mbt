@@ -9,26 +9,34 @@ test "response_to_responses covers error fallbacks" {
       response_id="resp_error",
     ) {
     { "error": { "type": String(type_), "message": String(message), .. }, .. } => {
-      assert_eq(type_, "error")
+      assert_eq(type_, "api_error")
       assert_eq(message, "upstream failed")
     }
     _ => fail("Expected error response")
   }
 
   match response_to_responses({ "unexpected": true }, response_id="resp_bad") {
-    { "error": { "message": String(message), .. }, .. } =>
+    { "error": { "type": String(type_), "message": String(message), .. }, .. } => {
+      assert_eq(type_, "parse_error")
       assert_eq(message, "Unknown response format")
+    }
     _ => fail("Expected unknown-format fallback")
   }
 }
 
 ///|
-test "panic response_to_responses rejects success payloads without model" {
-  response_to_responses(
-    { "content": Json::array([]) },
-    response_id="resp_unknown",
-  )
-  |> ignore
+test "response_to_responses serializes malformed payloads as structured failures" {
+  match
+    response_to_responses(
+      { "content": Json::array([]) },
+      response_id="resp_unknown",
+    ) {
+    { "error": { "type": String(type_), "message": String(message), .. }, .. } => {
+      assert_eq(type_, "parse_error")
+      assert_eq(message, "Unknown response format")
+    }
+    _ => fail("Expected structured malformed-payload failure")
+  }
 }
 
 ///|
@@ -342,44 +350,24 @@ test "response_to_responses preserves Anthropic text citations via canonical pat
     }
     _ => fail("Expected Responses output with preserved annotations")
   }
-
-  match @openai.parse_responses_api_response(converted) {
-    @types.ModelResponse::RichText(rich) => {
-      assert_eq(rich.annotations.length(), 1)
-      match rich.annotations[0] {
-        @types.ResponseAnnotation::WebSearchResultCitation(
-          title~,
-          start_index~,
-          end_index~,
-          ..
-        ) => {
-          assert_eq(title, "Tokyo Weather")
-          assert_eq(start_index, 0)
-          assert_eq(end_index, 15)
-        }
-        _ => fail("Expected typed web search citation")
-      }
-    }
-    _ => fail("Expected RichText round-trip")
-  }
 }
 
 ///|
-test "to_responses wrapper helpers delegate to parser and direct conversion" {
+test "to_responses canonical entrypoints cover parser and direct conversion" {
   let response : Json = {
     "model": "claude-sonnet-4-20250514",
     "content": Json::array([{ "type": "text", "text": "Hello" }]),
     "stop_reason": "end_turn",
   }
-  match parse_anthropic_as_model_response(response) {
+  match parse_response(response) {
     @types.ModelResponse::Text(text) => assert_eq(text, "Hello")
-    _ => fail("Expected Text from parser wrapper")
+    _ => fail("Expected Text from parser")
   }
-  match anthropic_to_responses_full(response, response_id="resp_full") {
+  match response_to_responses(response, response_id="resp_full") {
     { "id": String(id), "output": Array(output), .. } => {
       assert_eq(id, "resp_full")
       assert_eq(output.length(), 1)
     }
-    _ => fail("Expected direct conversion from full wrapper")
+    _ => fail("Expected direct conversion from canonical entrypoint")
   }
 }

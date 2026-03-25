@@ -45,7 +45,11 @@ fn build_prompt_from_messages(messages : Array[Json]) -> String {
               }
               buf.write_string(t)
             }
-            _ => ()
+            _ =>
+              abort(
+                "`claude mcp serve` chat bridge cannot represent non-text user content without loss: " +
+                part.stringify(),
+              )
           }
         }
         last_user_msg = buf.to_string()
@@ -67,54 +71,108 @@ fn build_prompt_from_messages(messages : Array[Json]) -> String {
 // =============================================================================
 
 ///|
-/// Transform `claude mcp serve` tools/call result into OpenAI Chat Completion.
-pub fn tools_result_to_chat(body : String) -> String {
+/// Transform a `claude mcp serve` tools/call result into an OpenAI Chat
+/// completion response.
+pub fn response_to_chat(
+  body : String,
+  id? : String = "claude-mcp-response",
+  model? : String = "claude-code-tools",
+) -> String {
+  let chat = @openai_chat_contract.model_response_to_chat_response(
+    model_response_from_tools_result(body),
+    id~,
+    model~,
+  )
+  let parsed = @json.parse(chat) catch { _ => return chat }
+  match parsed {
+    { "error": _, .. } => chat
+    {
+      "id": String(response_id),
+      "object": String(object),
+      "model": String(response_model),
+      "choices": Array(choices),
+      ..
+    } =>
+      Json::object({
+        "id": Json::string(response_id),
+        "object": Json::string(object),
+        "model": Json::string(response_model),
+        "choices": Json::array(choices),
+        "usage": {
+          "prompt_tokens": 0,
+          "completion_tokens": 0,
+          "total_tokens": 0,
+        },
+      }).stringify()
+    _ => chat
+  }
+}
+
+///|
+pub fn parse_response(body : String) -> @types.ModelResponse {
+  model_response_from_tools_result(body)
+}
+
+///|
+pub fn response_to_responses(
+  body : String,
+  response_id~ : String,
+  model? : String = "claude-code-tools",
+) -> Json {
+  @openai_responses_contract.model_response_to_responses_json(
+    model_response_from_tools_result(body),
+    response_id~,
+    model~,
+  )
+}
+
+///|
+fn model_response_from_tools_result(body : String) -> @types.ModelResponse {
   let json = @json.parse(body) catch {
-    _ => return build_simple_chat_response(body)
+    _ =>
+      return @types.ModelResponse::Failure(
+        failure=@types.ModelFailure::parse_error(
+          message="`claude mcp serve` tools result bridge requires valid JSON",
+          body=Some(body),
+        ),
+      )
+  }
+  let has_tool_content = match json {
+    { "result": { "content": Array(_), .. }, .. } => true
+    _ => false
   }
   match @mcp.parse_tools_call_result(json) {
-    Some(result) => {
-      let content = @mcp.extract_text_content(result)
-      if result.is_error {
-        build_error_chat_response(content)
+    Some(result) =>
+      if has_tool_content {
+        let content = @mcp.extract_text_content(result)
+        if result.is_error {
+          @types.ModelResponse::Failure(
+            failure=@types.ModelFailure::new(
+              type_="claude_mcp_error",
+              message=content,
+              payload=Some(json),
+              body=Some(body),
+            ),
+          )
+        } else {
+          @types.ModelResponse::Text(content)
+        }
       } else {
-        build_simple_chat_response(content)
+        @types.ModelResponse::Failure(
+          failure=@types.ModelFailure::parse_error(
+            message="`claude mcp serve` tools result bridge requires a tools/call result payload",
+            payload=Some(json),
+            body=Some(body),
+          ),
+        )
       }
-    }
-    None => build_simple_chat_response(body)
+    None =>
+      @types.ModelResponse::Failure(
+        failure=@types.ModelFailure::parse_error(
+          message="`claude mcp serve` tools result bridge requires a tools/call result payload",
+          payload=Some(json),
+          body=Some(body),
+        ),
+      )
   }
-}
-
-///|
-fn build_simple_chat_response(content : String) -> String {
-  let message : Map[String, Json] = {}
-  message["role"] = Json::string("assistant")
-  message["content"] = Json::string(content)
-  let choice : Map[String, Json] = {}
-  choice["index"] = Json::number(0.0)
-  choice["message"] = Json::object(message)
-  choice["finish_reason"] = Json::string("stop")
-  let usage : Map[String, Json] = {}
-  usage["prompt_tokens"] = Json::number(0.0)
-  usage["completion_tokens"] = Json::number(0.0)
-  usage["total_tokens"] = Json::number(0.0)
-  let result : Map[String, Json] = {}
-  result["id"] = Json::string("claude-mcp-response")
-  result["object"] = Json::string("chat.completion")
-  result["model"] = Json::string("claude-code-tools")
-  result["choices"] = Json::array([Json::object(choice)])
-  result["usage"] = Json::object(usage)
-  Json::object(result).stringify()
-}
-
-///|
-fn build_error_chat_response(message : String) -> String {
-  let err : Json = {
-    "error": {
-      "message": message,
-      "type": "claude_mcp_error",
-      "code": "tool_error",
-    },
-  }
-  err.stringify()
 }

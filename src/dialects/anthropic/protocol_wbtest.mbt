@@ -3,6 +3,11 @@
 
 ///|
 test "message builders cover named users, multimodal parts, tool results, and explicit body fields" {
+  assert_eq(message_to_json(@types.ModelMessage::System("You are Claude")), {
+    "role": "system",
+    "content": "You are Claude",
+  })
+
   let named_user = message_to_json(
     @types.ModelMessage::User(
       content="ignored",
@@ -14,7 +19,6 @@ test "message builders cover named users, multimodal parts, tool results, and ex
           detail=None,
         ),
         @types.ContentPart::ImageBase64(data="BASE64", media_type="image/png"),
-        @types.ContentPart::Audio(data="AUDIO", format="wav"),
         @types.ContentPart::Document(
           data="PDF",
           media_type="application/pdf",
@@ -24,14 +28,12 @@ test "message builders cover named users, multimodal parts, tool results, and ex
           file_id="file_123",
           media_type=Some("application/pdf"),
         ),
-        @types.ContentPart::FileUrl(url="https://example.com/report.pdf"),
-        @types.ContentPart::Video(data="VIDEO", media_type="video/mp4"),
       ]),
     ),
   )
   match named_user {
     { "role": "user", "name": "alice", "content": Array(parts), .. } => {
-      assert_eq(parts.length(), 8)
+      assert_eq(parts.length(), 5)
       assert_eq(parts[0], { "type": "text", "text": "Look" })
       assert_eq(parts[1], {
         "type": "image",
@@ -46,10 +48,6 @@ test "message builders cover named users, multimodal parts, tool results, and ex
         },
       })
       assert_eq(parts[3], {
-        "type": "text",
-        "text": "[Audio input not supported by Anthropic Messages API]",
-      })
-      assert_eq(parts[4], {
         "type": "document",
         "source": {
           "type": "base64",
@@ -57,17 +55,9 @@ test "message builders cover named users, multimodal parts, tool results, and ex
           "data": "PDF",
         },
       })
-      assert_eq(parts[5], {
+      assert_eq(parts[4], {
         "type": "document",
         "source": { "type": "file", "file_id": "file_123" },
-      })
-      assert_eq(parts[6], {
-        "type": "text",
-        "text": "[Remote file URL input not supported by Anthropic Messages API; upload via Files API first] https://example.com/report.pdf",
-      })
-      assert_eq(parts[7], {
-        "type": "text",
-        "text": "[Video input not supported by Anthropic Messages API]",
       })
     }
     _ => fail("Expected named multimodal user")
@@ -383,19 +373,63 @@ test "parse_response covers multiline text, server tools, redacted thinking, and
   }
 
   match parse_response({ "content": "bad", "stop_reason": "end_turn" }) {
-    @types.ModelResponse::ModelError(message) =>
-      assert_eq(message, "Invalid content format")
+    @types.ModelResponse::Failure(failure~) => {
+      assert_eq(failure.type_, "parse_error")
+      assert_eq(failure.message, "Invalid content format")
+    }
     _ => fail("Expected invalid content error")
   }
   match parse_response({ "error": { "message": "boom" } }) {
-    @types.ModelResponse::ModelError(message) => assert_eq(message, "boom")
+    @types.ModelResponse::Failure(failure~) => {
+      assert_eq(failure.type_, "api_error")
+      assert_eq(failure.message, "boom")
+    }
     _ => fail("Expected provider error")
   }
   match parse_response({}) {
-    @types.ModelResponse::ModelError(message) =>
-      assert_eq(message, "Unknown response format")
+    @types.ModelResponse::Failure(failure~) => {
+      assert_eq(failure.type_, "parse_error")
+      assert_eq(failure.message, "Unknown response format")
+    }
     _ => fail("Expected unknown format error")
   }
+}
+
+///|
+test "panic message_to_json rejects unsupported AnthropIc input carriers" {
+  ignore(
+    message_to_json(
+      @types.ModelMessage::User(
+        content="ignored",
+        name=None,
+        content_parts=Some([
+          @types.ContentPart::Audio(data="AUDIO", format="wav"),
+        ]),
+      ),
+    ),
+  )
+  ignore(
+    message_to_json(
+      @types.ModelMessage::User(
+        content="ignored",
+        name=None,
+        content_parts=Some([
+          @types.ContentPart::FileUrl(url="https://example.com/report.pdf"),
+        ]),
+      ),
+    ),
+  )
+  ignore(
+    message_to_json(
+      @types.ModelMessage::User(
+        content="ignored",
+        name=None,
+        content_parts=Some([
+          @types.ContentPart::Video(data="VIDEO", media_type="video/mp4"),
+        ]),
+      ),
+    ),
+  )
 }
 
 ///|

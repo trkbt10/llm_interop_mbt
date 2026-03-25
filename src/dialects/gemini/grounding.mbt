@@ -22,11 +22,13 @@ fn collect_gemini_grounding_annotations(
           resolve_gemini_grounding_segment(rendered_text, support, search_start) {
           Some((segment_text, start_index, end_index)) => {
             for chunk_index in gemini_grounding_chunk_indices(support) {
-              match gemini_grounding_chunk_url_title(chunks, chunk_index) {
-                Some((url, title)) => {
-                  let annotation = @types.ResponseAnnotation::url_citation(
-                    url~,
-                    title~,
+              match chunks.get(chunk_index) {
+                Some(chunk) => {
+                  let annotation = @types.ResponseAnnotation::gemini_grounding_citation(
+                    chunk_index~,
+                    chunk~,
+                    support~,
+                    cited_text=segment_text,
                     start_index~,
                     end_index~,
                   )
@@ -111,44 +113,142 @@ fn gemini_grounding_chunk_indices(support : Json) -> Array[Int] {
 }
 
 ///|
-fn gemini_grounding_chunk_url_title(
-  chunks : Array[Json],
-  index : Int,
-) -> (String, String?)? {
-  match chunks.get(index) {
-    Some(chunk) =>
-      match chunk {
-        { "web": { "uri": String(url), .. }, .. } => {
-          let title = match chunk {
-            { "web": { "title": String(value), .. }, .. } => Some(value)
-            _ => None
-          }
-          Some((url, title))
-        }
-        { "retrievedContext": { "uri": String(url), .. }, .. } => {
-          let title = match chunk {
-            { "retrievedContext": { "title": String(value), .. }, .. } =>
-              Some(value)
-            _ => None
-          }
-          Some((url, title))
-        }
-        { "maps": { "uri": String(url), .. }, .. } => {
-          let title = match chunk {
-            { "maps": { "title": String(value), .. }, .. } => Some(value)
-            _ => None
-          }
-          Some((url, title))
-        }
-        { "image": { "sourceUri": String(url), .. }, .. } => {
-          let title = match chunk {
-            { "image": { "title": String(value), .. }, .. } => Some(value)
-            _ => None
-          }
-          Some((url, title))
-        }
-        _ => None
+fn response_annotations_to_grounding_metadata(
+  annotations : Array[@types.ResponseAnnotation],
+  rendered_text : String,
+) -> Json? {
+  let chunks : Array[Json] = []
+  let supports : Array[Json] = []
+  for annotation in annotations {
+    match
+      grounding_entry_from_response_annotation(
+        annotation,
+        rendered_text,
+        chunks.length(),
+      ) {
+      Some((chunk, support)) => {
+        chunks.push(chunk)
+        supports.push(support)
       }
-    None => None
+      None =>
+        abort(
+          "Gemini grounding bridge cannot represent response annotation without loss: " +
+          annotation.to_interop_json().stringify(),
+        )
+    }
+  }
+  if chunks.length() == 0 {
+    None
+  } else {
+    Some({
+      "groundingChunks": Json::array(chunks),
+      "groundingSupports": Json::array(supports),
+    })
+  }
+}
+
+///|
+fn grounding_entry_from_response_annotation(
+  annotation : @types.ResponseAnnotation,
+  rendered_text : String,
+  chunk_index : Int,
+) -> (Json, Json)? {
+  match annotation {
+    @types.ResponseAnnotation::UrlCitation(
+      title~,
+      url~,
+      start_index~,
+      end_index~
+    ) =>
+      Some(
+        (
+          build_web_grounding_chunk(url, title),
+          build_grounding_support(
+            chunk_index, rendered_text, "", start_index, end_index,
+          ),
+        ),
+      )
+    @types.ResponseAnnotation::WebSearchResultCitation(
+      cited_text~,
+      title~,
+      url~,
+      start_index~,
+      end_index~,
+      ..
+    ) =>
+      Some(
+        (
+          build_web_grounding_chunk(url, Some(title)),
+          build_grounding_support(
+            chunk_index, rendered_text, cited_text, start_index, end_index,
+          ),
+        ),
+      )
+    @types.ResponseAnnotation::GeminiGroundingCitation(
+      chunk~,
+      cited_text~,
+      start_index~,
+      end_index~,
+      ..
+    ) =>
+      Some(
+        (
+          chunk,
+          build_grounding_support(
+            chunk_index, rendered_text, cited_text, start_index, end_index,
+          ),
+        ),
+      )
+    _ => None
+  }
+}
+
+///|
+fn build_web_grounding_chunk(url : String, title : String?) -> Json {
+  let web : Map[String, Json] = { "uri": Json::string(url) }
+  match title {
+    Some(value) if value.length() > 0 => web["title"] = Json::string(value)
+    _ => ()
+  }
+  { "web": Json::object(web) }
+}
+
+///|
+fn build_grounding_support(
+  chunk_index : Int,
+  rendered_text : String,
+  fallback_text : String,
+  start_index : Int,
+  end_index : Int,
+) -> Json {
+  {
+    "groundingChunkIndices": Json::array([Json::number(chunk_index.to_double())]),
+    "segment": {
+      "text": grounding_segment_text(
+        rendered_text, fallback_text, start_index, end_index,
+      ),
+      "startIndex": start_index,
+      "endIndex": end_index,
+    },
+  }
+}
+
+///|
+fn grounding_segment_text(
+  rendered_text : String,
+  fallback_text : String,
+  start_index : Int,
+  end_index : Int,
+) -> String {
+  if start_index >= 0 &&
+    end_index >= start_index &&
+    end_index <= rendered_text.length() {
+    let buf = StringBuilder::new()
+    for i = start_index; i < end_index; i = i + 1 {
+      buf.write_char(rendered_text[i].to_int().unsafe_to_char())
+    }
+    buf.to_string()
+  } else {
+    fallback_text
   }
 }

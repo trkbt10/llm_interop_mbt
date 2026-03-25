@@ -16,14 +16,17 @@ pub fn chat_request_to_protocol(
   body : String,
   _ctx : @types.TransformContext,
 ) -> String {
-  let json = @json.parse(body) catch { _ => return body }
+  let json = @json.parse(body) catch {
+    _ => abort("Codex chat bridge requires valid OpenAI Chat JSON: " + body)
+  }
   let model = match json {
     { "model": String(m), .. } => m
     _ => "codex"
   }
   let messages = match json {
     { "messages": Array(msgs), .. } => msgs
-    _ => return body
+    _ =>
+      abort("Codex chat bridge requires an OpenAI Chat messages array: " + body)
   }
   // Build prompt from all messages, preserving conversation context
   let prompt = build_prompt_from_messages(messages)
@@ -44,6 +47,39 @@ pub fn chat_request_to_protocol(
 }
 
 ///|
+/// Transform a Codex intermediate prompt protocol request back into an OpenAI
+/// Chat request so cross-surface gateway translation can route through the
+/// canonical Responses intermediate layer.
+pub fn protocol_request_to_chat(body : String) -> String {
+  let json = @json.parse(body) catch {
+    _ => abort("Codex protocol bridge requires valid JSON: " + body)
+  }
+  let model = match json {
+    { "model": String(m), .. } => m
+    _ => "codex"
+  }
+  let messages = match json {
+    { "messages": Array(msgs), .. } => msgs
+    { "prompt": String(prompt), .. } => [{ "role": "user", "content": prompt }]
+    _ =>
+      abort(
+        "Codex protocol bridge requires either messages or a prompt string: " +
+        body,
+      )
+  }
+  let request : Map[String, Json] = {
+    "model": Json::string(model),
+    "messages": Json::array(messages),
+  }
+  match json {
+    { "effort": String(effort), .. } =>
+      request["reasoning_effort"] = Json::string(effort)
+    _ => ()
+  }
+  Json::object(request).stringify()
+}
+
+///|
 /// Build a prompt string from OpenAI messages.
 /// Uses the last user message as the primary prompt.
 /// If there's a system message, prepends it as context.
@@ -57,7 +93,7 @@ fn build_prompt_from_messages(messages : Array[Json]) -> String {
       { "role": String("user"), "content": String(text), .. } =>
         last_user_msg = text
       { "role": String("user"), "content": Array(parts), .. } => {
-        // Multipart content — extract text parts
+        // Codex prompt extraction is text-only; reject multimodal truncation.
         let buf = StringBuilder::new()
         for part in parts {
           match part {
@@ -67,7 +103,11 @@ fn build_prompt_from_messages(messages : Array[Json]) -> String {
               }
               buf.write_string(t)
             }
-            _ => ()
+            _ =>
+              abort(
+                "Codex chat bridge cannot represent non-text user content without loss: " +
+                part.stringify(),
+              )
           }
         }
         last_user_msg = buf.to_string()
@@ -133,10 +173,24 @@ fn EventAccumulator::new() -> EventAccumulator {
 /// Chat Completion response. The host transport collects JSONL events
 /// into a JSON array before calling this function.
 fn events_to_chat(events_json : String) -> String {
-  let events = @json.parse(events_json) catch { _ => return events_json }
+  let events = @json.parse(events_json) catch {
+    _ =>
+      return @types.ModelFailure::parse_error(
+          message="Codex response bridge requires valid JSON",
+          body=Some(events_json),
+        )
+        .to_openai_error_json()
+        .stringify()
+  }
   let items = match events {
     Array(arr) => arr
-    _ => return events_json
+    _ =>
+      return @types.ModelFailure::parse_error(
+          message="Codex response bridge requires a JSON event array",
+          body=Some(events_json),
+        )
+        .to_openai_error_json()
+        .stringify()
   }
   let acc = EventAccumulator::new()
   for event in items {

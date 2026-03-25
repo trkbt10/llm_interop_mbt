@@ -71,6 +71,48 @@ test "responses_request_to_anthropic covers defaults, instructions, tools, and t
 }
 
 ///|
+test "responses_request_to_anthropic converts canonical Responses ids to Anthropic tool ids and preserves effort" {
+  let result = responses_request_to_anthropic({
+    "model": "claude-sonnet-4-6",
+    "input": [
+      {
+        "type": "function_call",
+        "call_id": "fc_weather",
+        "name": "get_weather",
+        "arguments": "{\"city\":\"Tokyo\"}",
+      },
+      {
+        "type": "function_call_output",
+        "call_id": "fc_weather",
+        "output": "Sunny",
+      },
+    ],
+    "reasoning": { "effort": "high" },
+  })
+  match result {
+    {
+      "messages": [
+        {
+          "role": "assistant",
+          "content": [{ "type": "tool_use", "id": "toolu_weather", .. }],
+          ..
+        },
+        {
+          "role": "user",
+          "content": [
+            { "type": "tool_result", "tool_use_id": "toolu_weather", .. },
+          ],
+          ..
+        },
+      ],
+      "output_config": { "effort": "high", .. },
+      ..
+    } => ()
+    _ => fail("Expected Anthropic provider ids and effort")
+  }
+}
+
+///|
 test "from_responses helpers cover config extraction and stream flag" {
   assert_eq(
     @utils.extract_responses_tool_name({ "name": "custom_name" }),

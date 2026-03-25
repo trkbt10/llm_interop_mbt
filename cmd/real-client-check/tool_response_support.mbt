@@ -2,6 +2,19 @@
 fn extract_tool_call(
   response : @types.ModelResponse,
 ) -> ExtractedToolCall raise LiveCheckError {
+  match response.as_failure() {
+    Some(failure) =>
+      match failure.retry_after {
+        Some(retry_after) if failure.type_ == "rate_limit_error" =>
+          raise ModelUnavailable("rate limited: retry_after=\{retry_after}")
+        _ =>
+          raise ValidationFailed(
+            "expected tool call response, got failure [\{failure.type_}]: " +
+              failure.message,
+          )
+      }
+    None => ()
+  }
   match response {
     @types.ModelResponse::ToolCalls(calls) =>
       if calls.length() > 0 {
@@ -15,8 +28,6 @@ fn extract_tool_call(
       } else {
         raise ValidationFailed("expected at least one tool call")
       }
-    @types.ModelResponse::RateLimited(retry_after~) =>
-      raise ModelUnavailable("rate limited: retry_after=\{retry_after}")
     _ => raise ValidationFailed("expected tool call response")
   }
 }

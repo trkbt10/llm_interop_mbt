@@ -45,8 +45,12 @@ test "chat_gateway helpers build requests and parse transport responses" {
 
   match
     parse_chat_gateway_transport_response({ status: 429, body: "rate limited" }) {
-    @types.ModelResponse::RateLimited(..) => ()
-    _ => fail("Expected RateLimited helper response")
+    @types.ModelResponse::Failure(failure~) => {
+      assert_eq(failure.type_, "rate_limit_error")
+      assert_eq(failure.retry_after, Some(60))
+      assert_eq(failure.body, Some("rate limited"))
+    }
+    _ => fail("Expected structured rate limit helper response")
   }
 
   match
@@ -138,8 +142,11 @@ async test "chat_gateway wrapper: OpenAI 429 maps to RateLimited" {
     "gpt-4",
   )
   match result {
-    @types.ModelResponse::RateLimited(..) => ()
-    _ => fail("Expected RateLimited")
+    @types.ModelResponse::Failure(failure~) => {
+      assert_eq(failure.type_, "rate_limit_error")
+      assert_eq(failure.retry_after, Some(60))
+    }
+    _ => fail("Expected structured rate limit failure")
   }
 }
 

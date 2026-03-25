@@ -200,16 +200,13 @@ test "prepare_chat_upstream: uses last user message" {
 }
 
 ///|
-test "prepare_chat_upstream: multipart user content keeps text parts" {
+test "panic prepare_chat_upstream rejects multimodal user content" {
   let session = ClaudeMcpSession::new()
   let body =
     #|{"messages":[{"role":"user","content":[{"type":"image_url","image_url":{"url":"https://example.com/a.png"}},{"type":"text","text":"part1"},{"type":"text","text":"part2"}]}]}
-  let req = prepare_chat_upstream(
-    session,
-    body,
-    @types.TransformContext::default(),
+  ignore(
+    prepare_chat_upstream(session, body, @types.TransformContext::default()),
   )
-  assert_eq(extract_bash_command(req), "part1\npart2")
 }
 
 ///|
@@ -226,27 +223,25 @@ test "prepare_chat_upstream: system only prompt is preserved" {
 }
 
 ///|
-test "prepare_chat_upstream: invalid JSON falls back to raw body" {
+test "panic prepare_chat_upstream rejects invalid JSON" {
   let session = ClaudeMcpSession::new()
-  let req = prepare_chat_upstream(
-    session,
-    "not json",
-    @types.TransformContext::default(),
+  ignore(
+    prepare_chat_upstream(
+      session,
+      "not json",
+      @types.TransformContext::default(),
+    ),
   )
-  assert_eq(extract_bash_command(req), "not json")
 }
 
 ///|
-test "prepare_chat_upstream: missing messages falls back to raw body" {
+test "panic prepare_chat_upstream rejects missing messages" {
   let session = ClaudeMcpSession::new()
   let body =
     #|{"model":"m"}
-  let req = prepare_chat_upstream(
-    session,
-    body,
-    @types.TransformContext::default(),
+  ignore(
+    prepare_chat_upstream(session, body, @types.TransformContext::default()),
   )
-  assert_eq(extract_bash_command(req), body)
 }
 
 ///|

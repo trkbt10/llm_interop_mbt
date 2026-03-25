@@ -2,8 +2,8 @@
 /// Whitebox coverage for OpenAI Chat Completions helpers and validation branches
 
 ///|
-test "message and builder helpers cover names, multimodal fallbacks, and builtin tools" {
-  let named_multimodal = message_to_json(
+test "message and builder helpers cover names, supported multimodal parts, and builtin tools" {
+  let named_multimodal = @openai_chat_contract.message_to_json(
     @types.ModelMessage::User(
       content="ignored",
       name=Some("alice"),
@@ -28,7 +28,7 @@ test "message and builder helpers cover names, multimodal fallbacks, and builtin
     _ => fail("Expected named multimodal user message")
   }
 
-  let named_plain = message_to_json(
+  let named_plain = @openai_chat_contract.message_to_json(
     @types.ModelMessage::User(
       content="Hello",
       name=Some("alice"),
@@ -40,7 +40,7 @@ test "message and builder helpers cover names, multimodal fallbacks, and builtin
     _ => fail("Expected named plain user message")
   }
 
-  let assistant_plain = message_to_json(
+  let assistant_plain = @openai_chat_contract.message_to_json(
     @types.ModelMessage::Assistant(content="Done", tool_calls=None),
   )
   match assistant_plain {
@@ -48,41 +48,38 @@ test "message and builder helpers cover names, multimodal fallbacks, and builtin
     _ => fail("Expected plain assistant message")
   }
 
-  let parts = content_parts_to_openai_json([
-    @types.ContentPart::ImageUrl(
-      url="https://example.com/plain.png",
-      detail=None,
+  let supported_multimodal = @openai_chat_contract.message_to_json(
+    @types.ModelMessage::User(
+      content="ignored",
+      name=None,
+      content_parts=Some([
+        @types.ContentPart::ImageUrl(
+          url="https://example.com/plain.png",
+          detail=None,
+        ),
+        @types.ContentPart::Document(
+          data="BASE64PDF",
+          media_type="application/pdf",
+          title=None,
+        ),
+      ]),
     ),
-    @types.ContentPart::Document(
-      data="BASE64PDF",
-      media_type="application/pdf",
-      title=None,
-    ),
-    @types.ContentPart::FileUrl(url="https://example.com/report.pdf"),
-    @types.ContentPart::Video(data="VIDEO", media_type="video/mp4"),
-  ])
-  assert_eq(parts.length(), 4)
-  match parts[0] {
-    { "type": "image_url", "image_url": { "url": String(url), .. }, .. } =>
-      assert_eq(url, "https://example.com/plain.png")
-    _ => fail("Expected image part")
-  }
-  match parts[1] {
-    { "type": "file", "file": { "file_data": String(data), .. }, .. } =>
-      assert_eq(data, "data:application/pdf;base64,BASE64PDF")
-    _ => fail("Expected document file part")
-  }
-  match parts[2] {
-    { "type": "text", "text": String(text), .. } => {
-      assert_true(text.contains("Remote file URL input"))
-      assert_true(text.contains("https://example.com/report.pdf"))
+  )
+  match supported_multimodal {
+    { "content": Array(parts), .. } => {
+      assert_eq(parts.length(), 2)
+      match parts[0] {
+        { "type": "image_url", "image_url": { "url": String(url), .. }, .. } =>
+          assert_eq(url, "https://example.com/plain.png")
+        _ => fail("Expected image part")
+      }
+      match parts[1] {
+        { "type": "file", "file": { "file_data": String(data), .. }, .. } =>
+          assert_eq(data, "data:application/pdf;base64,BASE64PDF")
+        _ => fail("Expected document file part")
+      }
     }
-    _ => fail("Expected file-url fallback text part")
-  }
-  match parts[3] {
-    { "type": "text", "text": String(text), .. } =>
-      assert_true(text.contains("Video content"))
-    _ => fail("Expected video fallback text part")
+    _ => fail("Expected supported multimodal message")
   }
 
   let generic_builtin = @types.ToolDefinition::builtin(
@@ -90,23 +87,28 @@ test "message and builder helpers cover names, multimodal fallbacks, and builtin
     name="code_execution",
     description="Run code",
   )
-  match tool_to_json(generic_builtin) {
+  match @openai_chat_contract.tool_to_json(generic_builtin) {
     { "type": "function", "function": { "name": "code_execution", .. }, .. } =>
       ()
     _ => fail("Expected generic builtin fallback tool")
   }
   match
-    tool_to_json(@types.ToolDefinition::builtin(type_="web_search_preview")) {
+    @openai_chat_contract.tool_to_json(
+      @types.ToolDefinition::builtin(type_="web_search_preview"),
+    ) {
     { "type": "function", "function": { "name": String(name), .. }, .. } =>
       assert_eq(name, @types.web_search_tool_name())
     _ => fail("Expected generic builtin web search tool")
   }
-  match tool_to_json(@types.ToolDefinition::web_search_preview_2025_03_11()) {
+  match
+    @openai_chat_contract.tool_to_json(
+      @types.ToolDefinition::web_search_preview_2025_03_11(),
+    ) {
     { "type": "function", "function": { "name": String(name), .. }, .. } =>
       assert_eq(name, @types.web_search_tool_name())
     _ => fail("Expected explicit web search tool")
   }
-  let tools_json = tools_to_json([
+  let tools_json = @openai_chat_contract.tools_to_json([
     generic_builtin,
     @types.ToolDefinition::web_search_preview(),
   ])
@@ -136,79 +138,45 @@ test "message and builder helpers cover names, multimodal fallbacks, and builtin
     }
     _ => fail("Expected built chat body")
   }
+}
 
-  let annotations = chat_annotations_from_response_annotations([
-    @types.ResponseAnnotation::url_citation(
-      url="https://example.com/docs",
-      title=Some("Docs"),
-      start_index=0,
-      end_index=4,
+///|
+test "panic message helpers reject unsupported Chat-only multimodal gaps" {
+  ignore(
+    @openai_chat_contract.message_to_json(
+      @types.ModelMessage::User(
+        content="ignored",
+        name=None,
+        content_parts=Some([
+          @types.ContentPart::FileUrl(url="https://example.com/report.pdf"),
+        ]),
+      ),
     ),
-    @types.ResponseAnnotation::web_search_result_citation(
-      cited_text="MoonBit",
-      encrypted_index="enc_1",
-      title="MoonBit Search",
-      url="https://example.com/search",
-      start_index=5,
-      end_index=12,
+  )
+}
+
+///|
+test "panic message helpers reject unsupported Chat video parts" {
+  ignore(
+    @openai_chat_contract.message_to_json(
+      @types.ModelMessage::User(
+        content="ignored",
+        name=None,
+        content_parts=Some([
+          @types.ContentPart::Video(data="VIDEO", media_type="video/mp4"),
+        ]),
+      ),
     ),
-    @types.ResponseAnnotation::document_page_citation(
-      cited_text="MoonBit",
-      document_index=0,
-      document_title="Spec",
-      file_id="file_spec",
-      start_page_number=1,
-      end_page_number=1,
-      start_index=0,
-      end_index=7,
-    ),
-  ])
-  assert_eq(annotations.length(), 2)
-  match annotations[0] {
-    {
-      "type": "url_citation",
-      "url_citation": {
-        "title": String(title),
-        "url": String(url),
-        "start_index": Number(start_index, ..),
-        "end_index": Number(end_index, ..),
-        ..
-      },
-      ..
-    } => {
-      assert_eq(title, "Docs")
-      assert_eq(url, "https://example.com/docs")
-      assert_eq(start_index.to_int(), 0)
-      assert_eq(end_index.to_int(), 4)
-    }
-    _ => fail("Expected UrlCitation chat annotation")
-  }
-  match annotations[1] {
-    {
-      "type": "url_citation",
-      "url_citation": {
-        "title": String(title),
-        "url": String(url),
-        "start_index": Number(start_index, ..),
-        "end_index": Number(end_index, ..),
-        ..
-      },
-      ..
-    } => {
-      assert_eq(title, "MoonBit Search")
-      assert_eq(url, "https://example.com/search")
-      assert_eq(start_index.to_int(), 5)
-      assert_eq(end_index.to_int(), 12)
-    }
-    _ => fail("Expected down-converted web search annotation")
-  }
+  )
 }
 
 ///|
 test "parse chat helpers cover audio, malformed tool calls, and error fallbacks" {
   match parse_chat_response({ "choices": Json::array([]) }) {
-    @types.ModelResponse::ModelError(message) =>
-      assert_eq(message, "No choices in response")
+    @types.ModelResponse::Failure(failure~) => {
+      assert_eq(failure.type_, "parse_error")
+      assert_eq(failure.message, "No choices in response")
+    }
     _ => fail("Expected no-choices error")
   }
 
@@ -221,10 +189,13 @@ test "parse chat helpers cover audio, malformed tool calls, and error fallbacks"
         },
       ]),
     }) {
-    @types.ModelResponse::ModelError(message) =>
+    @types.ModelResponse::Failure(failure~) => {
+      assert_eq(failure.type_, "parse_error")
       assert_eq(
-        message, "OpenAI chat response signaled tool_calls without a tool_calls payload",
+        failure.message,
+        "OpenAI chat response signaled tool_calls without a tool_calls payload",
       )
+    }
     _ => fail("Expected tool_calls payload error")
   }
 
@@ -442,24 +413,33 @@ test "parse chat helpers cover audio, malformed tool calls, and error fallbacks"
     parse_chat_response({
       "choices": Json::array([{ "message": 7, "finish_reason": "stop" }]),
     }) {
-    @types.ModelResponse::ModelError(message) =>
-      assert_eq(message, "Invalid message format")
+    @types.ModelResponse::Failure(failure~) => {
+      assert_eq(failure.type_, "parse_error")
+      assert_eq(failure.message, "Invalid message format")
+    }
     _ => fail("Expected invalid message error")
   }
 
   match parse_chat_response({ "choices": Json::array([{ "index": 0 }]) }) {
-    @types.ModelResponse::ModelError(message) =>
-      assert_eq(message, "Invalid choice format")
+    @types.ModelResponse::Failure(failure~) => {
+      assert_eq(failure.type_, "parse_error")
+      assert_eq(failure.message, "Invalid choice format")
+    }
     _ => fail("Expected invalid choice error")
   }
 
   match parse_chat_response({ "error": { "message": "boom" } }) {
-    @types.ModelResponse::ModelError(message) => assert_eq(message, "boom")
+    @types.ModelResponse::Failure(failure~) => {
+      assert_eq(failure.type_, "api_error")
+      assert_eq(failure.message, "boom")
+    }
     _ => fail("Expected top-level error")
   }
   match parse_chat_response({ "unexpected": true }) {
-    @types.ModelResponse::ModelError(message) =>
-      assert_eq(message, "Unknown response format")
+    @types.ModelResponse::Failure(failure~) => {
+      assert_eq(failure.type_, "parse_error")
+      assert_eq(failure.message, "Unknown response format")
+    }
     _ => fail("Expected unknown-format error")
   }
 }

@@ -3,4 +3,6 @@ import {
   "trkbt10/llm_interop/types",
   "trkbt10/llm_interop/utils" @utils,
   "trkbt10/llm_interop/sse" @sse,
+  "trkbt10/llm_interop/interop/openai_chat_contract" @openai_chat_contract,
+  "trkbt10/llm_interop/interop/openai_responses_contract" @openai_responses_contract,
 }

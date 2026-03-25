@@ -4,7 +4,6 @@
 ///|
 test "GeminiAccumulator accumulates text and ignores documented metadata-only chunks" {
   let acc = GeminiAccumulator::new()
-  assert_false(acc.finished)
 
   acc.feed({
     event: "data",
@@ -25,7 +24,6 @@ test "GeminiAccumulator accumulates text and ignores documented metadata-only ch
     @types.ModelResponse::Text(text) => assert_eq(text, "Hello Gemini")
     _ => fail("Expected text response")
   }
-  assert_true(acc.finished)
 }
 
 ///|
@@ -104,14 +102,28 @@ test "GeminiAccumulator preserves grounding annotations" {
       assert_eq(rich.content, "Weather details")
       assert_eq(rich.annotations.length(), 1)
       match rich.annotations[0] {
-        @types.ResponseAnnotation::UrlCitation(
-          title~,
-          url~,
+        @types.ResponseAnnotation::GeminiGroundingCitation(
+          chunk_index~,
+          chunk~,
+          support~,
+          cited_text~,
           start_index~,
           end_index~
         ) => {
-          assert_eq(title, Some("Weather Source"))
-          assert_eq(url, "https://example.com/weather")
+          assert_eq(chunk_index, 0)
+          assert_eq(cited_text, "Weather")
+          match chunk {
+            { "web": { "uri": String(url), "title": String(title), .. }, .. } => {
+              assert_eq(title, "Weather Source")
+              assert_eq(url, "https://example.com/weather")
+            }
+            _ => fail("Expected preserved grounding chunk")
+          }
+          match support {
+            { "groundingChunkIndices": [Number(index, ..)], .. } =>
+              assert_eq(index.to_int(), 0)
+            _ => fail("Expected preserved grounding support")
+          }
           assert_eq(start_index, 0)
           assert_eq(end_index, 7)
         }
@@ -130,7 +142,6 @@ test "panic GeminiAccumulator rejects malformed tool arguments" {
     text: StringBuilder::new(),
     tool_calls: [{ id: "call_1", name: "lookup", arguments: bad_args }],
     annotations: [],
-    finished: false,
   }
   invalid_acc.finish() |> ignore
 }

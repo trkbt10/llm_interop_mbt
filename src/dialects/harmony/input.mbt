@@ -186,7 +186,7 @@ fn extract_responses_tool_item_id(item : Json) -> String {
 
 ///|
 fn is_supported_builtin_responses_input_call_item_type(type_ : String) -> Bool {
-  @openai.is_builtin_responses_tool_item_type(type_) &&
+  @openai_responses_contract.is_builtin_responses_tool_item_type(type_) &&
   not(is_builtin_responses_input_output_item_type(type_))
 }
 

@@ -22,37 +22,16 @@ pub fn responses_request_to_chat_completions(Json, stream? : Bool) -> Json
 // Errors
 
 // Types and methods
-pub struct HarmonyAccumulator {
-  text : StringBuilder
-  reasoning : StringBuilder
-  mut current_channel : String
-  tool_calls : Array[@types.ToolCallAcc]
-  mut finish_reason : String
-}
+type HarmonyAccumulator
 pub fn HarmonyAccumulator::feed(Self, @sse.SseEvent) -> Unit
 pub fn HarmonyAccumulator::finish(Self) -> @types.ModelResponse
 pub fn HarmonyAccumulator::get_reasoning(Self) -> String
 pub fn HarmonyAccumulator::new() -> Self
 
-pub struct HarmonyToResponsesTranslator {
-  response_id : String
-  model : String
-  mut next_output_index : Int
-  mut has_emitted_created : Bool
-  mut has_emitted_in_progress : Bool
-  mut current_message_output_index : Int
-  mut current_message_item_id : String
-  mut current_message_text : String
-  mut has_open_message : Bool
-  tool_calls : Array[HarmonyToolCallState]
-  reasoning_buffer : StringBuilder
-  completed_output : Array[Json]
-}
+type HarmonyToResponsesTranslator
 pub fn HarmonyToResponsesTranslator::get_reasoning(Self) -> String
 pub fn HarmonyToResponsesTranslator::new(response_id~ : String, model? : String) -> Self
 pub fn HarmonyToResponsesTranslator::translate(Self, @sse.SseEvent) -> Array[(String, Json)]
-
-type HarmonyToolCallState
 
 // Type aliases
 

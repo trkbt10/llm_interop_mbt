@@ -187,6 +187,144 @@ pub fn ResponseAnnotation::search_result_citation(
 }
 
 ///|
+/// Create Gemini grounding citation annotation
+pub fn ResponseAnnotation::gemini_grounding_citation(
+  chunk_index~ : Int,
+  chunk~ : Json,
+  support~ : Json,
+  cited_text~ : String,
+  start_index~ : Int,
+  end_index~ : Int,
+) -> ResponseAnnotation {
+  GeminiGroundingCitation(
+    chunk_index~,
+    chunk~,
+    support~,
+    cited_text~,
+    start_index~,
+    end_index~,
+  )
+}
+
+///|
+pub fn ModelFailure::new(
+  type_~ : String,
+  message~ : String,
+  code? : Int? = None,
+  retry_after? : Int? = None,
+  payload? : Json? = None,
+  body? : String? = None,
+) -> ModelFailure {
+  { type_, message, code, retry_after, payload, body }
+}
+
+///|
+pub fn ModelFailure::rate_limited(
+  retry_after~ : Int,
+  message? : String = "Rate limited",
+  code? : Int? = Some(429),
+  payload? : Json? = None,
+  body? : String? = None,
+) -> ModelFailure {
+  {
+    type_: "rate_limit_error",
+    message,
+    code,
+    retry_after: Some(retry_after),
+    payload,
+    body,
+  }
+}
+
+///|
+pub fn ModelFailure::parse_error(
+  message~ : String,
+  payload? : Json? = None,
+  body? : String? = None,
+) -> ModelFailure {
+  {
+    type_: "parse_error",
+    message,
+    code: None,
+    retry_after: None,
+    payload,
+    body,
+  }
+}
+
+///|
+pub fn ModelResponse::as_failure(self : ModelResponse) -> ModelFailure? {
+  match self {
+    ModelResponse::Failure(failure~) => Some(failure)
+    ModelResponse::ModelError(message) =>
+      Some(ModelFailure::new(type_="error", message~))
+    ModelResponse::RateLimited(retry_after~) =>
+      Some(ModelFailure::rate_limited(retry_after~))
+    _ => None
+  }
+}
+
+///|
+fn openai_error_type_to_gemini_status_and_code(type_ : String) -> (String, Int) {
+  match type_ {
+    "invalid_request_error" => ("INVALID_ARGUMENT", 400)
+    "authentication_error" => ("UNAUTHENTICATED", 401)
+    "permission_error" => ("PERMISSION_DENIED", 403)
+    "not_found_error" => ("NOT_FOUND", 404)
+    "rate_limit_error" => ("RESOURCE_EXHAUSTED", 429)
+    "overloaded_error" => ("UNAVAILABLE", 503)
+    "api_error" => ("INTERNAL", 500)
+    "content_filter" => ("FAILED_PRECONDITION", 400)
+    _ => ("UNKNOWN", 500)
+  }
+}
+
+///|
+pub fn ModelFailure::to_openai_error_json(self : ModelFailure) -> Json {
+  let error : Map[String, Json] = {}
+  error["message"] = Json::string(self.message)
+  error["type"] = Json::string(self.type_)
+  match self.code {
+    Some(code) => error["code"] = Json::number(code.to_double())
+    None => ()
+  }
+  match self.retry_after {
+    Some(retry_after) =>
+      error["retry_after"] = Json::number(retry_after.to_double())
+    None => ()
+  }
+  { "error": Json::object(error) }
+}
+
+///|
+pub fn ModelFailure::to_anthropic_error_json(self : ModelFailure) -> Json {
+  let error : Map[String, Json] = {}
+  error["type"] = Json::string(self.type_)
+  error["message"] = Json::string(self.message)
+  match self.code {
+    Some(code) => error["code"] = Json::number(code.to_double())
+    None => ()
+  }
+  { "type": "error", "error": Json::object(error) }
+}
+
+///|
+pub fn ModelFailure::to_gemini_error_json(self : ModelFailure) -> Json {
+  let (status, fallback_code) = openai_error_type_to_gemini_status_and_code(
+    self.type_,
+  )
+  let code = match self.code {
+    Some(code) => code
+    None => fallback_code
+  }
+  let error : Map[String, Json] = {}
+  error["code"] = Json::number(code.to_double())
+  error["message"] = Json::string(self.message)
+  error["status"] = Json::string(status)
+  { "error": Json::object(error) }
+}
+
+///|
 /// Create tool call trace
 pub fn ToolCallTrace::new(
   id~ : String,

@@ -153,6 +153,120 @@ test "ResponseContentPart enum covers all output types" {
 }
 
 ///|
+test "ModelFailure constructors preserve structured fields" {
+  let generic = ModelFailure::new(
+    type_="invalid_request_error",
+    message="bad request",
+    code=Some(400),
+    retry_after=None,
+    payload=Some({ "field": "messages" }),
+    body=Some("{\"error\":true}"),
+  )
+  assert_eq(generic.type_, "invalid_request_error")
+  assert_eq(generic.message, "bad request")
+  assert_eq(generic.code, Some(400))
+  assert_eq(generic.body, Some("{\"error\":true}"))
+  match generic.payload {
+    Some({ "field": String("messages"), .. }) => ()
+    _ => fail("Expected preserved payload")
+  }
+
+  let rate_limited = ModelFailure::rate_limited(
+    retry_after=60,
+    body=Some("rate limited"),
+  )
+  assert_eq(rate_limited.type_, "rate_limit_error")
+  assert_eq(rate_limited.code, Some(429))
+  assert_eq(rate_limited.retry_after, Some(60))
+  assert_eq(rate_limited.body, Some("rate limited"))
+
+  let parse_error = ModelFailure::parse_error(
+    message="invalid provider response",
+    payload=Some({ "provider": "gemini" }),
+    body=Some("{bad"),
+  )
+  assert_eq(parse_error.type_, "parse_error")
+  assert_eq(parse_error.message, "invalid provider response")
+  assert_eq(parse_error.body, Some("{bad"))
+  match parse_error.payload {
+    Some({ "provider": String("gemini"), .. }) => ()
+    _ => fail("Expected parse-error payload")
+  }
+
+  match ModelResponse::Failure(failure=parse_error).as_failure() {
+    Some(failure) => assert_eq(failure.type_, "parse_error")
+    None => fail("Expected explicit failure conversion")
+  }
+  match ModelResponse::ModelError("legacy error").as_failure() {
+    Some(failure) => {
+      assert_eq(failure.type_, "error")
+      assert_eq(failure.message, "legacy error")
+    }
+    None => fail("Expected legacy ModelError conversion")
+  }
+  match ModelResponse::RateLimited(retry_after=7).as_failure() {
+    Some(failure) => {
+      assert_eq(failure.type_, "rate_limit_error")
+      assert_eq(failure.retry_after, Some(7))
+    }
+    None => fail("Expected legacy RateLimited conversion")
+  }
+  match ModelResponse::Text("ok").as_failure() {
+    None => ()
+    Some(_) => fail("Expected text response to stay non-failure")
+  }
+
+  let openai_json = generic.to_openai_error_json()
+  match openai_json {
+    {
+      "error": {
+        "type": String(type_),
+        "message": String(message),
+        "code": Number(code, ..),
+        ..
+      },
+      ..
+    } => {
+      assert_eq(type_, "invalid_request_error")
+      assert_eq(message, "bad request")
+      assert_eq(code.to_int(), 400)
+    }
+    _ => fail("Expected OpenAI error JSON")
+  }
+
+  let anthropic_json = generic.to_anthropic_error_json()
+  match anthropic_json {
+    {
+      "type": String("error"),
+      "error": { "type": String(type_), "message": String(message), .. },
+      ..
+    } => {
+      assert_eq(type_, "invalid_request_error")
+      assert_eq(message, "bad request")
+    }
+    _ => fail("Expected Anthropic error JSON")
+  }
+
+  let gemini_json = rate_limited.to_gemini_error_json()
+  match gemini_json {
+    {
+      "error": {
+        "status": String(status),
+        "code": Number(code, ..),
+        "message": String(message),
+        ..
+      },
+      ..
+    } => {
+      assert_eq(status, "RESOURCE_EXHAUSTED")
+      assert_eq(code.to_int(), 429)
+      assert_eq(message, "Rate limited")
+    }
+    _ => fail("Expected Gemini error JSON")
+  }
+}
+
+///|
 test "RichTextResponse with content_parts" {
   let rich = RichTextResponse::new(
     content="Hello",
@@ -193,6 +307,7 @@ test "GenerationParams::from_openai extracts full parameter matrix" {
     "top_k": 40,
     "stop": "END",
     "stream": false,
+    "reasoning_effort": "medium",
     "response_format": {
       "type": "json_schema",
       "json_schema": {
@@ -229,6 +344,10 @@ test "GenerationParams::from_openai extracts full parameter matrix" {
   match params.stream {
     False => ()
     _ => fail("Expected stream=false")
+  }
+  match params.reasoning_effort {
+    String(value) => assert_eq(value, "medium")
+    _ => fail("Expected reasoning_effort")
   }
   assert_eq(
     params.response_format,
@@ -353,6 +472,7 @@ test "GenerationParams::from_responses extracts structured output config" {
     "max_output_tokens": 222,
     "temperature": 0.2,
     "top_p": 0.7,
+    "reasoning": { "effort": "low" },
     "text": { "format": { "type": "json_object" } },
   })
   match params.max_tokens {
@@ -366,6 +486,10 @@ test "GenerationParams::from_responses extracts structured output config" {
   match params.top_p {
     Number(value, ..) => assert_eq(value, 0.7)
     _ => fail("Expected responses top_p")
+  }
+  match params.reasoning_effort {
+    String(value) => assert_eq(value, "low")
+    _ => fail("Expected responses reasoning.effort")
   }
   assert_eq(params.response_format, Some(ResponseFormat::JsonObject))
   match params.response_format_context {
@@ -423,6 +547,7 @@ test "GenerationParams::apply_to_openai respects context field name" {
     top_k: Json::number(11),
     stop: Json::array([Json::string("END")]),
     stream: Json::boolean(false),
+    reasoning_effort: Json::string("high"),
     response_format: Some(
       ResponseFormat::JsonSchema(
         name=None,
@@ -442,6 +567,7 @@ test "GenerationParams::apply_to_openai respects context field name" {
       "max_completion_tokens": Number(max_tokens, ..),
       "temperature": Number(temp, ..),
       "top_p": Number(top_p, ..),
+      "reasoning_effort": String(reasoning_effort),
       "stop": Array(stop),
       "response_format": {
         "type": "json_schema",
@@ -458,6 +584,7 @@ test "GenerationParams::apply_to_openai respects context field name" {
       assert_eq(max_tokens.to_int(), 777)
       assert_eq(temp, 0.3)
       assert_eq(top_p, 0.85)
+      assert_eq(reasoning_effort, "high")
       assert_eq(stop.length(), 1)
     }
     _ => fail("Expected mapped OpenAI fields")
@@ -470,6 +597,7 @@ test "GenerationParams::apply_to_openai respects context field name" {
 test "GenerationParams::apply_to_openai normalizes strict schema on bridge paths" {
   let params : GenerationParams = {
     ..GenerationParams::empty(),
+    reasoning_effort: Json::string("medium"),
     response_format: Some(
       ResponseFormat::JsonSchema(
         name=Some("answer"),
@@ -508,6 +636,7 @@ test "GenerationParams::apply_to_openai normalizes strict schema on bridge paths
 test "GenerationParams::apply_to_responses normalizes strict schema on bridge paths" {
   let params : GenerationParams = {
     ..GenerationParams::empty(),
+    reasoning_effort: Json::string("medium"),
     response_format: Some(
       ResponseFormat::JsonSchema(
         name=Some("answer"),
@@ -540,6 +669,7 @@ test "GenerationParams::apply_to_responses normalizes strict schema on bridge pa
         },
         ..
       },
+      "reasoning": { "effort": "medium", .. },
       ..
     } => ()
     _ => fail("Expected normalized Responses text.format")

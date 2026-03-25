@@ -279,3 +279,13 @@ test "chat_request_to_gemini lifts system messages into systemInstruction" {
     _ => fail("Expected Gemini systemInstruction")
   }
 }
+
+///|
+test "panic chat_request_to_gemini rejects remote image urls" {
+  ignore(
+    chat_request_to_gemini(
+      "{\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"image_url\",\"image_url\":{\"url\":\"https://example.com/cat.png\"}}]}]}",
+      { max_tokens: 0, max_tokens_field: "max_tokens" },
+    ),
+  )
+}

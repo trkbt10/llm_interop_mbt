@@ -78,7 +78,7 @@ pub fn resolve_completion(
 ///|
 /// Extract model name from Gemini streamGenerateContent path
 /// Path format: /v1/models/{model}:streamGenerateContent?alt=sse&key=...
-pub fn extract_model_from_stream_path(path : String) -> String {
+fn extract_model_from_stream_path(path : String) -> String {
   let prefix = "/v1/models/"
   if path.has_prefix(prefix) {
     let start = prefix.length()
@@ -113,7 +113,7 @@ pub fn extract_model_from_stream_path(path : String) -> String {
 ///|
 /// Extract model name from Gemini generateContent path
 /// Path format: /v1/models/{model}:generateContent
-pub fn extract_model_from_path(path : String) -> String {
+fn extract_model_from_path(path : String) -> String {
   let prefix = "/v1/models/"
   let suffix = ":generateContent"
   if path.has_prefix(prefix) && path.has_suffix(suffix) {

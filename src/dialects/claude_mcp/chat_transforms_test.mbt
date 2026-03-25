@@ -2,10 +2,10 @@
 /// Public response-side tests for `claude mcp serve`
 
 ///|
-test "tools_result_to_chat: single text content" {
+test "response_to_chat: single text content" {
   let body =
     #|{"result":{"content":[{"type":"text","text":"file contents here"}]}}
-  let result = tools_result_to_chat(body)
+  let result = response_to_chat(body)
   let json = @json.parse(result) catch { _ => fail("Failed to parse") }
   match json {
     { "object": String("chat.completion"), "choices": Array(choices), .. } => {
@@ -24,10 +24,10 @@ test "tools_result_to_chat: single text content" {
 }
 
 ///|
-test "tools_result_to_chat: has usage" {
+test "response_to_chat: has usage" {
   let body =
     #|{"result":{"content":[{"type":"text","text":"ok"}]}}
-  let result = tools_result_to_chat(body)
+  let result = response_to_chat(body)
   let json = @json.parse(result) catch { _ => fail("Failed to parse") }
   match json {
     {
@@ -44,10 +44,10 @@ test "tools_result_to_chat: has usage" {
 }
 
 ///|
-test "tools_result_to_chat: has id and model" {
+test "response_to_chat: has id and model" {
   let body =
     #|{"result":{"content":[{"type":"text","text":"ok"}]}}
-  let result = tools_result_to_chat(body)
+  let result = response_to_chat(body)
   let json = @json.parse(result) catch { _ => fail("Failed to parse") }
   match json {
     { "id": String(_), "model": String(_), .. } => ()
@@ -56,10 +56,10 @@ test "tools_result_to_chat: has id and model" {
 }
 
 ///|
-test "tools_result_to_chat: isError true" {
+test "response_to_chat: isError true" {
   let body =
     #|{"result":{"content":[{"type":"text","text":"Permission denied"}],"isError":true}}
-  let result = tools_result_to_chat(body)
+  let result = response_to_chat(body)
   let json = @json.parse(result) catch { _ => fail("Failed to parse") }
   match json {
     { "error": { "message": String(m), "type": String(t), .. }, .. } => {
@@ -71,42 +71,44 @@ test "tools_result_to_chat: isError true" {
 }
 
 ///|
-test "tools_result_to_chat: plain text fallback" {
-  let result = tools_result_to_chat("raw text response")
+test "response_to_chat: invalid JSON becomes structured failure" {
+  let result = response_to_chat("raw text response")
   let json = @json.parse(result) catch { _ => fail("Failed to parse") }
   match json {
-    { "choices": Array(choices), .. } =>
-      match choices[0] {
-        { "message": { "content": String(c), .. }, .. } =>
-          assert_eq(c, "raw text response")
-        _ => fail("Invalid choice")
-      }
-    _ => fail("Invalid format")
+    { "error": { "type": String(type_), "message": String(message), .. }, .. } => {
+      assert_eq(type_, "parse_error")
+      assert_true(
+        message.contains(
+          "`claude mcp serve` tools result bridge requires valid JSON",
+        ),
+      )
+    }
+    _ => fail("Expected structured parse failure")
   }
 }
 
 ///|
-test "tools_result_to_chat: non-tool result falls back to wrapped text" {
+test "response_to_chat: non-tool result becomes structured failure" {
   let non_tool_result =
     #|{"jsonrpc":"2.0","method":"notifications/initialized"}
-  let response_json = @json.parse(tools_result_to_chat(non_tool_result)) catch {
-    _ => fail("Failed to parse simple chat response")
+  let response_json = @json.parse(response_to_chat(non_tool_result)) catch {
+    _ => fail("Failed to parse error response")
   }
   match response_json {
-    {
-      "choices": Array([{ "message": { "content": String(content), .. }, .. }]),
-      ..
-    } => assert_eq(content, non_tool_result)
-    _ => fail("Expected simple chat fallback response")
+    { "error": { "type": String(type_), "message": String(message), .. }, .. } => {
+      assert_eq(type_, "parse_error")
+      assert_true(message.contains("tools/call result payload"))
+    }
+    _ => fail("Expected parse failure for non-tool result")
   }
 }
 
 ///|
-test "tools_result_to_chat: Read fixture" {
+test "response_to_chat: Read fixture" {
   let fixture = @utils.read_testdata(
     "testdata/claude_mcp/tools_call_read_response.json",
   )
-  let result = tools_result_to_chat(fixture)
+  let result = response_to_chat(fixture)
   let json = @json.parse(result) catch { _ => fail("Failed to parse") }
   match json {
     { "choices": Array(choices), .. } =>
@@ -120,11 +122,11 @@ test "tools_result_to_chat: Read fixture" {
 }
 
 ///|
-test "tools_result_to_chat: error fixture" {
+test "response_to_chat: error fixture" {
   let fixture = @utils.read_testdata(
     "testdata/claude_mcp/tools_call_error_response.json",
   )
-  let result = tools_result_to_chat(fixture)
+  let result = response_to_chat(fixture)
   let json = @json.parse(result) catch { _ => fail("Failed to parse") }
   match json {
     { "error": { "message": String(m), .. }, .. } =>
@@ -134,11 +136,11 @@ test "tools_result_to_chat: error fixture" {
 }
 
 ///|
-test "tools_result_to_chat: Bash fixture" {
+test "response_to_chat: Bash fixture" {
   let fixture = @utils.read_testdata(
     "testdata/claude_mcp/tools_call_bash_response.json",
   )
-  let result = tools_result_to_chat(fixture)
+  let result = response_to_chat(fixture)
   let json = @json.parse(result) catch { _ => fail("Failed to parse") }
   match json {
     { "choices": Array(choices), .. } =>
@@ -154,11 +156,11 @@ test "tools_result_to_chat: Bash fixture" {
 }
 
 ///|
-test "tools_result_to_chat: multi content fixture" {
+test "response_to_chat: multi content fixture" {
   let fixture = @utils.read_testdata(
     "testdata/claude_mcp/tools_call_multi_content.json",
   )
-  let result = tools_result_to_chat(fixture)
+  let result = response_to_chat(fixture)
   let json = @json.parse(result) catch { _ => fail("Failed to parse") }
   match json {
     { "choices": Array(choices), .. } =>
@@ -175,14 +177,82 @@ test "tools_result_to_chat: multi content fixture" {
 }
 
 ///|
-test "tools_result_to_chat: initialize response not a tool result" {
+test "response_to_chat: initialize response not a tool result" {
   let fixture = @utils.read_testdata(
     "testdata/claude_mcp/initialize_response.json",
   )
-  let result = tools_result_to_chat(fixture)
+  let result = response_to_chat(fixture)
   let json = @json.parse(result) catch { _ => fail("Failed to parse") }
   match json {
-    { "choices": Array(_), .. } => ()
-    _ => fail("Should produce a chat completion even for non-tool results")
+    { "error": { "type": String(type_), .. }, .. } =>
+      assert_eq(type_, "parse_error")
+    _ => fail("Should reject non-tools/call payloads")
+  }
+}
+
+///|
+test "parse_response: successful tools result becomes text response" {
+  let body =
+    #|{"result":{"content":[{"type":"text","text":"file contents here"}]}}
+  match parse_response(body) {
+    @types.ModelResponse::Text(text) => assert_eq(text, "file contents here")
+    _ => fail("Expected text response")
+  }
+}
+
+///|
+test "parse_response: tool error becomes structured failure" {
+  let body =
+    #|{"result":{"content":[{"type":"text","text":"Permission denied"}],"isError":true}}
+  match parse_response(body).as_failure() {
+    Some(failure) => {
+      assert_eq(failure.type_, "claude_mcp_error")
+      assert_eq(failure.message, "Permission denied")
+    }
+    None => fail("Expected failure")
+  }
+}
+
+///|
+test "response_to_responses: successful tools result becomes message output" {
+  let body =
+    #|{"result":{"content":[{"type":"text","text":"file contents here"}]}}
+  match
+    response_to_responses(
+      body,
+      response_id="resp_claude_mcp",
+      model="claude-code-tools",
+    ) {
+    {
+      "id": String("resp_claude_mcp"),
+      "output": [
+        {
+          "type": String("message"),
+          "role": String("assistant"),
+          "content": [
+            { "type": String("output_text"), "text": String(text), .. },
+            ..,
+          ],
+          ..
+        },
+        ..,
+      ],
+      ..
+    } => assert_eq(text, "file contents here")
+    other => fail("Unexpected Responses JSON: " + other.stringify())
+  }
+}
+
+///|
+test "response_to_responses: invalid payload becomes Responses error" {
+  match
+    response_to_responses(
+      "raw text response",
+      response_id="resp_claude_mcp_bad",
+      model="claude-code-tools",
+    ) {
+    { "error": { "type": String(type_), .. }, .. } =>
+      assert_eq(type_, "parse_error")
+    _ => fail("Expected Responses error payload")
   }
 }

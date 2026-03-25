@@ -121,12 +121,50 @@ test "chat_request_to_protocol: omits effort when not present" {
 }
 
 ///|
-test "chat_request_to_protocol: handles invalid JSON gracefully" {
-  let result = chat_request_to_protocol(
-    "not json",
-    @types.TransformContext::default(),
+test "panic chat_request_to_protocol rejects invalid JSON" {
+  ignore(
+    chat_request_to_protocol("not json", @types.TransformContext::default()),
   )
-  assert_eq(result, "not json")
+}
+
+///|
+test "protocol_request_to_chat: preserves original messages and reasoning effort" {
+  let body =
+    #|{"prompt":"fallback","model":"gpt-5-codex","effort":"medium","messages":[{"role":"system","content":"Be terse"},{"role":"user","content":"Explain MoonBit"}]}
+  let result = protocol_request_to_chat(body)
+  let json = @json.parse(result) catch { _ => fail("invalid json") }
+  match json {
+    {
+      "model": String(model),
+      "reasoning_effort": String(effort),
+      "messages": Array(messages),
+      ..
+    } => {
+      assert_eq(model, "gpt-5-codex")
+      assert_eq(effort, "medium")
+      assert_eq(messages.length(), 2)
+    }
+    _ => fail("unexpected structure: " + result)
+  }
+}
+
+///|
+test "protocol_request_to_chat: falls back to prompt as user message" {
+  let result = protocol_request_to_chat(
+    "{\"prompt\":\"hello from codex\",\"model\":\"codex\"}",
+  )
+  let json = @json.parse(result) catch { _ => fail("invalid json") }
+  match json {
+    {
+      "model": String(model),
+      "messages": [{ "role": String("user"), "content": String(content), .. }],
+      ..
+    } => {
+      assert_eq(model, "codex")
+      assert_eq(content, "hello from codex")
+    }
+    _ => fail("unexpected structure")
+  }
 }
 
 // =============================================================================
@@ -365,8 +403,16 @@ test "response_to_chat: handles turn error" {
 }
 
 ///|
-test "response_to_chat: invalid JSON returns input" {
-  assert_eq(response_to_chat("not json"), "not json")
+test "response_to_chat: invalid JSON becomes structured failure" {
+  let result = response_to_chat("not json")
+  let json = @json.parse(result) catch { _ => fail("invalid json") }
+  match json {
+    { "error": { "type": String(type_), "message": String(message), .. }, .. } => {
+      assert_eq(type_, "parse_error")
+      assert_true(message.contains("Codex response bridge requires valid JSON"))
+    }
+    _ => fail("expected structured parse error")
+  }
 }
 
 // =============================================================================

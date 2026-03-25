@@ -4,7 +4,7 @@
 ///|
 /// Anthropic Messages API stream accumulator
 /// Accumulates content_block_delta (text_delta / input_json_delta)
-pub struct AnthropicMessagesAccumulator {
+struct AnthropicMessagesAccumulator {
   text : StringBuilder
   tool_calls : Array[@types.ToolCallAcc]
   mut stop_reason : String

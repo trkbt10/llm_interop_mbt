@@ -334,9 +334,17 @@ test "translator preserves Gemini grounding annotations on completed message" {
   assert_eq(annotation_events.length(), 1)
   match annotation_events[0].1 {
     {
-      "annotation": { "type": String("url_citation"), "url": String(url), .. },
+      "annotation": {
+        "type": String("gemini_grounding"),
+        "chunk_index": Number(chunk_index, ..),
+        "chunk": { "web": { "uri": String(url), .. }, .. },
+        ..
+      },
       ..
-    } => assert_eq(url, "https://example.com/weather")
+    } => {
+      assert_eq(chunk_index.to_int(), 0)
+      assert_eq(url, "https://example.com/weather")
+    }
     _ => fail("Expected annotation event")
   }
   match events[7].1 {
@@ -355,8 +363,11 @@ test "translator preserves Gemini grounding annotations on completed message" {
     } => {
       assert_eq(annotations.length(), 1)
       match annotations[0] {
-        { "type": String("url_citation"), "title": String(title), .. } =>
-          assert_eq(title, "Weather Source")
+        {
+          "type": String("gemini_grounding"),
+          "chunk": { "web": { "title": String(title), .. }, .. },
+          ..
+        } => assert_eq(title, "Weather Source")
         _ => fail("Expected grounded output_text annotation")
       }
     }
