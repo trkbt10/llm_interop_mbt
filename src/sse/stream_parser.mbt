@@ -33,15 +33,35 @@ pub fn parse_sse_chunk(content : String) -> ParsedChunk {
     }
     if trimmed.has_prefix("event:") {
       let event_type = safe_substring(trimmed, 6)
-      i = i + 1
-      if i < lines.length() {
-        let data_line = lines[i].trim().to_string()
-        if data_line.has_prefix("data:") {
-          let data_str = safe_substring(data_line, 5)
+      if i + 1 < lines.length() {
+        let next_line = lines[i + 1]
+        let next_trimmed = next_line.trim().to_string()
+        if next_trimmed.has_prefix("data:") {
+          // Check if data line is incomplete (last line without trailing \n)
+          if i + 1 == lines.length() - 1 &&
+            next_trimmed.length() > 0 &&
+            not(content.has_suffix("\n")) {
+            // Both event and data lines are incomplete — carry over
+            remaining.write_string(line)
+            if not(line.has_suffix("\n")) {
+              remaining.write_string("\n")
+            }
+            remaining.write_string(next_line)
+            i = i + 2
+            continue
+          }
+          i = i + 1
+          let data_str = safe_substring(next_trimmed, 5)
           if data_str != "[DONE]" {
             let data = @json.parse(data_str) catch { _ => Json::null() }
             events.push({ event: event_type, data })
           }
+        }
+      } else {
+        // event: line at chunk boundary — carry over to next chunk
+        remaining.write_string(line)
+        if not(line.has_suffix("\n")) {
+          remaining.write_string("\n")
         }
       }
     } else if trimmed.has_prefix("data:") {

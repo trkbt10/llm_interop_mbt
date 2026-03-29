@@ -324,9 +324,10 @@ test "non_streaming_to_synthetic_events tolerates responses without content" {
     "id": "msg_empty",
     "stop_reason": "end_turn",
   })
-  assert_eq(events.length(), 2)
+  assert_eq(events.length(), 3)
   assert_eq(events[0].event, "message_start")
-  assert_eq(events[1].event, "message_stop")
+  assert_eq(events[1].event, "message_delta")
+  assert_eq(events[2].event, "message_stop")
 }
 
 ///|

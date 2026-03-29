@@ -1,0 +1,44 @@
+{
+  "mode": "replace",
+  "providers": {
+    "codex": {
+      "api": "codex-app-server",
+      "apiKey": "${OPENAI_API_KEY}",
+      "codex": {
+        "command": "codex app-server",
+        "approvalPolicy": "never"
+      },
+      "modelPatterns": ["claude-", "codex"],
+      "modelAliases": {
+        "claude-sonnet-4-6-20250514": "gpt-5.4",
+        "claude-sonnet-4-20250514": "gpt-5.4",
+        "claude-sonnet-4-6": "gpt-5.4",
+        "claude-opus-4-6-20250514": "gpt-5.4",
+        "claude-opus-4-6": "gpt-5.4",
+        "claude-haiku-4-5-20251001": "gpt-5.4"
+      },
+      "models": [
+        {
+          "id": "claude-sonnet-4-6-20250514",
+          "name": "Codex (aliased from claude-sonnet-4-6)",
+          "reasoning": false,
+          "input": ["text"],
+          "contextWindow": 200000,
+          "maxTokens": 16384
+        },
+        {
+          "id": "codex",
+          "name": "Codex App Server",
+          "reasoning": false,
+          "input": ["text"],
+          "contextWindow": 200000,
+          "maxTokens": 16384
+        }
+      ]
+    }
+  },
+  "server": {
+    "port": 18080,
+    "host": "0.0.0.0"
+  }
+}

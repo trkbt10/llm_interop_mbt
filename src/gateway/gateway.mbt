@@ -33,7 +33,7 @@ pub fn prepare_upstream(
   let transformed = transform_request(body, from, to, backend_model, ctx)
   // Replace model name in transformed body if alias was applied
   let final_body = if backend_model != model {
-    replace_model_in_body(transformed, backend_model)
+    replace_model(transformed, backend_model)
   } else {
     transformed
   }
@@ -52,7 +52,7 @@ pub fn prepare_upstream(
 
 ///|
 /// Replace the "model" field in a JSON body with the given model name
-fn replace_model_in_body(body : String, model : String) -> String {
+pub fn replace_model(body : String, model : String) -> String {
   let json = @json.parse(body) catch {
     _ =>
       abort(

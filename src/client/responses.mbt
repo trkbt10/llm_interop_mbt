@@ -23,16 +23,16 @@
 
 ///|
 /// Inject optional generation parameters into a Responses API body.
-/// Responses API 仕様準拠:
+/// Per Responses API spec:
 ///   https://platform.openai.com/docs/api-reference/responses/create
 ///
-/// 対応パラメータ:
-///   max_output_tokens — 最大出力トークン数
-///   temperature — サンプリング温度 (0.0-2.0)
+/// Supported parameters:
+///   max_output_tokens — maximum output tokens
+///   temperature — sampling temperature (0.0-2.0)
 ///   top_p — nucleus sampling (0.0-1.0)
-///   reasoning.effort — reasoning モデル用 ("low" | "medium" | "high")
+///   reasoning.effort — for reasoning models ("low" | "medium" | "high")
 ///
-/// すべて None の場合は注入しない（モデルのデフォルトに従う）
+/// When all are None, nothing is injected (model defaults apply).
 fn inject_optional_params(
   body : Json,
   max_tokens : Int?,

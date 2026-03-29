@@ -48,7 +48,7 @@ pub(all) struct McpToolCallResult {
 
 ///|
 /// Content item within a tools/call result.
-/// NOTE: MCP spec is not vendored in docs/upstream/ (snapshot 取り込み漏れ).
+/// NOTE: MCP spec is not vendored in docs/upstream/ (snapshot not yet imported).
 /// External ref: https://modelcontextprotocol.io/specification/2025-03-26/server/tools
 ///
 /// MCP 2025-03-26 defines 4 content types in tools/call result:

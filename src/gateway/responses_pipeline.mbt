@@ -47,7 +47,7 @@ pub fn prepare_responses_api_upstream(
     None => model
   }
   let final_body = if backend_model != model {
-    replace_model_in_body(converted_body, backend_model)
+    replace_model(converted_body, backend_model)
   } else {
     converted_body
   }

@@ -142,6 +142,23 @@ pub fn non_streaming_to_synthetic_events(json : Json) -> Array[@sse.SseEvent] {
       }
     _ => ()
   }
+  // message_delta with stop_reason and usage
+  let stop_reason : Json = match json {
+    { "stop_reason": String(r), .. } => Json::string(r)
+    _ => Json::string("end_turn")
+  }
+  let usage : Json = match json {
+    { "usage": usage, .. } => usage
+    _ => { "output_tokens": 0 }
+  }
+  events.push({
+    event: "message_delta",
+    data: {
+      "type": "message_delta",
+      "delta": { "stop_reason": stop_reason, "stop_sequence": Json::null() },
+      "usage": usage,
+    },
+  })
   events.push({ event: "message_stop", data: { "type": "message_stop" } })
   events
 }

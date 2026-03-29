@@ -166,9 +166,26 @@ async fn handle_request(
             @gw.HttpResponse::error(400, "model field is required"),
           )
       }
-      @gw.HandleResult::Response(
-        proxy_to_backend(gateway, body, dialect, model),
-      )
+      let body_json = @json.parse(body) catch { _ => Json::null() }
+      let is_stream = match body_json {
+        { "stream": True, .. } => true
+        _ => false
+      }
+      let provider = gateway.select_backend(model)
+      let is_codex_backend = match provider {
+        Some(p) => p.api.to_dialect() == @gw.GatewaySurface::Codex
+        None => false
+      }
+      if is_stream && is_codex_backend {
+        // Codex backend: get non-streaming result, convert to Anthropic SSE
+        proxy_completion_stream_via_codex(
+          gateway, body, dialect, model, conn,
+        )
+      } else {
+        @gw.HandleResult::Response(
+          proxy_to_backend(gateway, body, dialect, model),
+        )
+      }
     }
     @gw.RouteResult::ResponsesApi(body~) => {
       let model = match @utils.extract_json_field(body, "model") {
@@ -266,6 +283,49 @@ async fn proxy_to_backend(
   let headers : Map[String, String] = {}
   headers["Content-Type"] = "application/json"
   { status, headers, body: final_body }
+}
+
+///|
+/// Stream a Completion request via a Codex backend.
+/// Sends the request as non-streaming to codex, gets the full Anthropic
+/// response, then converts it to SSE events and streams to the client.
+async fn proxy_completion_stream_via_codex(
+  gateway : @gw.Gateway,
+  body : String,
+  dialect : @gw.GatewaySurface,
+  model : String,
+  conn : @http.ServerConnection,
+) -> @gw.HandleResult {
+  // Strip stream flag — codex backend doesn't support streaming
+  let parsed = @json.parse(body) catch {
+    _ =>
+      return @gw.HandleResult::Response(
+        @gw.HttpResponse::error(400, "Invalid JSON"),
+      )
+  }
+  let non_stream_body = @utils.set_json_field(parsed, "stream", false.to_json()).stringify()
+  let response = proxy_to_backend(gateway, non_stream_body, dialect, model)
+  if response.status >= 400 {
+    return @gw.HandleResult::Response(response)
+  }
+  // Parse the Anthropic JSON response and convert to SSE events
+  let json = @json.parse(response.body) catch {
+    _ => return @gw.HandleResult::Response(response)
+  }
+  let events = @anthropic.non_streaming_to_synthetic_events(json)
+  // Write SSE stream to connection
+  let sse_headers : Map[String, String] = {}
+  sse_headers["Content-Type"] = "text/event-stream"
+  sse_headers["Cache-Control"] = "no-cache"
+  sse_headers["Connection"] = "keep-alive"
+  @gw.set_cors_headers(sse_headers)
+  conn.send_response(200, "OK", extra_headers=sse_headers)
+  for event in events {
+    conn.write("event: " + event.event + "\ndata: " + event.data.stringify() + "\n\n")
+    conn.flush()
+  }
+  conn.end_response()
+  @gw.HandleResult::Streamed
 }
 
 ///|
@@ -644,6 +704,11 @@ async fn proxy_responses_api_stream_via_codex_events(
   } else {
     "."
   }
+  // Resolve model alias before forwarding to codex app-server
+  let backend_model = match provider.model_aliases.get(model) {
+    Some(mapped) => mapped
+    None => model
+  }
   let mut result : @gw.HandleResult = @gw.HandleResult::Streamed
   @async.with_task_group(async fn(group) {
     let api_key = expand_env(provider.api_key)
@@ -670,9 +735,10 @@ async fn proxy_responses_api_stream_via_codex_events(
       chat_body,
       @gw.GatewaySurface::OpenAI,
       @gw.GatewaySurface::Codex,
-      model,
+      backend_model,
     )
-    let req = @codex.prepare_codex_upstream(codex_body, state.session)
+    let aliased_codex_body = @gw.replace_model(codex_body, backend_model)
+    let req = @codex.prepare_codex_upstream(aliased_codex_body, state.session)
     let response_id = @gw.fallback_response_id(model)
     let (handle_result, new_session) = codex_stdio_stream_responses(
       channel,
@@ -1003,10 +1069,9 @@ async fn http_get(req : @gw.UpstreamRequest) -> (Int, String) {
 // =============================================================================
 
 ///|
-/// Per-provider Codex state: session + live subprocess channel
+/// Per-provider Codex state: session tracking
 struct CodexBackendState {
   mut session : @codex.CodexSession
-  mut channel : @ipc.IpcChannel?
 }
 
 ///|
@@ -1014,7 +1079,11 @@ struct CodexBackendState {
 let codex_backends : Map[String, CodexBackendState] = {}
 
 ///|
-/// Spawn or reuse a Codex app-server subprocess for a provider.
+/// Spawn a fresh Codex app-server subprocess for each request.
+/// Each request gets its own process because the subprocess lifetime
+/// is tied to the async task group scope — reusing across requests
+/// would cause the process to be killed when the first request's
+/// task group completes.
 async fn get_codex_channel(
   group : @async.TaskGroup[Unit],
   backend_id : String,
@@ -1022,16 +1091,7 @@ async fn get_codex_channel(
   cwd : String,
   api_key : String,
 ) -> @ipc.IpcChannel raise @gw.GatewayError {
-  match codex_backends.get(backend_id) {
-    Some(state) =>
-      match state.channel {
-        Some(ch) => return ch
-        None => ()
-      }
-    None => ()
-  }
-  // Spawn a new codex app-server subprocess
-  // Pass API key as environment variable if configured
+  // Spawn a new codex app-server subprocess per request
   let env : Map[String, String] = {}
   if api_key != "" {
     env["OPENAI_API_KEY"] = api_key
@@ -1051,13 +1111,8 @@ async fn get_codex_channel(
       )
   }
   let channel = @ipc.IpcChannel::from_child(child)
-  match codex_backends.get(backend_id) {
-    Some(state) => state.channel = Some(channel)
-    None => {
-      let session = @codex.CodexSession::new(cwd)
-      codex_backends[backend_id] = { session, channel: Some(channel) }
-    }
-  }
+  let session = @codex.CodexSession::new(cwd)
+  codex_backends[backend_id] = { session, }
   channel
 }
 
@@ -1158,6 +1213,11 @@ async fn proxy_to_codex_backend(
   } else {
     "."
   }
+  // Resolve model alias before forwarding to codex app-server
+  let backend_model = match provider.model_aliases.get(model) {
+    Some(mapped) => mapped
+    None => model
+  }
   let command = codex_cfg.command
   let mut result : @gw.HttpResponse = @gw.HttpResponse::error(
     502, "Codex transport failed",
@@ -1177,9 +1237,11 @@ async fn proxy_to_codex_backend(
       body,
       target_dialect,
       @gw.GatewaySurface::Codex,
-      model,
+      backend_model,
     )
-    let req = @codex.prepare_codex_upstream(codex_body, state.session)
+    // Replace model in codex body with alias-resolved backend model name
+    let aliased_codex_body = @gw.replace_model(codex_body, backend_model)
+    let req = @codex.prepare_codex_upstream(aliased_codex_body, state.session)
     let (events_json, new_session) = codex_stdio_execute(
       channel,
       req.steps,
@@ -1277,36 +1339,46 @@ async fn codex_stdio_execute(
               current_session,
             )
         }
-        match first_line {
-          Some(text) => {
-            let json = @json.parse(text) catch { _ => Json::null() }
-            // Check for error response
-            match json {
-              { "error": _, .. } => return ("[" + text + "]", current_session)
-              _ => ()
+        // Skip notifications until we get the turn/start RPC response
+        let mut turn_line = first_line
+        while true {
+          match turn_line {
+            Some(text) => {
+              let json = @json.parse(text) catch { _ => Json::null() }
+              match json {
+                { "error": _, .. } =>
+                  return ("[" + text + "]", current_session)
+                { "id": _, .. } =>
+                  break // Got RPC response
+                { "method": _, .. } => {
+                  // Notification — skip, read next
+                  turn_line = channel.recv() catch { _ => None }
+                  continue
+                }
+                _ => break
+              }
             }
+            None =>
+              return (
+                @codex.ipc_error_event("Codex EOF on turn/start"),
+                current_session,
+              )
           }
-          None =>
-            return (
-              @codex.ipc_error_event("Codex EOF on turn/start"),
-              current_session,
-            )
         }
-        // Now read streaming events until turn/completed
+        // Read streaming events until turn/completed
         let mut turn_done = false
         while not(turn_done) {
           let line = channel.recv() catch { _ => break }
           match line {
             Some(text) => {
               let json = @json.parse(text) catch { _ => continue }
-              events.push(json)
-              // Check if this is turn/completed
               match json {
                 { "method": String("turn/completed"), .. } => turn_done = true
                 _ => ()
               }
+              events.push(json)
             }
-            None => break // EOF
+            None => break
           }
         }
         current_session = @codex.mark_session_turn_complete(current_session)
@@ -1391,7 +1463,8 @@ async fn codex_stdio_stream_responses(
         }
       }
       TurnStart => {
-        let first_line = channel.recv() catch {
+        // Read and skip notifications until we get the RPC response
+        let mut turn_line : String? = channel.recv() catch {
           e =>
             return send_codex_stream_failure(
               conn,
@@ -1402,7 +1475,23 @@ async fn codex_stdio_stream_responses(
               current_session,
             )
         }
-        match first_line {
+        while true {
+          match turn_line {
+            Some(text) => {
+              let check = @json.parse(text) catch { _ => Json::null() }
+              match check {
+                { "method": _, .. } => {
+                  // Notification — skip
+                  turn_line = channel.recv() catch { _ => None }
+                  continue
+                }
+                _ => break
+              }
+            }
+            _ => break
+          }
+        }
+        match turn_line {
           Some(text) => {
             let json = @json.parse(text) catch {
               _ => {
