@@ -1,5 +1,5 @@
 {
-  "name": "trkbt10/llm_interop-real-client-check",
+  "name": "trkbt10/llm_interop-claude-mcp-server",
   "version": "0.3.0",
   "deps": {
     "trkbt10/llm_interop": {

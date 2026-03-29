@@ -8,7 +8,7 @@ endif
 PROVIDER ?=
 MOON_TARGETS ?= native js
 
-.PHONY: check check-native check-js test test-native test-js test-client info info-native info-js verify test-integration demo-js test-js-demo ui-dev ui-build gateway
+.PHONY: check check-native check-js test test-native test-js test-client info info-native info-js verify test-integration demo-js test-js-demo ui-dev ui-build gateway bump
 
 # Default local verification targets. We intentionally avoid bare `moon check`
 # so MoonBit does not fall back to wasm-gc during routine development.
@@ -84,6 +84,19 @@ ifeq ($(PROVIDER),groq)
 endif
 	moon test --target native src/client --filter 'integration_$(PROVIDER)*'
 	moon test --target js src/client --filter 'integration_$(PROVIDER)*'
+
+# Version sync — update all moon.mod.json files
+# Usage: make bump VERSION=0.4.0
+bump:
+ifeq ($(VERSION),)
+	$(error Usage: make bump VERSION=x.y.z)
+endif
+	@for f in moon.mod.json cmd/*/moon.mod.json; do \
+		if [ -f "$$f" ]; then \
+			sed -i.bak 's/"version": "[^"]*"/"version": "$(VERSION)"/' "$$f" && rm -f "$$f.bak"; \
+			echo "Updated $$f → $(VERSION)"; \
+		fi; \
+	done
 
 # Gateway
 gateway:

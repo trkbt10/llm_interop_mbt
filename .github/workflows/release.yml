@@ -1,0 +1,225 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: linux-x64
+            asset: llm-interop-linux-x64
+            archive: tar.gz
+          - os: macos-latest
+            target: darwin-arm64
+            asset: llm-interop-darwin-arm64
+            archive: tar.gz
+          - os: windows-latest
+            target: windows-x64
+            asset: llm-interop-windows-x64
+            archive: zip
+
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install MoonBit CLI (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
+          echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
+
+      - name: Install MoonBit CLI (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
+          irm https://cli.moonbitlang.com/install/powershell.ps1 | iex
+          echo "$env:USERPROFILE\.moon\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Setup MSVC (Windows)
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Sync versions from tag
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "Syncing version to $VERSION"
+          for f in moon.mod.json cmd/*/moon.mod.json; do
+            if [ -f "$f" ]; then
+              sed -i.bak "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" "$f" && rm -f "$f.bak"
+              echo "  Updated $f"
+            fi
+          done
+
+      # Build gateway-native (separate module)
+      - name: Build gateway-native
+        run: |
+          cd cmd/gateway-native
+          moon update
+          moon build --target native --release
+
+      # Build app-server (separate module)
+      - name: Build app-server
+        run: |
+          cd cmd/app-server
+          moon update
+          moon build --target native --release
+
+      # Build claude-mcp-server (separate module)
+      - name: Build claude-mcp-server
+        run: |
+          cd cmd/claude-mcp-server
+          moon update
+          moon build --target native --release
+
+      - name: Prepare package (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          pkg_dir="${{ matrix.asset }}"
+          mkdir -p "$pkg_dir/bin"
+
+          # gateway-native
+          gw_bin="cmd/gateway-native/_build/native/release/build/llm_interop-gateway-native.exe"
+          if [ ! -f "$gw_bin" ]; then
+            echo "gateway-native binary not found at $gw_bin"
+            exit 1
+          fi
+          cp "$gw_bin" "$pkg_dir/bin/llm-interop-gateway"
+          chmod +x "$pkg_dir/bin/llm-interop-gateway"
+
+          # app-server
+          app_bin="cmd/app-server/_build/native/release/build/llm_interop-app-server.exe"
+          if [ ! -f "$app_bin" ]; then
+            echo "app-server binary not found at $app_bin"
+            exit 1
+          fi
+          cp "$app_bin" "$pkg_dir/bin/llm-interop-app-server"
+          chmod +x "$pkg_dir/bin/llm-interop-app-server"
+
+          # claude-mcp-server
+          mcp_bin="cmd/claude-mcp-server/_build/native/release/build/llm_interop-claude-mcp-server.exe"
+          if [ ! -f "$mcp_bin" ]; then
+            echo "claude-mcp-server binary not found at $mcp_bin"
+            exit 1
+          fi
+          cp "$mcp_bin" "$pkg_dir/bin/llm-interop-mcp-server"
+          chmod +x "$pkg_dir/bin/llm-interop-mcp-server"
+
+          # Include config example
+          cp gateway-config.json "$pkg_dir/"
+
+          # Create archive
+          tar -czvf "${{ matrix.asset }}.tar.gz" "$pkg_dir"
+
+      - name: Prepare package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $pkgDir = "${{ matrix.asset }}"
+          New-Item -ItemType Directory -Force -Path "$pkgDir/bin"
+
+          # gateway-native
+          $gwBin = "cmd/gateway-native/_build/native/release/build/llm_interop-gateway-native.exe"
+          if (-not (Test-Path $gwBin)) {
+            Write-Error "gateway-native binary not found at $gwBin"
+            exit 1
+          }
+          Copy-Item $gwBin "$pkgDir/bin/llm-interop-gateway.exe"
+
+          # app-server
+          $appBin = "cmd/app-server/_build/native/release/build/llm_interop-app-server.exe"
+          if (-not (Test-Path $appBin)) {
+            Write-Error "app-server binary not found at $appBin"
+            exit 1
+          }
+          Copy-Item $appBin "$pkgDir/bin/llm-interop-app-server.exe"
+
+          # claude-mcp-server
+          $mcpBin = "cmd/claude-mcp-server/_build/native/release/build/llm_interop-claude-mcp-server.exe"
+          if (-not (Test-Path $mcpBin)) {
+            Write-Error "claude-mcp-server binary not found at $mcpBin"
+            exit 1
+          }
+          Copy-Item $mcpBin "$pkgDir/bin/llm-interop-mcp-server.exe"
+
+          # Include config example
+          Copy-Item gateway-config.json "$pkgDir/"
+
+          # Create archive
+          Compress-Archive -Path $pkgDir -DestinationPath "${{ matrix.asset }}.zip"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}.${{ matrix.archive }}
+          path: ${{ matrix.asset }}.${{ matrix.archive }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Prepare release assets
+        run: |
+          mkdir -p release
+
+          # Copy all archives
+          for dir in artifacts/*/; do
+            name=$(basename "$dir")
+            cp "$dir/$name" "release/$name"
+          done
+
+          # Generate checksums
+          cd release
+          for f in *; do
+            sha256sum "$f" > "$f.sha256"
+          done
+
+          # List release contents
+          echo "Release assets:"
+          ls -la
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/*
+          generate_release_notes: true
+          draft: false
+          prerelease: ${{ contains(github.ref, '-') }}
+          body: |
+            ## LLM Interop Gateway
+
+            Unified LLM protocol abstraction — multi-provider support with streaming, tool calling, and protocol translation.
+
+            ### Included binaries
+
+            | Binary | Description |
+            |--------|-------------|
+            | `llm-interop-gateway` | HTTP gateway server |
+            | `llm-interop-app-server` | Codex app-server frontend (JSON-RPC over stdio) |
+            | `llm-interop-mcp-server` | MCP server frontend |
+
+            ### Platforms
+
+            - **Linux x64** — `llm-interop-linux-x64.tar.gz`
+            - **macOS ARM64** — `llm-interop-darwin-arm64.tar.gz`
+            - **Windows x64** — `llm-interop-windows-x64.zip`
+
+            Each archive includes a `gateway-config.json` example configuration.
